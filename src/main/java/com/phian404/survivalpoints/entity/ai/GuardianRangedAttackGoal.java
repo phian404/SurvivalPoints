@@ -16,9 +16,10 @@ import java.util.EnumSet;
  * Два режима:
  * <ul>
  *   <li><b>Сбор</b> — страж принял призыв союзника и идёт к точке сбора.</li>
- *   <li><b>Бой</b> — страж держит дистанцию в коридоре
- *       [IDEAL_MIN, IDEAL_MAX] и стреляет. Если враг подошёл слишком близко —
- *       отходит, если ушёл далеко — сближается. Разворот тела всегда лицом к врагу.</li>
+ *   <li><b>Бой</b> — страж один раз сближается до рабочей дистанции, занимает
+ *       <b>рубеж</b> и больше за врагом не идёт: если враг подошёл слишком близко —
+ *       отходит на занятую позицию, если отошёл далеко — стоит и стреляет.
+ *       Разворот тела всегда лицом к врагу.</li>
  * </ul>
  *
  * <p>Маршрут в обоих режимах строит навигация (обход стен, выход из ям, подъёмы),
@@ -32,15 +33,6 @@ public class GuardianRangedAttackGoal extends Goal {
 
     /** Цель, для которой страж уже выходил на рабочий рубеж. */
     private LivingEntity standoffTarget;
-
-    /**
-     * Достигнут ли рабочий рубеж.
-     *
-     * <p>После этого страж только отходит от подошедшего вплотную врага и больше
-     * не сближается заново, даже если враг отошёл. Без этого получаются качели:
-     * сблизился — отступил — снова сблизился, и страж мечется по рубежу.
-     */
-    private boolean reachedStandoff = false;
 
     public GuardianRangedAttackGoal(BaseGuardianEntity guardian) {
         this.guardian = guardian;
@@ -65,10 +57,10 @@ public class GuardianRangedAttackGoal extends Goal {
     @Override
     public void start() {
         this.guardian.resetNavigationTarget();
-        // Гол снова начал работать — например, после ближнего боя, когда враг
-        // подошёл вплотную и страж переключился на меч. Тогда рабочий рубеж
-        // нужно занять заново.
-        this.reachedStandoff = false;
+        // Флаг рабочего рубежа намеренно НЕ сбрасывается здесь: гол перезапускается
+        // при каждом переходе MELEE ↔ RANGED, и сброс в этом месте возвращал
+        // качели «приблизился — отошёл — приблизился». Рубеж сбрасывается только
+        // при смене цели, уходе в панику и потере цели — см. BaseGuardianEntity.
     }
 
     @Override
@@ -110,47 +102,72 @@ public class GuardianRangedAttackGoal extends Goal {
         // Смена цели — новый бой, рабочий рубеж достигается заново.
         if (this.standoffTarget != this.target) {
             this.standoffTarget = this.target;
-            this.reachedStandoff = false;
+            this.guardian.resetStandoff();
         }
 
-        if (distance < GuardianTuning.IDEAL_MIN_DISTANCE) {
-            // Слишком близко — отходим. Точка отхода привязана к врагу, чтобы
-            // маршрут не пересчитывался каждый тик.
-            Vec3 away = this.guardian.position().subtract(this.target.position());
-            if (away.lengthSqr() < 1.0E-6D) {
+        if (this.guardian.isStandoffReached()) {
+            // Рубеж занят. Сближаться больше нельзя — иначе выходят качели
+            // «приблизился — отошёл — приблизился». Держим занятую позицию.
+            if (distance < GuardianTuning.IDEAL_MIN_DISTANCE) {
+                this.retreatToStandoff();
                 return;
             }
-            away = away.normalize();
-
-            Vec3 fleePoint = this.target.position()
-                    .add(away.scale(GuardianTuning.IDEAL_MIN_DISTANCE + 2.0D));
-
-            this.guardian.navigateTo(fleePoint.x, this.target.getY(), fleePoint.z, GuardianTuning.NAV_SPEED);
-            this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, away);
+            // Враг на достаточном расстоянии (или отошёл совсем) — стоим и стреляем.
+            this.guardian.stopHorizontalMovement();
             return;
         }
 
-        if (!this.reachedStandoff) {
-            if (distance > GuardianTuning.IDEAL_MAX_DISTANCE) {
-                // Ещё не вышли на рабочую дистанцию — сближаемся по маршруту.
-                // Это происходит один раз за бой: дальше страж держит занятую
-                // позицию и не лезет обратно, даже если враг отошёл.
-                Vec3 toTarget = this.target.position().subtract(this.guardian.position());
-                if (toTarget.lengthSqr() < 1.0E-6D) {
-                    return;
-                }
-                toTarget = toTarget.normalize();
-
-                this.guardian.navigateTo(this.target.getX(), this.target.getY(), this.target.getZ(),
-                        GuardianTuning.NAV_SPEED);
-                this.guardian.moveAlongPath(GuardianTuning.ADVANCE_SPEED, toTarget);
+        if (distance > GuardianTuning.IDEAL_MAX_DISTANCE) {
+            // Ещё не вышли на рабочую дистанцию — сближаемся по маршруту.
+            // Это происходит один раз за бой: дальше страж держит занятую
+            // позицию и не лезет обратно, даже если враг отошёл.
+            Vec3 toTarget = this.target.position().subtract(this.guardian.position());
+            if (toTarget.lengthSqr() < 1.0E-6D) {
                 return;
             }
-            // Дошли до рабочей дистанции — с этого момента только отходим.
-            this.reachedStandoff = true;
+            toTarget = toTarget.normalize();
+
+            this.guardian.navigateTo(this.target.getX(), this.target.getY(), this.target.getZ(),
+                    GuardianTuning.NAV_SPEED);
+            this.guardian.moveAlongPath(GuardianTuning.ADVANCE_SPEED, toTarget);
+            return;
         }
 
-        // Рабочий рубеж — стоим и стреляем.
+        // Дошли до рабочей дистанции — занимаем рубеж и запоминаем его точку.
+        this.guardian.setStandoffReached(this.guardian.position());
         this.guardian.stopHorizontalMovement();
+    }
+
+    /**
+     * Отход от подошедшего вплотную врага.
+     *
+     * <p>Цель отхода — <b>занятый рубеж</b>, а не позиция врага: якорь стоит в мире,
+     * поэтому маршрут стабилен (не пересчитывается каждый тик) и страж не «танцует»
+     * на месте. Если рубеж недостижим (враг стоит прямо на нём), отходим прочь
+     * от врага, пока не восстановится рабочая дистанция.
+     */
+    private void retreatToStandoff() {
+        Vec3 anchor = this.guardian.getStandoffAnchor();
+        if (anchor != null) {
+            double dx = anchor.x - this.guardian.getX();
+            double dz = anchor.z - this.guardian.getZ();
+            double anchorDistSq = dx * dx + dz * dz;
+            if (anchorDistSq > 1.0D) {
+                Vec3 toAnchor = new Vec3(dx, 0.0D, dz).normalize();
+                this.guardian.navigateTo(anchor.x, anchor.y, anchor.z, GuardianTuning.NAV_SPEED);
+                this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, toAnchor);
+                return;
+            }
+        }
+
+        // Рубеж недостижим — отходим просто от врага.
+        Vec3 away = this.guardian.position().subtract(this.target.position());
+        if (away.lengthSqr() < 1.0E-6D) {
+            return;
+        }
+        away = away.normalize();
+        Vec3 fleePoint = this.guardian.position().add(away.scale(2.0D));
+        this.guardian.navigateTo(fleePoint.x, this.guardian.getY(), fleePoint.z, GuardianTuning.NAV_SPEED);
+        this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, away);
     }
 }

@@ -184,6 +184,27 @@ public class BaseGuardianEntity extends PathfinderMob {
     /** Сколько тиков ещё актуальна точка сбора. */
     private int rallyTimer = 0;
 
+    // ==================== Рабочий рубеж ====================
+
+    /**
+     * Занят ли рабочий рубеж.
+     *
+     * <p>Смысл тот же, что и у одноимённого флага в голе, но состояние переживает
+     * перезапуск гола (смена состояний {@code MELEE ↔ RANGED}) — из-за чего раньше
+     * страж терял достигнутый рубеж и снова сближался с врагом.
+     */
+    private boolean standoffReached = false;
+
+    /**
+     * Мировая позиция занятого рубежа.
+     *
+     * <p>Отход считается от этой точки, а не от позиции врага: якорь стоит на месте,
+     * поэтому маршрут не пересчитывается каждый тик и страж не «танцует» на рубеже.
+     * Позже этот якорь заменит настоящий пост лагеря.
+     */
+    @Nullable
+    private Vec3 standoffAnchor = null;
+
     /**
      * Высота глаз стража.
      *
@@ -253,6 +274,46 @@ public class BaseGuardianEntity extends PathfinderMob {
         this.targetSelector.addGoal(1, new GuardianTargetGoal(this));
     }
 
+    // ==================== Рабочий рубеж ====================
+
+    /**
+     * Занят ли рабочий рубеж.
+     *
+     * <p>Флаг живёт в сущности, а не в голе: переключение состояний
+     * {@code MELEE ↔ RANGED} перезапускает боевой гол, и если бы флаг остался в голе,
+     * страж каждый раз «забывал» достигнутый рубеж и снова сближался — отсюда
+     * качели «приблизился — отошёл — приблизился».
+     */
+    public boolean isStandoffReached() {
+        return this.standoffReached;
+    }
+
+    /**
+     * Пометить рубеж занятым и запомнить его позицию.
+     *
+     * @param anchor мировая позиция рубежа
+     */
+    public void setStandoffReached(Vec3 anchor) {
+        this.standoffReached = true;
+        this.standoffAnchor = anchor;
+    }
+
+    /**
+     * Мировая позиция занятого рубежа.
+     *
+     * @return точка рубежа или {@code null}, если рубеж не занят
+     */
+    @Nullable
+    public Vec3 getStandoffAnchor() {
+        return this.standoffAnchor;
+    }
+
+    /** Забыть рубеж — следующий бой начнётся со сближения. */
+    public void resetStandoff() {
+        this.standoffReached = false;
+        this.standoffAnchor = null;
+    }
+
     // ==================== Состояние ====================
 
     public GuardianState getAIState() {
@@ -296,6 +357,8 @@ public class BaseGuardianEntity extends PathfinderMob {
                 this.setAIState(GuardianState.IDLE);
                 this.getNavigation().stop();
             }
+            // Цели нет — рубеж больше не актуален.
+            this.resetStandoff();
             return;
         }
 
@@ -320,6 +383,12 @@ public class BaseGuardianEntity extends PathfinderMob {
             // Старый путь навигации может тянуть моба в другую сторону — гасим его.
             this.getNavigation().stop();
             this.resetChargeTime();
+            // Уход в панику или в покой — новый бой, рабочий рубеж надо занять заново.
+            // Переход MELEE ↔ RANGED рубеж НЕ сбрасывает: именно из-за этого
+            // страж после ближнего боя снова лезёл к врагу и «качели».
+            if (next == GuardianState.PANIC || next == GuardianState.IDLE) {
+                this.resetStandoff();
+            }
         }
     }
 
@@ -1148,6 +1217,15 @@ public class BaseGuardianEntity extends PathfinderMob {
         tag.putInt("BreadCooldown", this.breadCooldown);
         tag.putBoolean("Eating", this.eating);
         tag.putInt("RallyTimer", this.rallyTimer);
+        tag.putBoolean("Standoff", this.standoffReached);
+        if (this.standoffAnchor != null) {
+            tag.putBoolean("HasStandoffAnchor", true);
+            tag.putDouble("StandoffX", this.standoffAnchor.x);
+            tag.putDouble("StandoffY", this.standoffAnchor.y);
+            tag.putDouble("StandoffZ", this.standoffAnchor.z);
+        } else {
+            tag.putBoolean("HasStandoffAnchor", false);
+        }
 
         if (this.rallyPoint != null) {
             tag.putBoolean("HasRally", true);
@@ -1167,6 +1245,13 @@ public class BaseGuardianEntity extends PathfinderMob {
         this.breadCooldown = tag.getInt("BreadCooldown");
         this.eating = tag.getBoolean("Eating");
         this.rallyTimer = tag.getInt("RallyTimer");
+        this.standoffReached = tag.getBoolean("Standoff");
+        if (tag.getBoolean("HasStandoffAnchor")) {
+            this.standoffAnchor = new Vec3(tag.getDouble("StandoffX"),
+                    tag.getDouble("StandoffY"), tag.getDouble("StandoffZ"));
+        } else {
+            this.standoffAnchor = null;
+        }
 
         if (tag.getBoolean("HasRally")) {
             this.rallyPoint = new BlockPos(tag.getInt("RallyX"), tag.getInt("RallyY"), tag.getInt("RallyZ"));

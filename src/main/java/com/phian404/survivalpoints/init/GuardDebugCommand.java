@@ -130,6 +130,19 @@ public class GuardDebugCommand {
                 .append(" §7hits=").append(guard.getArrowsHit())
                 .append(" §7dmg=").append(String.format("%.1f", guard.getDamageDealt()));
 
+        // Рабочий рубеж: reached=true — страж рубеж занял и больше за врагом
+        // не идёт; anchorDist — насколько он сейчас от якоря рубежа (в него
+        // возвращается, если враг подошёл вплотную).
+        Vec3 anchor = guard.getStandoffAnchor();
+        sb.append("\n   §7standoff=§f").append(guard.isStandoffReached());
+        if (anchor != null) {
+            double ax = anchor.x - guard.getX();
+            double az = anchor.z - guard.getZ();
+            sb.append(" §7anchorDist=").append(String.format("%.1f", Math.sqrt(ax * ax + az * az)));
+        } else {
+            sb.append(" §7anchorDist=§7-");
+        }
+
         // Состояние перемещения
         sb.append("\n   §7charge=").append(guard.getCrossbowChargeTime())
                 .append(" §7shotDelay=").append(guard.getShotDelay())
