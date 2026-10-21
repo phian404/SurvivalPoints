@@ -87,14 +87,18 @@ public class GuardianMeleeAttackGoal extends Goal {
             // Взмах. Здесь же разворачиваемся к врагу и заносим меч.
             this.guardian.getNavigation().stop();
             this.guardian.faceTarget(this.target);
+
+            if (this.windup == 0) {
+                // Анимацию запускаем В НАЧАЛЕ замаха, а не в момент удара: тогда
+                // видно, как рука заносится, и удар приходит в конце движения.
+                // Раньше анимация стартовала вместе с ударом — выглядело лагом.
+                this.guardian.startMeleeSwing();
+            }
             this.windup++;
 
             if (this.attackCooldown <= 0 && this.windup >= GuardianTuning.MELEE_WINDUP_TICKS) {
                 this.guardian.doHurtTarget(this.target);
                 this.guardian.swing(InteractionHand.MAIN_HAND);
-                // Свой счётчик взмаха: он синхронизируется с клиентом, поэтому
-                // анимация видна всегда (ванильный пакет анимации мог не дойти).
-                this.guardian.startMeleeSwing();
                 this.attackCooldown = GuardianTuning.MELEE_ATTACK_COOLDOWN;
                 this.windup = 0;
             }

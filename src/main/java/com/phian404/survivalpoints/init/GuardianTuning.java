@@ -221,10 +221,19 @@ public final class GuardianTuning {
     // ==================== Скорости ====================
 
     /** Скорость отхода в панике (вектор скорости, а не множитель скорости моба). */
-    public static final double RETREAT_SPEED = 0.32D;
+    public static final double RETREAT_SPEED = 0.45D;
 
     /** Скорость сближения с врагом. */
-    public static final double ADVANCE_SPEED = 0.28D;
+    public static final double ADVANCE_SPEED = 0.4D;
+
+    /**
+     * Насколько далеко страж может отойти от своего рубежа.
+     *
+     * <p>Пятиться можно сколько угодно — но тогда страж «убегает» за карту.
+     * Предел считается от якоря рубежа: страж пятится, удерживая дистанцию,
+     * но не покидает окрестности своей позиции.
+     */
+    public static final double RETREAT_MAX_BACKSTEP = 12.0D;
 
     /** Скорость перемещения союзника к точке сбора (прямое движение, блоков за тик). */
     public static final double RALLY_SPEED = 0.30D;
@@ -273,7 +282,7 @@ public final class GuardianTuning {
      * (см. {@code moveDirectly}): живой моб отталкивается сразу, и ждать
      * разгона нельзя — отходящий страж не успевает отойти от врага.
      */
-    public static final double MOVE_ACCELERATION = 0.08D;
+    public static final double MOVE_ACCELERATION = 0.25D;
 
     /** Кулдаун зова о помощи (чтобы не спамить). */
     public static final int HELP_SCREAM_COOLDOWN = 200;

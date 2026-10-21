@@ -106,11 +106,17 @@ public class GuardianRangedAttackGoal extends Goal {
         }
 
         if (this.guardian.isStandoffReached()) {
-            // Рубеж занят: страж стоит на месте и стреляет. За врагом не идёт
-            // и НЕ отходит — отступление есть только в режиме паники
-            // (см. GuardianRetreatGoal). Раньше здесь был отход к якорю, и вместе
-            // с бегом в ближнем бою он давал «качание» туда-сюда.
-            this.guardian.stopHorizontalMovement();
+            // Рубеж занят. Сближаться больше НЕЛЬЗЯ — именно это и давало
+            // «приблизился — отошёл — приблизился»: стоило врагу отойти, и страж
+            // снова к нему подходил. Теперь сближение бывает ровно один раз.
+            //
+            // Но отступать страж по-прежнему должен: если враг подошёл слишком
+            // близко — пятится, сохраняя дистанцию (лицом к врагу, стреляя).
+            if (distance < GuardianTuning.IDEAL_MIN_DISTANCE) {
+                this.retreatFromTarget();
+                return;
+            }
+            this.holdPosition();
             return;
         }
 
@@ -132,6 +138,51 @@ public class GuardianRangedAttackGoal extends Goal {
 
         // Дошли до рабочей дистанции — занимаем рубеж и запоминаем его точку.
         this.guardian.setStandoffReached(this.guardian.position());
+        this.holdPosition();
+    }
+
+    /**
+     * Стоять на месте: гасим скорость и гасим навигацию.
+     *
+     * <p>Навигацию обязательно сбрасываем: иначе маршрут (а с ним прыжки
+     * ванильного MoveControl) продолжает вести стража по старой цели — он
+     * подпрыгивал и «зависал» в воздухе, хотя стоять должен был на месте.
+     */
+    private void holdPosition() {
         this.guardian.stopHorizontalMovement();
+        this.guardian.resetNavigationTarget();
+    }
+
+    /**
+     * Отход от подошедшего вплотную врага.
+     *
+     * <p>Пятится страж ОТ врага (а не к якорю): якорь — это точка, где страж
+     * стоял, и привязка к ней давала «отход на 2 блока, зомби подошёл, снова
+     * отход» — дёрганье. Отход непрерывный, поэтому пятится плавно.
+     *
+     * <p>Предел отхода — якорь плюс {@link GuardianTuning#RETREAT_MAX_BACKSTEP}:
+     * иначе страж «убегает» за карту.
+     */
+    private void retreatFromTarget() {
+        Vec3 away = this.guardian.position().subtract(this.target.position());
+        if (away.lengthSqr() < 1.0E-6D) {
+            this.holdPosition();
+            return;
+        }
+        away = away.normalize();
+
+        Vec3 anchor = this.guardian.getStandoffAnchor();
+        if (anchor != null) {
+            double fromAnchor = this.guardian.position().subtract(anchor).length();
+            if (fromAnchor > GuardianTuning.RETREAT_MAX_BACKSTEP) {
+                // Упёрлись в предел отхода — дальше не пятимся, стоим лицом к врагу.
+                this.holdPosition();
+                return;
+            }
+        }
+
+        Vec3 fleePoint = this.guardian.position().add(away.scale(2.0D));
+        this.guardian.navigateTo(fleePoint.x, this.guardian.getY(), fleePoint.z, GuardianTuning.NAV_SPEED);
+        this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, away);
     }
 }
