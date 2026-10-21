@@ -82,9 +82,16 @@ public class BaseGuardianEntity extends PathfinderMob {
     private static final EntityDataAccessor<Float> DATA_HEAD_YAW =
             SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.FLOAT);
 
-    /** Сколько тиков осталось анимации взмаха мечом (0 — взмаха нет). */
-    private static final EntityDataAccessor<Byte> DATA_SWING_TIME =
-            SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.BYTE);
+    /**
+     * Тик, в котором начался взмах мечом (0 — взмаха не было).
+     *
+     * <p>Именно тик, а не остаток счётчика: клиент сам считает фазу взмаха
+     * по времени, и анимация получается плавной. Счётчик, обновляемый раз
+     * в тик на сервере, приходил на клиент пачками — движение выглядело
+     * дёрганным и отрывистым.
+     */
+    private static final EntityDataAccessor<Integer> DATA_SWING_START =
+            SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.INT);
 
     /**
      * Сглаженный курс тела.
@@ -160,8 +167,6 @@ public class BaseGuardianEntity extends PathfinderMob {
      */
     private int shotDelay = 0;
 
-    /** Сколько тиков осталось анимации взмаха мечом. */
-    private int meleeSwingTime = 0;
     private int helpScreamCooldown = 0;
     private int swingSoundCooldown = 0;
     private int breadCooldown = 0;
@@ -257,7 +262,7 @@ public class BaseGuardianEntity extends PathfinderMob {
         this.entityData.define(DATA_AI_STATE, (byte) GuardianState.IDLE.ordinal());
         this.entityData.define(DATA_HEAD_PITCH, 0.0F);
         this.entityData.define(DATA_HEAD_YAW, 0.0F);
-        this.entityData.define(DATA_SWING_TIME, (byte) 0);
+        this.entityData.define(DATA_SWING_START, 0);
     }
 
     @Override
@@ -556,17 +561,16 @@ public class BaseGuardianEntity extends PathfinderMob {
     /**
      * Запустить анимацию взмаха мечом.
      *
-     * <p>Счётчик синхронизируется с клиентом, поэтому анимация видна всегда —
-     * в отличие от ванильного {@code swing()}, который зависит от пакета анимации.
+     * <p>Синхронизируется ТИК начала взмаха: клиент считает фазу сам, по
+     * времени, поэтому движение руки плавное, без ступенек.
      */
     public void startMeleeSwing() {
-        this.meleeSwingTime = GuardianTuning.MELEE_SWING_ANIM_TICKS;
-        this.entityData.set(DATA_SWING_TIME, (byte) this.meleeSwingTime);
+        this.entityData.set(DATA_SWING_START, this.tickCount);
     }
 
-    /** Сколько тиков осталось анимации взмаха (0 — взмаха нет). */
-    public int getSyncedSwingTime() {
-        return this.entityData.get(DATA_SWING_TIME);
+    /** Тик начала взмаха (0 — взмаха не было). */
+    public int getSyncedSwingStart() {
+        return this.entityData.get(DATA_SWING_START);
     }
 
     private void applyFacing() {
@@ -584,13 +588,6 @@ public class BaseGuardianEntity extends PathfinderMob {
         if (this.swingSoundCooldown > 0) this.swingSoundCooldown--;
         if (this.breadCooldown > 0) this.breadCooldown--;
 
-        // Анимация взмаха мечом: считаем сами и синхронизируем с клиентом.
-        // Ванильный swing() на клиенте может не дойти (пакет анимации), а своё
-        // значение в SynchedEntityData доходит всегда.
-        if (this.meleeSwingTime > 0) {
-            this.meleeSwingTime--;
-            this.entityData.set(DATA_SWING_TIME, (byte) this.meleeSwingTime);
-        }
 
         if (this.rallyTimer > 0) {
             this.rallyTimer--;

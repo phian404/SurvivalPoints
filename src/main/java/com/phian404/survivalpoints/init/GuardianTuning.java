@@ -224,7 +224,7 @@ public final class GuardianTuning {
     public static final double RETREAT_SPEED = 0.45D;
 
     /** Скорость сближения с врагом. */
-    public static final double ADVANCE_SPEED = 0.4D;
+    public static final double ADVANCE_SPEED = 0.28D;
 
     /**
      * Насколько далеко страж может отойти от своего рубежа.
@@ -282,7 +282,7 @@ public final class GuardianTuning {
      * (см. {@code moveDirectly}): живой моб отталкивается сразу, и ждать
      * разгона нельзя — отходящий страж не успевает отойти от врага.
      */
-    public static final double MOVE_ACCELERATION = 0.25D;
+    public static final double MOVE_ACCELERATION = 0.04D;
 
     /** Кулдаун зова о помощи (чтобы не спамить). */
     public static final int HELP_SCREAM_COOLDOWN = 200;

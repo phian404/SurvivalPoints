@@ -111,20 +111,17 @@ public class ModEntityRenderers {
             super.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
 
             if (currentCombatState == BaseGuardianEntity.CombatState.MELEE) {
-                // Фаза взмаха. Берём свой синхронизированный счётчик (он доходит
-                // всегда) и на всякий случай ванильный getAttackAnim.
-                //
-                // Раньше здесь стояли жёсткие обнуления yRot/zRot — они затирали
-                // ванильную анимацию взмаха, и удар выглядел как мгновенная
-                // смена позы без движения руки.
-                int swingLeft = entity.getSyncedSwingTime();
-                float phase = swingLeft > 0
-                        ? 1.0F - (float) swingLeft / (float) GuardianTuning.MELEE_SWING_ANIM_TICKS
-                        : entity.getAttackAnim(ageInTicks);
+                // Фаза взмаха считается по ВРЕМЕНИ: клиент сам выводит её из
+                // тика начала взмаха (он синхронизирован). Раньше фаза бралась
+                // из счётчика, который обновлялся раз в тик на сервере и
+                // приходил на клиент пачками — рука дёргалась ступеньками.
+                int swingStart = entity.getSyncedSwingStart();
+                float phase = (entity.tickCount - swingStart)
+                        / (float) GuardianTuning.MELEE_SWING_ANIM_TICKS;
 
-                if (phase > 0.0F) {
-                    // Рука идёт вперёд-вниз и возвращается: дуга через синус.
-                    float swing = (float) Math.sin(phase * Math.PI);
+                if (phase > 0.0F && phase < 1.0F) {
+                    // Плавный подъём и такое же плавное возвращение (ease-in-out).
+                    float swing = 0.5F - 0.5F * (float) Math.cos(phase * (float) (Math.PI * 2.0));
                     this.rightArm.xRot = -0.2F - swing * 1.6F;
                     this.rightArm.yRot = -0.35F * swing;
                     this.rightArm.zRot = 0.3F * swing;
