@@ -1,0 +1,7 @@
+{
+    "java.compile.nullAnalysis.mode": "disabled",
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.debug.settings.console": "internalConsole",
+    "java.debug.settings.timeout": 300000,
+    "java.debug.settings.shortenCommandLine": "argfile"
+}
