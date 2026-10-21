@@ -29,3 +29,8 @@ forge*changelog.txt
 Thumbs.db
 logs/
 crash-reports/
+hs_err_pid*.log
+replay_pid*.log
+
+# Бэкапы: история изменений ведётся в git, папка нужна только для черновых экспериментов
+backups/
