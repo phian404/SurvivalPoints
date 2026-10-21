@@ -82,6 +82,10 @@ public class BaseGuardianEntity extends PathfinderMob {
     private static final EntityDataAccessor<Float> DATA_HEAD_YAW =
             SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.FLOAT);
 
+    /** Сколько тиков осталось анимации взмаха мечом (0 — взмаха нет). */
+    private static final EntityDataAccessor<Byte> DATA_SWING_TIME =
+            SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.BYTE);
+
     /**
      * Сглаженный курс тела.
      *
@@ -155,6 +159,9 @@ public class BaseGuardianEntity extends PathfinderMob {
      * выстрелил. Полсекунды наводки на цель выглядит естественнее.
      */
     private int shotDelay = 0;
+
+    /** Сколько тиков осталось анимации взмаха мечом. */
+    private int meleeSwingTime = 0;
     private int helpScreamCooldown = 0;
     private int swingSoundCooldown = 0;
     private int breadCooldown = 0;
@@ -250,6 +257,7 @@ public class BaseGuardianEntity extends PathfinderMob {
         this.entityData.define(DATA_AI_STATE, (byte) GuardianState.IDLE.ordinal());
         this.entityData.define(DATA_HEAD_PITCH, 0.0F);
         this.entityData.define(DATA_HEAD_YAW, 0.0F);
+        this.entityData.define(DATA_SWING_TIME, (byte) 0);
     }
 
     @Override
@@ -545,6 +553,22 @@ public class BaseGuardianEntity extends PathfinderMob {
         return this.entityData.get(DATA_HEAD_YAW);
     }
 
+    /**
+     * Запустить анимацию взмаха мечом.
+     *
+     * <p>Счётчик синхронизируется с клиентом, поэтому анимация видна всегда —
+     * в отличие от ванильного {@code swing()}, который зависит от пакета анимации.
+     */
+    public void startMeleeSwing() {
+        this.meleeSwingTime = GuardianTuning.MELEE_SWING_ANIM_TICKS;
+        this.entityData.set(DATA_SWING_TIME, (byte) this.meleeSwingTime);
+    }
+
+    /** Сколько тиков осталось анимации взмаха (0 — взмаха нет). */
+    public int getSyncedSwingTime() {
+        return this.entityData.get(DATA_SWING_TIME);
+    }
+
     private void applyFacing() {
         if (!this.shouldFaceTarget()) {
             return;
@@ -559,6 +583,14 @@ public class BaseGuardianEntity extends PathfinderMob {
         if (this.helpScreamCooldown > 0) this.helpScreamCooldown--;
         if (this.swingSoundCooldown > 0) this.swingSoundCooldown--;
         if (this.breadCooldown > 0) this.breadCooldown--;
+
+        // Анимация взмаха мечом: считаем сами и синхронизируем с клиентом.
+        // Ванильный swing() на клиенте может не дойти (пакет анимации), а своё
+        // значение в SynchedEntityData доходит всегда.
+        if (this.meleeSwingTime > 0) {
+            this.meleeSwingTime--;
+            this.entityData.set(DATA_SWING_TIME, (byte) this.meleeSwingTime);
+        }
 
         if (this.rallyTimer > 0) {
             this.rallyTimer--;

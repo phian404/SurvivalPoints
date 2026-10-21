@@ -84,61 +84,36 @@ public class GuardianMeleeAttackGoal extends Goal {
         double distance = this.guardian.distanceTo(this.target);
 
         if (distance <= GuardianTuning.MELEE_ENTER_DISTANCE) {
-            // Взмах. Здесь же разворачиваемся к врагу.
+            // Взмах. Здесь же разворачиваемся к врагу и заносим меч.
             this.guardian.getNavigation().stop();
             this.guardian.faceTarget(this.target);
             this.windup++;
 
-            // Вплотную — отходим на занятый рубеж, продолжая бить.
-            if (distance < GuardianTuning.MELEE_BACKSTEP_DISTANCE) {
-                this.retreatToStandoff();
-            }
-
             if (this.attackCooldown <= 0 && this.windup >= GuardianTuning.MELEE_WINDUP_TICKS) {
                 this.guardian.doHurtTarget(this.target);
                 this.guardian.swing(InteractionHand.MAIN_HAND);
+                // Свой счётчик взмаха: он синхронизируется с клиентом, поэтому
+                // анимация видна всегда (ванильный пакет анимации мог не дойти).
+                this.guardian.startMeleeSwing();
                 this.attackCooldown = GuardianTuning.MELEE_ATTACK_COOLDOWN;
                 this.windup = 0;
             }
             return;
         }
 
-        // Слишком далеко для удара. Раньше здесь страж ШЁЛ к врагу через навигацию —
-        // и получался «пинг-понг»: зомби отходит → страж догоняет → зомби снова
-        // подходит → снова MELEE. Теперь страж стоит на месте и ждёт: рубеж не
-        // нарушается, поведение выглядит как «держит позицию».
-        this.guardian.getNavigation().stop();
+        // В ближнем бою страж ДЕРЁТСЯ, а не отходит: подходит к врагу и бьёт.
+        // Отступление есть только в режиме паники (см. GuardianRetreatGoal) —
+        // по требованию владельца: «раз перешёл на ближний бой — пусть дерётся».
         this.guardian.faceTarget(this.target);
-        this.guardian.stopHorizontalMovement();
-    }
 
-    /**
-     * Отход на занятый рубеж.
-     *
-     * <p>Точка отхода — якорь рубежа (она в мире и не уезжает за врагом), поэтому
-     * маршрут стабилен. Если якорь недостижим, отходим просто прочь от врага.
-     */
-    private void retreatToStandoff() {
-        Vec3 anchor = this.guardian.getStandoffAnchor();
-        if (anchor != null) {
-            double dx = anchor.x - this.guardian.getX();
-            double dz = anchor.z - this.guardian.getZ();
-            double anchorDistSq = dx * dx + dz * dz;
-            if (anchorDistSq > 1.0D) {
-                Vec3 toAnchor = new Vec3(dx, 0.0D, dz).normalize();
-                this.guardian.navigateTo(anchor.x, anchor.y, anchor.z, GuardianTuning.NAV_SPEED);
-                this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, toAnchor);
-                return;
-            }
-        }
-
-        Vec3 away = this.guardian.position().subtract(this.target.position());
-        if (away.lengthSqr() < 1.0E-6D) {
+        Vec3 toTarget = this.target.position().subtract(this.guardian.position());
+        if (toTarget.lengthSqr() < 1.0E-6D) {
             return;
         }
-        away = away.normalize();
-        Vec3 fleePoint = this.guardian.position().add(away.scale(2.0D));
-        this.guardian.navigateTo(fleePoint.x, this.guardian.getY(), fleePoint.z, GuardianTuning.NAV_SPEED);
-        this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, away);
+        toTarget = toTarget.normalize();
+
+        this.guardian.navigateTo(this.target.getX(), this.target.getY(), this.target.getZ(),
+                GuardianTuning.NAV_SPEED);
+        this.guardian.moveAlongPath(GuardianTuning.MELEE_SPEED, toTarget);
     }
 }

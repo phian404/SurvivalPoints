@@ -2,6 +2,7 @@ package com.phian404.survivalpoints.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.init.GuardianTuning;
 import com.phian404.survivalpoints.init.ModEntities;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -110,19 +111,39 @@ public class ModEntityRenderers {
             super.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
 
             if (currentCombatState == BaseGuardianEntity.CombatState.MELEE) {
-                if (limbSwingAmount > 0.01F) {
-                    float armSwing = (float) Math.sin(limbSwing * 0.66624F) * 1.4F * limbSwingAmount;
-                    this.rightArm.xRot += armSwing * 1.5F; // <-- ИЗМЕНЕНО ЗДЕСЬ: Усилили амплитуду взмаха
-                    this.rightArm.zRot = -armSwing * 0.5F; // <-- ИЗМЕНЕНО ЗДЕСЬ: Добавили легкий разворот при взмахе
-                    this.leftArm.xRot -= armSwing;
+                // Фаза взмаха. Берём свой синхронизированный счётчик (он доходит
+                // всегда) и на всякий случай ванильный getAttackAnim.
+                //
+                // Раньше здесь стояли жёсткие обнуления yRot/zRot — они затирали
+                // ванильную анимацию взмаха, и удар выглядел как мгновенная
+                // смена позы без движения руки.
+                int swingLeft = entity.getSyncedSwingTime();
+                float phase = swingLeft > 0
+                        ? 1.0F - (float) swingLeft / (float) GuardianTuning.MELEE_SWING_ANIM_TICKS
+                        : entity.getAttackAnim(ageInTicks);
+
+                if (phase > 0.0F) {
+                    // Рука идёт вперёд-вниз и возвращается: дуга через синус.
+                    float swing = (float) Math.sin(phase * Math.PI);
+                    this.rightArm.xRot = -0.2F - swing * 1.6F;
+                    this.rightArm.yRot = -0.35F * swing;
+                    this.rightArm.zRot = 0.3F * swing;
+                    this.leftArm.xRot = -0.45F * swing;
+                    this.leftArm.yRot = 0.0F;
+                    this.leftArm.zRot = 0.0F;
                 } else {
-                    this.rightArm.xRot += 0.1F;
-                    this.leftArm.xRot += 0.1F;
+                    if (limbSwingAmount > 0.01F) {
+                        float armSwing = (float) Math.sin(limbSwing * 0.66624F) * 1.4F * limbSwingAmount;
+                        this.rightArm.xRot += armSwing * 1.5F;
+                        this.rightArm.zRot = -armSwing * 0.5F;
+                        this.leftArm.xRot -= armSwing;
+                    } else {
+                        this.rightArm.xRot += 0.1F;
+                        this.leftArm.xRot += 0.1F;
+                    }
+                    this.rightArm.xRot -= 0.2F;
+                    this.leftArm.xRot -= 0.1F;
                 }
-                this.rightArm.xRot -= 0.2F; // <-- ИЗМЕНЕНО ЗДЕСЬ: Наклоняем руку вперед
-                this.rightArm.yRot = 0.0F;  // <-- ИЗМЕНЕНО ЗДЕСЬ: Убираем отвод в сторону
-                this.rightArm.zRot = 0.0F;  // <-- ИЗМЕНЕНО ЗДЕСЬ: Сбрасываем наклон
-                this.leftArm.xRot -= 0.1F; // <-- ИЗМЕНЕНО ЗДЕСЬ: Наклоняем руку вперед
             }
         }
     }
