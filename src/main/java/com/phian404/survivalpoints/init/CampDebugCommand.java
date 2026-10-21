@@ -13,6 +13,7 @@ import com.phian404.survivalpoints.camp.CampTuning;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
@@ -63,7 +64,11 @@ public class CampDebugCommand {
                                                 IntegerArgumentType.getInteger(ctx, "radius"), true)))))
                 .then(Commands.literal("remove")
                         .then(Commands.argument("id", StringArgumentType.word())
-                                .executes(ctx -> remove(ctx, StringArgumentType.getString(ctx, "id"))))));
+                                .executes(ctx -> remove(ctx, StringArgumentType.getString(ctx, "id")))))
+                .then(Commands.literal("show")
+                        .executes(ctx -> show(ctx, null))
+                        .then(Commands.argument("id", StringArgumentType.word())
+                                .executes(ctx -> show(ctx, StringArgumentType.getString(ctx, "id"))))));
     }
 
     // ==================== Команды ====================
@@ -165,6 +170,67 @@ public class CampDebugCommand {
         data.removeCamp(record.getId());
         ctx.getSource().sendSuccess(() -> Component.literal("§aЛагерь «" + record.getName() + "» удалён"), true);
         return 1;
+    }
+
+    /**
+     * Показать границу лагеря частицами.
+     *
+     * <p>Пока блоков лагеря нет (они появятся в волне 2), границу можно увидеть
+     * только в данных. Частицы рисуют кольцо по радиусу и точки постов — чтобы
+     * было видно, где лагерь находится и где стоят посты.
+     */
+    private static int show(CommandContext<CommandSourceStack> ctx, @Nullable String id) {
+        ServerLevel level = ctx.getSource().getLevel();
+        CampSavedData data = CampManager.data(level);
+
+        CampRecord record;
+        if (id != null) {
+            record = data.getCampByShortId(id);
+        } else {
+            Vec3 pos = ctx.getSource().getPosition();
+            record = CampManager.findCampAt(level,
+                    new BlockPos(Mth.floor(pos.x), Mth.floor(pos.y), Mth.floor(pos.z)));
+            if (record == null) {
+                // Ничего не нашли рядом — показываем все лагеря измерения.
+                for (CampRecord camp : data.getCamps()) {
+                    drawCamp(level, camp);
+                }
+                ctx.getSource().sendSuccess(() -> Component.literal("§7Показаны все лагеря измерения"), false);
+                return data.getCampCount();
+            }
+        }
+
+        if (record == null) {
+            ctx.getSource().sendFailure(Component.literal("§cЛагерь не найден"));
+            return 0;
+        }
+
+        drawCamp(level, record);
+        ctx.getSource().sendSuccess(() -> Component.literal("§aГраница лагеря «" + record.getName()
+                + "» показана частицами §7(блоков ещё нет — это волна 2)"), false);
+        return 1;
+    }
+
+    private static void drawCamp(ServerLevel level, CampRecord record) {
+        BlockPos center = record.getCenter();
+        int radius = record.getRadius();
+        double y = center.getY() + 1.0D;
+
+        // Кольцо по периметру.
+        int steps = Math.max(32, radius * 4);
+        for (int i = 0; i < steps; i++) {
+            double angle = (Math.PI * 2.0D) * i / steps;
+            double x = center.getX() + 0.5D + Math.cos(angle) * radius;
+            double z = center.getZ() + 0.5D + Math.sin(angle) * radius;
+            level.sendParticles(ParticleTypes.END_ROD, x, y, z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+        }
+
+        // Посты — отдельным цветом.
+        for (CampPost post : record.getPosts()) {
+            BlockPos pos = post.getPos();
+            level.sendParticles(ParticleTypes.SOUL, pos.getX() + 0.5D, pos.getY() + 1.2D,
+                    pos.getZ() + 0.5D, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+        }
     }
 
     /** Лагерь в точке (для будущих команд и проверок). */

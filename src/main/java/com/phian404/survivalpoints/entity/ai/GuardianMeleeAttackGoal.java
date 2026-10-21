@@ -5,6 +5,7 @@ import com.phian404.survivalpoints.init.GuardianTuning;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
 
@@ -21,6 +22,15 @@ public class GuardianMeleeAttackGoal extends Goal {
     private final BaseGuardianEntity guardian;
     private LivingEntity target;
     private int attackCooldown = 0;
+
+    /**
+     * Замах: сколько тиков страж заносит меч перед ударом.
+     *
+     * <p>Без этого удар прилетал в тот же тик, когда меч только появился в руке:
+     * выглядело как «мгновенный удар». Теперь страж сначала разворачивается и
+     * заносит оружие, и только потом бьёт.
+     */
+    private int windup = 0;
 
     public GuardianMeleeAttackGoal(BaseGuardianEntity guardian) {
         this.guardian = guardian;
@@ -53,6 +63,7 @@ public class GuardianMeleeAttackGoal extends Goal {
     @Override
     public void start() {
         this.attackCooldown = 0;
+        this.windup = 0;
     }
 
     @Override
@@ -76,16 +87,58 @@ public class GuardianMeleeAttackGoal extends Goal {
             // Взмах. Здесь же разворачиваемся к врагу.
             this.guardian.getNavigation().stop();
             this.guardian.faceTarget(this.target);
+            this.windup++;
 
-            if (this.attackCooldown <= 0) {
+            // Вплотную — отходим на занятый рубеж, продолжая бить.
+            if (distance < GuardianTuning.MELEE_BACKSTEP_DISTANCE) {
+                this.retreatToStandoff();
+            }
+
+            if (this.attackCooldown <= 0 && this.windup >= GuardianTuning.MELEE_WINDUP_TICKS) {
                 this.guardian.doHurtTarget(this.target);
                 this.guardian.swing(InteractionHand.MAIN_HAND);
                 this.attackCooldown = GuardianTuning.MELEE_ATTACK_COOLDOWN;
+                this.windup = 0;
             }
-        } else {
-            // Подходим на дистанцию удара через навигацию (обходит препятствия).
-            this.guardian.getNavigation().moveTo(this.target.getX(), this.target.getY(),
-                    this.target.getZ(), GuardianTuning.MELEE_SPEED);
+            return;
         }
+
+        // Слишком далеко для удара. Раньше здесь страж ШЁЛ к врагу через навигацию —
+        // и получался «пинг-понг»: зомби отходит → страж догоняет → зомби снова
+        // подходит → снова MELEE. Теперь страж стоит на месте и ждёт: рубеж не
+        // нарушается, поведение выглядит как «держит позицию».
+        this.guardian.getNavigation().stop();
+        this.guardian.faceTarget(this.target);
+        this.guardian.stopHorizontalMovement();
+    }
+
+    /**
+     * Отход на занятый рубеж.
+     *
+     * <p>Точка отхода — якорь рубежа (она в мире и не уезжает за врагом), поэтому
+     * маршрут стабилен. Если якорь недостижим, отходим просто прочь от врага.
+     */
+    private void retreatToStandoff() {
+        Vec3 anchor = this.guardian.getStandoffAnchor();
+        if (anchor != null) {
+            double dx = anchor.x - this.guardian.getX();
+            double dz = anchor.z - this.guardian.getZ();
+            double anchorDistSq = dx * dx + dz * dz;
+            if (anchorDistSq > 1.0D) {
+                Vec3 toAnchor = new Vec3(dx, 0.0D, dz).normalize();
+                this.guardian.navigateTo(anchor.x, anchor.y, anchor.z, GuardianTuning.NAV_SPEED);
+                this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, toAnchor);
+                return;
+            }
+        }
+
+        Vec3 away = this.guardian.position().subtract(this.target.position());
+        if (away.lengthSqr() < 1.0E-6D) {
+            return;
+        }
+        away = away.normalize();
+        Vec3 fleePoint = this.guardian.position().add(away.scale(2.0D));
+        this.guardian.navigateTo(fleePoint.x, this.guardian.getY(), fleePoint.z, GuardianTuning.NAV_SPEED);
+        this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, away);
     }
 }
