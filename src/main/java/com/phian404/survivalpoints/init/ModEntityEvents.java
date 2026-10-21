@@ -1,11 +1,13 @@
 package com.phian404.survivalpoints.init;
 
+import com.phian404.survivalpoints.camp.CampManager;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -137,5 +139,20 @@ public class ModEntityEvents {
                 && best < monster.distanceToSqr(current) * 0.5D) {
             monster.setTarget(nearest);
         }
+    }
+
+    /**
+     * Тик лагерей.
+     *
+     * <p>Лагеря тикают раз в секунду (не каждый тик): обновляется режим
+     * «день/ночь», зона тревоги и таймеры штата. Свой тик на каждый лагерь
+     * не нужен — состояние лагеря меняется медленно, а лишние тики бьют по TPS.
+     */
+    @SubscribeEvent
+    public static void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) {
+            return;
+        }
+        CampManager.onServerTick(event.getServer());
     }
 }
