@@ -29,6 +29,15 @@ public class ModEntityRenderers {
                     0.5F) {
                     // setupRotations removed to restore interpolation
 
+                    /** Локальное время рендера в тиках (partialTicks копится). */
+                    private float localTime = 0.0F;
+
+                    /** Локальное время, когда начался текущий взмах. */
+                    private float swingStartLocal = -1.0F;
+
+                    /** Последний увиденный серверный тик начала взмаха. */
+                    private int lastSwingStart = -1;
+
                     @Override
                     public ResourceLocation getTextureLocation(BaseGuardianEntity entity) {
                         return ResourceLocation.fromNamespaceAndPath("survivalpoints", "textures/entity/base_guardian.png");
@@ -74,6 +83,27 @@ public class ModEntityRenderers {
                             // поэтому его берём из синхронизированных данных.
                             entity.setXRot(entity.getSyncedHeadPitch());
                         }
+
+                        // --- Фаза взмаха мечом ---
+                        // Считаем её на клиенте по ЛОКАЛЬНОМУ времени. Раньше фаза
+                        // считалась от entity.tickCount, но на клиенте этот счётчик
+                        // для неподвижной сущности НЕ растёт (пакеты движения не
+                        // приходят) — фаза застывала на кадре, а потом прыгала.
+                        this.localTime += partialTicks;
+                        int swingStart = entity.getSyncedSwingStart();
+                        if (swingStart != this.lastSwingStart) {
+                            this.lastSwingStart = swingStart;
+                            this.swingStartLocal = this.localTime;
+                        }
+                        float phase = -1.0F;
+                        if (swingStart > 0) {
+                            phase = (this.localTime - this.swingStartLocal)
+                                    / (float) GuardianTuning.MELEE_SWING_ANIM_TICKS;
+                        }
+                        if (this.getModel() instanceof GuardianModel model) {
+                            model.setSwingPhase(phase);
+                        }
+
                         super.render(entity, entityYaw, partialTicks, pose, buffer, packedLight);
                     }
                 };
@@ -86,8 +116,22 @@ public class ModEntityRenderers {
 
     // GuardianModel class definition
     public static class GuardianModel extends HumanoidModel<BaseGuardianEntity> {
+
+        /** Фаза взмаха мечом (0..1). Отрицательное значение — взмаха нет. */
+        private float swingPhase = -1.0F;
+
         public GuardianModel(net.minecraft.client.model.geom.ModelPart root) {
             super(root);
+        }
+
+        /**
+         * Задать фазу взмаха.
+         *
+         * <p>Фазу считает рендерер по локальному времени — так движение руки
+         * плавное и не зависит от того, как часто приходят сетевые обновления.
+         */
+        public void setSwingPhase(float phase) {
+            this.swingPhase = phase;
         }
 
         @Override
@@ -111,21 +155,17 @@ public class ModEntityRenderers {
             super.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
 
             if (currentCombatState == BaseGuardianEntity.CombatState.MELEE) {
-                // Фаза взмаха считается по ВРЕМЕНИ: клиент сам выводит её из
-                // тика начала взмаха (он синхронизирован). Раньше фаза бралась
-                // из счётчика, который обновлялся раз в тик на сервере и
-                // приходил на клиент пачками — рука дёргалась ступеньками.
-                int swingStart = entity.getSyncedSwingStart();
-                float phase = (entity.tickCount - swingStart)
-                        / (float) GuardianTuning.MELEE_SWING_ANIM_TICKS;
+                // Фаза взмаха приходит из рендерера (считается там по локальному
+                // времени, поэтому рука двигается плавно, без ступенек).
+                float phase = this.swingPhase;
 
                 if (phase > 0.0F && phase < 1.0F) {
                     // Плавный подъём и такое же плавное возвращение (ease-in-out).
                     float swing = 0.5F - 0.5F * (float) Math.cos(phase * (float) (Math.PI * 2.0));
-                    this.rightArm.xRot = -0.2F - swing * 1.6F;
-                    this.rightArm.yRot = -0.35F * swing;
-                    this.rightArm.zRot = 0.3F * swing;
-                    this.leftArm.xRot = -0.45F * swing;
+                    this.rightArm.xRot = -0.2F - swing * 1.25F;
+                    this.rightArm.yRot = -0.3F * swing;
+                    this.rightArm.zRot = 0.25F * swing;
+                    this.leftArm.xRot = -0.4F * swing;
                     this.leftArm.yRot = 0.0F;
                     this.leftArm.zRot = 0.0F;
                 } else {

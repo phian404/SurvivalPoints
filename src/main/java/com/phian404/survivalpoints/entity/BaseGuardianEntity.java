@@ -1,5 +1,7 @@
 package com.phian404.survivalpoints.entity;
 
+import net.minecraft.world.damagesource.DamageSource;
+
 import com.phian404.survivalpoints.entity.ai.GuardianEatBreadGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianLookAtPlayerGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianMeleeAttackGoal;
@@ -168,6 +170,17 @@ public class BaseGuardianEntity extends PathfinderMob {
     private int shotDelay = 0;
 
     private int helpScreamCooldown = 0;
+
+    /**
+     * Сколько тиков после полученного урона нельзя рулить движением.
+     *
+     * <p>Ванильный отброс подбрасывает стража вверх и толкает в сторону. Наша
+     * система движения каждый тик перезаписывает горизонтальную скорость —
+     * горизонтальная часть отброса гасилась, а вертикальный подброс оставался,
+     * и страж «зависал» в воздухе. В эти несколько тиков мы не рулим движением
+     * и даём отбросу отработать как положено.
+     */
+    private int damageStunTicks = 0;
     private int swingSoundCooldown = 0;
     private int breadCooldown = 0;
     private boolean eating = false;
@@ -587,6 +600,7 @@ public class BaseGuardianEntity extends PathfinderMob {
         if (this.helpScreamCooldown > 0) this.helpScreamCooldown--;
         if (this.swingSoundCooldown > 0) this.swingSoundCooldown--;
         if (this.breadCooldown > 0) this.breadCooldown--;
+        if (this.damageStunTicks > 0) this.damageStunTicks--;
 
 
         if (this.rallyTimer > 0) {
@@ -954,6 +968,14 @@ public class BaseGuardianEntity extends PathfinderMob {
             return;
         }
         this.moveRequested = true;
+
+        // Только что отбросили: не рулим движением, пока страж в воздухе.
+        // Иначе горизонтальная часть отброса гасится нашей перезаписью
+        // скорости, а подброс остаётся — получается «зависание» в воздухе.
+        if (this.damageStunTicks > 0 && !this.onGround()) {
+            return;
+        }
+
         Vec3 target = direction.normalize();
 
         // --- Плавный доворот направления ---
@@ -1234,6 +1256,23 @@ public class BaseGuardianEntity extends PathfinderMob {
             this.playSound(SoundEvents.PLAYER_ATTACK_KNOCKBACK, 1.0F, 1.0F);
         }
         return flag;
+    }
+
+    /**
+     * Страж получил урон.
+     *
+     * <p>Несколько тиков после удара мы не рулим движением: наша система
+     * ежетиково перезаписывает горизонтальную скорость, и она гасит
+     * отбрасывание, тогда как вертикальный подброс остаётся — из-за этого
+     * страж «зависал» в воздухе после попадания.
+     */
+    @Override
+    public boolean hurt(DamageSource source, float amount) {
+        boolean hurt = super.hurt(source, amount);
+        if (hurt) {
+            this.damageStunTicks = 3;
+        }
+        return hurt;
     }
 
     // ==================== Сохранение ====================
