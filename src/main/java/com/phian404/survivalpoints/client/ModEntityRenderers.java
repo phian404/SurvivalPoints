@@ -160,12 +160,20 @@ public class ModEntityRenderers {
                 float phase = this.swingPhase;
 
                 if (phase > 0.0F && phase < 1.0F) {
+                    // Фаза удара (STRIKE) делит анимацию на две части: до неё рука
+                    // идёт вперёд-вниз, после — возвращается. Сама фаза удара
+                    // приходится на МАКСИМУМ размаха — раньше удар попадал на
+                    // конец анимации, когда рука уже вернулась, и его не было видно.
+                    float strike = GuardianTuning.MELEE_SWING_STRIKE_PHASE;
+                    float t = phase <= strike
+                            ? phase / strike
+                            : 1.0F - (phase - strike) / (1.0F - strike);
                     // Плавный подъём и такое же плавное возвращение (ease-in-out).
-                    float swing = 0.5F - 0.5F * (float) Math.cos(phase * (float) (Math.PI * 2.0));
-                    this.rightArm.xRot = -0.2F - swing * 1.25F;
-                    this.rightArm.yRot = -0.3F * swing;
-                    this.rightArm.zRot = 0.25F * swing;
-                    this.leftArm.xRot = -0.4F * swing;
+                    float swing = 0.5F - 0.5F * (float) Math.cos(t * (float) Math.PI);
+                    this.rightArm.xRot = -0.2F - swing * 1.5F;
+                    this.rightArm.yRot = -0.35F * swing;
+                    this.rightArm.zRot = 0.3F * swing;
+                    this.leftArm.xRot = -0.45F * swing;
                     this.leftArm.yRot = 0.0F;
                     this.leftArm.zRot = 0.0F;
                 } else {

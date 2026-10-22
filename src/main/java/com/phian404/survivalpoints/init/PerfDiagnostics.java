@@ -160,9 +160,9 @@ public class PerfDiagnostics {
                 + " §7(" + source.getMsgId() + ")"
                 + " §8| §7тик §f" + String.format("%.1f", PerfDiagnostics.lastTickMs) + " мс"
                 + " §8| §7TPS §f" + String.format("%.1f", PerfDiagnostics.lastTps)
-                + " §8| §7наш код §f" + String.format("%.2f", PerfDiagnostics.ourNanos / 1_000_000.0D) + " мс"
+                + " §8| §7наш код §f" + String.format("%.2f", PerfDiagnostics.ourNanos / 1_000_000.0D) + " мс/с"
                 + " §8(путь §f" + String.format("%.2f", PerfDiagnostics.pathNanos / 1_000_000.0D)
-                + " §7мс, §f" + PerfDiagnostics.pathRebuilds + "§7 путей/с)"
+                + " §7мс/с, §f" + PerfDiagnostics.pathRebuilds + "§7 путей/с)"
                 + " §8| §7сущностей §f" + PerfDiagnostics.entityCount
                 + " §8| §7чанков §f" + PerfDiagnostics.chunkCount
                 + " §8| §7стражей §f" + ModEntityEvents.getGuardians(level).size();

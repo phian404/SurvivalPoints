@@ -152,7 +152,7 @@ public final class GuardianTuning {
      * доставал меч. Зомби, топчущийся на границе, дёргал стража туда-сюда
      * (арбалет → меч → арбалет). Теперь меч достаётся заметно раньше.
      */
-    public static final double MELEE_ENTER_DISTANCE = 3.0D;
+    public static final double MELEE_ENTER_DISTANCE = 4.0D;
 
     /**
      * Замах перед ударом (тики).
@@ -160,15 +160,27 @@ public final class GuardianTuning {
      * <p>Без замаха удар прилетал в тот же тик, когда меч только появился в руке —
      * выглядело как мгновенный удар. 8 тиков — примерно треть секунды.
      */
-    public static final int MELEE_WINDUP_TICKS = 8;
+    public static final int MELEE_WINDUP_TICKS = 5;
 
     /**
-     * Длительность анимации взмаха мечом (тики).
+     * Сколько тиков рука возвращается после удара.
+     *
+     * <p>Раньше анимация была «вверх-вниз» целиком, и удар приходился на фазе 1.0 —
+     * когда рука уже вернулась. Удар был не виден совсем. Теперь фаза удара
+     * приходится на момент максимального размаха.
+     */
+    public static final int MELEE_SWING_RETURN_TICKS = 4;
+
+    /**
+     * Длительность анимации взмаха мечом (тики): замах + возврат руки.
      *
      * <p>Счётчик идёт в синхронизируемые данные, поэтому клиент рисует взмах
      * всегда — даже если пакет ванильной анимации не дошёл.
      */
-    public static final int MELEE_SWING_ANIM_TICKS = 8;
+    public static final int MELEE_SWING_ANIM_TICKS = MELEE_WINDUP_TICKS + MELEE_SWING_RETURN_TICKS;
+
+    /** Фаза анимации, на которой приходится удар (0..1). */
+    public static final float MELEE_SWING_STRIKE_PHASE = 0.6F;
 
     /**
      * Дальше этой дистанции страж возвращается к арбалету (гистерезис, чтобы не дёргался).
@@ -239,7 +251,7 @@ public final class GuardianTuning {
     public static final double RALLY_SPEED = 0.30D;
 
     /** Скорость атаки в ближнем бою. */
-    public static final double MELEE_SPEED = 1.0D;
+    public static final double MELEE_SPEED = 0.65D;
 
     /** Скорость, с которой строится и проходится маршрут навигации. */
     public static final double NAV_SPEED = 1.0D;
@@ -272,7 +284,7 @@ public final class GuardianTuning {
      * отходит на него сам, и отступающий просто не выбирается из ближнего
      * круга. 90°/тик — это разворот на 180° за два тика, как у обычных мобов.
      */
-    public static final float MOVE_TURN_SPEED_DEG = 90.0F;
+    public static final float MOVE_TURN_SPEED_DEG = 45.0F;
 
     /**
      * Разгон и торможение на ходу (блоков за тик).
@@ -303,7 +315,7 @@ public final class GuardianTuning {
     public static final int TARGET_SCAN_INTERVAL = 20;
 
     /** Кулдаун атаки в ближнем бою. */
-    public static final int MELEE_ATTACK_COOLDOWN = 20;
+    public static final int MELEE_ATTACK_COOLDOWN = 15;
 
     /** На каком расстоянии страж следит за игроком (взглядом, не целью). */
     public static final double LOOK_AT_PLAYER_DISTANCE = 8.0D;
