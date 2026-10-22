@@ -200,6 +200,15 @@ public class BaseGuardianEntity extends PathfinderMob {
     /** Отчёт о зависании уже отправлен — чтобы не спамить. */
     private boolean hangReported = false;
 
+    /**
+     * Идёт ли сейчас отступление.
+     *
+     * <p>Живёт в сущности, а не в голу: гол дальнего боя перезапускается при
+     * каждом переходе MELEE ↔ RANGED, и флаг в голе забывался бы — страж
+     * дёргался: отошёл на метр, вернулся к рубежу, снова отошёл.
+     */
+    private boolean retreating = false;
+
     private int swingSoundCooldown = 0;
     private int breadCooldown = 0;
     private boolean eating = false;
@@ -1316,6 +1325,15 @@ public class BaseGuardianEntity extends PathfinderMob {
 
     public void setHangReported(boolean reported) {
         this.hangReported = reported;
+    }
+
+    /** Идёт ли сейчас отступление от врага. */
+    public boolean isRetreating() {
+        return this.retreating;
+    }
+
+    public void setRetreating(boolean retreating) {
+        this.retreating = retreating;
     }
 
     public void setEating(boolean eating) {

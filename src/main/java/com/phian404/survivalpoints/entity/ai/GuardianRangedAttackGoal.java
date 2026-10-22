@@ -119,7 +119,7 @@ public class GuardianRangedAttackGoal extends Goal {
             //
             // Но отступать страж по-прежнему должен: если враг подошёл слишком
             // близко — пятится, сохраняя дистанцию (лицом к врагу, стреляя).
-            if (distance < GuardianTuning.IDEAL_MIN_DISTANCE) {
+            if (this.shouldRetreat(distance)) {
                 this.retreatFromTarget();
                 return;
             }
@@ -151,7 +151,22 @@ public class GuardianRangedAttackGoal extends Goal {
      * ванильного MoveControl) продолжает вести стража по старой цели.
      */
     private void holdPosition() {
+        this.guardian.setRetreating(false);
         this.guardian.standStill();
+    }
+
+    /**
+     * Отступать ли сейчас.
+     *
+     * <p>Гистерезис: начать отход — на близкой дистанции, прекратить — только
+     * когда враг отошёл заметно дальше. Без гистерезиса страж дёргался туда-сюда
+     * у самой границы: отступил на метр, вернулся к рубежу, снова отошёл.
+     */
+    private boolean shouldRetreat(double distance) {
+        if (this.guardian.isRetreating()) {
+            return distance < GuardianTuning.RETREAT_STOP_DISTANCE;
+        }
+        return distance < GuardianTuning.RETREAT_START_DISTANCE;
     }
 
     /**
@@ -164,6 +179,7 @@ public class GuardianRangedAttackGoal extends Goal {
      * {@link GuardianTuning#RETREAT_MAX_BACKSTEP}: иначе страж «убегает» за карту.
      */
     private void retreatFromTarget() {
+        this.guardian.setRetreating(true);
         Vec3 anchor = this.guardian.getStandoffAnchor();
         if (anchor != null) {
             double fromAnchor = this.guardian.position().subtract(anchor).length();

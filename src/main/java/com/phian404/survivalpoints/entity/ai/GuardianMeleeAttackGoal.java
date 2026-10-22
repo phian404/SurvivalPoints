@@ -90,4 +90,19 @@ public class GuardianMeleeAttackGoal extends MeleeAttackGoal {
         this.guardian.getNavigation().stop();
         this.guardian.standStill();
     }
+
+    /**
+     * Удар мечом.
+     *
+     * <p>Саму атаку делает ванильный код (свинг + урон + отбрасывание).
+     * Переопределяем только чтобы записать событие в лог: по нему видно,
+     * что страж реально бьёт, а не только бежит.
+     */
+    @Override
+    protected void checkAndPerformAttack(LivingEntity target, double distanceSqr) {
+        super.checkAndPerformAttack(target, distanceSqr);
+        if (distanceSqr <= this.getAttackReachSqr(target)) {
+            GuardianTrace.event(this.guardian, "удар мечом");
+        }
+    }
 }

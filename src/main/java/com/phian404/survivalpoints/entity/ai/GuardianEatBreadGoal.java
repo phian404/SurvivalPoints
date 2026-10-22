@@ -50,7 +50,8 @@ public class GuardianEatBreadGoal extends Goal {
         this.guardian.setEating(true);
         this.guardian.getNavigation().stop();
         this.guardian.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.BREAD));
-        this.duration = 20 + this.random.nextInt(21);
+        this.duration = GuardianTuning.EAT_BREAD_TICKS_MIN
+                + this.random.nextInt(GuardianTuning.EAT_BREAD_TICKS_MAX - GuardianTuning.EAT_BREAD_TICKS_MIN + 1);
         this.eatTimer = 0;
         GuardianTrace.event(this.guardian, "начал есть хлеб (" + this.duration + " тиков)");
     }
@@ -86,7 +87,7 @@ public class GuardianEatBreadGoal extends Goal {
         }
 
         if (this.guardian.getHealth() < this.guardian.getMaxHealth()) {
-            this.guardian.heal(0.2F);
+            this.guardian.heal(GuardianTuning.EAT_BREAD_HEAL_PER_TICK);
         }
 
         if (this.eatTimer == this.duration) {
