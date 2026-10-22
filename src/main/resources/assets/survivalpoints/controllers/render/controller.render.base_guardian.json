@@ -1,0 +1,24 @@
+{
+  "format_version": "1.8.0",
+  "minecraft:render_controllers": {
+    "controller.render.base_guardian": {
+      "arrays": {
+        "textures": {
+          "0": "Texture.default"
+        }
+      },
+      "geometry": "Geometry.default",
+      "materials": {
+        "default": "RenderMaterial.default"
+      },
+      "textures": [
+        "base_guardian"
+      ],
+      "animations": {
+        "attack": "controller.animation.base_guardian.attack",
+        "idle": "controller.animation.base_guardian.idle",
+        "walk": "controller.animation.base_guardian.walk"
+      }
+    }
+  }
+}

@@ -1031,6 +1031,23 @@ public class BaseGuardianEntity extends PathfinderMob {
     }
 
     /**
+     * Сбросить наш шаг (strafe), не трогая маршрут.
+     *
+     * <p>Нужен голам, которые ведут моба по навигации: остаток шага назад
+     * от предыдущего RANGED-состояния иначе перебивает маршрут ближнего боя.
+     */
+    public void clearStrafeInput() {
+        this.guardianMoveControl.clearStrafe();
+        this.guardianMoveControl.setKeepYaw(false); // разрешить поворот к цели
+        // Сбросить курс движения: иначе stale moveYaw (например, 72,6° от
+        // отступления) перебивает маршрут ближнего боя.
+        this.moveYawValid = false;
+        this.moveYaw = 0.0F;
+        this.moveRequested = false;
+        this.moveSpeed = 0.0D;
+    }
+
+    /**
      * Поворачивает моба лицом к точке и записывает горизонтальную скорость
      * в мировых координатах. Направление не зависит от текущего курса моба,
      * поэтому страж может одновременно смотреть на врага и от него отходить.
@@ -1371,6 +1388,7 @@ public class BaseGuardianEntity extends PathfinderMob {
         boolean flag = super.doHurtTarget(entityIn);
         if (flag && this.getCombatState() == CombatState.MELEE) {
             this.playSound(SoundEvents.PLAYER_ATTACK_KNOCKBACK, 1.0F, 1.0F);
+            GuardianTrace.event(this, "удар мечом");
         }
         return flag;
     }

@@ -1,0 +1,27 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.base_guardian.attack": {
+      "loop": false,
+      "animation_length": 0.75,
+      "bones": {
+        "arm_right": {
+          "rotation": [ -60, 0, 0 ],
+          "keyframes": [
+            { "time": 0.0, "rotation": [ 0, 0, 0 ] },
+            { "time": 0.25, "rotation": [ -60, 0, 0 ] },
+            { "time": 0.75, "rotation": [ 0, 0, 0 ] }
+          ]
+        },
+        "arm_left": {
+          "rotation": [ 60, 0, 0 ],
+          "keyframes": [
+            { "time": 0.0, "rotation": [ 0, 0, 0 ] },
+            { "time": 0.25, "rotation": [ 60, 0, 0 ] },
+            { "time": 0.75, "rotation": [ 0, 0, 0 ] }
+          ]
+        }
+      }
+    }
+  }
+}

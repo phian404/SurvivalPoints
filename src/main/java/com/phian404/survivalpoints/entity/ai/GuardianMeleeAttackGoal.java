@@ -3,6 +3,8 @@ package com.phian404.survivalpoints.entity.ai;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
 import com.phian404.survivalpoints.init.GuardianTrace;
 import com.phian404.survivalpoints.init.GuardianTuning;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
@@ -81,6 +83,7 @@ public class GuardianMeleeAttackGoal extends MeleeAttackGoal {
             }
         }
         this.guardian.setAggressive(true);
+        this.guardian.clearStrafeInput(); // сбросить остаток шага назад от RANGED
         GuardianTrace.event(this.guardian, "ближний бой");
     }
 
@@ -92,6 +95,21 @@ public class GuardianMeleeAttackGoal extends MeleeAttackGoal {
     }
 
     /**
+     * Гол должен тикать каждый тик (20 Гц), а не через тик (10 Гц).
+     *
+     * <p>Без этого атака задерживается: ванильный {@code Mob.serverAiStep()}
+     * тикает голы полностью только на чётных тиках, а на нечётных — только те,
+     * у которых {@code requiresUpdateEveryTick() == true}.
+     *
+     * <p>Ванильный {@link MeleeAttackGoal} переопределяет этот метод и возвращает
+     * {@code true} — без этого зомби бил бы игрока в 2 раза реже.
+     */
+    @Override
+    public boolean requiresUpdateEveryTick() {
+        return true;
+    }
+
+    /**
      * Удар мечом.
      *
      * <p>Саму атаку делает ванильный код (свинг + урон + отбрасывание).
@@ -100,9 +118,12 @@ public class GuardianMeleeAttackGoal extends MeleeAttackGoal {
      */
     @Override
     protected void checkAndPerformAttack(LivingEntity target, double distanceSqr) {
-        super.checkAndPerformAttack(target, distanceSqr);
-        if (distanceSqr <= this.getAttackReachSqr(target)) {
+        double reach = this.guardian.getMeleeAttackRangeSqr(target);
+        if (distanceSqr <= reach && this.getTicksUntilNextAttack() <= 0) {
             GuardianTrace.event(this.guardian, "удар мечом");
+            this.guardian.swing(InteractionHand.MAIN_HAND);
+            this.guardian.playSound(SoundEvents.PLAYER_ATTACK_SWEEP, 1.0F, 1.0F);
         }
+        super.checkAndPerformAttack(target, distanceSqr);
     }
 }

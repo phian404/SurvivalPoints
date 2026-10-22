@@ -1,5 +1,5 @@
 {
-    "format_version": "1.16.0",
+    "format_version": "1.20.1",
     "minecraft:entity": {
       "description": {
         "identifier": "survivalpoints:base_guardian",
@@ -8,7 +8,8 @@
         "animations": {
           "controller.animation.base_guardian.idle": "controller.animation.generic.animation",
           "controller.animation.base_guardian.walk": "controller.animation.generic.animation",
-          "controller.animation.base_guardian.swim": "controller.animation.generic.animation"
+          "controller.animation.base_guardian.swim": "controller.animation.generic.animation",
+          "controller.animation.base_guardian.attack": "controller.animation.generic.animation"
         },
         "render_controllers": [
           "controller.render.base_guardian"
