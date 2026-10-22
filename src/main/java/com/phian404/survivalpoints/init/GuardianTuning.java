@@ -152,7 +152,7 @@ public final class GuardianTuning {
      * доставал меч. Зомби, топчущийся на границе, дёргал стража туда-сюда
      * (арбалет → меч → арбалет). Теперь меч достаётся заметно раньше.
      */
-    public static final double MELEE_ENTER_DISTANCE = 4.0D;
+    public static final double MELEE_ENTER_DISTANCE = 3.0D;
 
     /**
      * Замах перед ударом (тики).

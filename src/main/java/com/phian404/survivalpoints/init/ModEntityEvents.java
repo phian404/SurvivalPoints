@@ -111,7 +111,9 @@ public class ModEntityEvents {
             return;
         }
 
+        long start = System.nanoTime();
         List<BaseGuardianEntity> guardians = getGuardians(monster.level());
+        PerfDiagnostics.addOurNanos(System.nanoTime() - start);
         if (guardians.isEmpty()) {
             return;
         }
@@ -150,9 +152,13 @@ public class ModEntityEvents {
      */
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
+        if (event.phase == TickEvent.Phase.START) {
+            PerfDiagnostics.onTickStart();
             return;
         }
+        long start = System.nanoTime();
         CampManager.onServerTick(event.getServer());
+        PerfDiagnostics.addOurNanos(System.nanoTime() - start);
+        PerfDiagnostics.onTickEnd();
     }
 }

@@ -116,6 +116,13 @@ public class GuardianMeleeAttackGoal extends Goal {
         }
         toTarget = toTarget.normalize();
 
+        if (distance < 2.0D) {
+            // Совсем близко — путь не строим: он всё равно перестраивался бы
+            // каждый тик (путь до цели в паре шагов сразу считается пройденным).
+            this.guardian.moveDirectly(toTarget, GuardianTuning.MELEE_SPEED);
+            return;
+        }
+
         this.guardian.navigateTo(this.target.getX(), this.target.getY(), this.target.getZ(),
                 GuardianTuning.NAV_SPEED);
         this.guardian.moveAlongPath(GuardianTuning.MELEE_SPEED, toTarget);

@@ -130,6 +130,12 @@ public class GuardianRangedAttackGoal extends Goal {
             }
             toTarget = toTarget.normalize();
 
+            if (distance < 2.0D) {
+                // Совсем близко — путь не строим (он всё равно каждый тик
+                // перестраивался бы и стоил бы дорого).
+                this.guardian.moveDirectly(toTarget, GuardianTuning.ADVANCE_SPEED);
+                return;
+            }
             this.guardian.navigateTo(this.target.getX(), this.target.getY(), this.target.getZ(),
                     GuardianTuning.NAV_SPEED);
             this.guardian.moveAlongPath(GuardianTuning.ADVANCE_SPEED, toTarget);
@@ -181,8 +187,17 @@ public class GuardianRangedAttackGoal extends Goal {
             }
         }
 
-        Vec3 fleePoint = this.guardian.position().add(away.scale(2.0D));
-        this.guardian.navigateTo(fleePoint.x, this.guardian.getY(), fleePoint.z, GuardianTuning.NAV_SPEED);
-        this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, away);
+        // Отход — ПРЯМЫМ движением назад: путь строить не нужно. Раньше цель
+        // отхода была в 2 блоках от стража, путь тут же считался пройденным, и
+        // навигация перестраивала его КАЖДЫЙ тик — главная подозрительная
+        // нагрузка на сервер (из-за неё проседал TPS, а стражи «зависали»).
+        if (this.guardian.horizontalCollision) {
+            // Упёрлись в стену — только тут включаем навигацию, она обойдёт.
+            Vec3 fleePoint = this.guardian.position().add(away.scale(2.0D));
+            this.guardian.navigateTo(fleePoint.x, this.guardian.getY(), fleePoint.z, GuardianTuning.NAV_SPEED);
+            this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, away);
+            return;
+        }
+        this.guardian.moveDirectly(away, GuardianTuning.RETREAT_SPEED);
     }
 }

@@ -1,5 +1,6 @@
 package com.phian404.survivalpoints.entity;
 
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 
 import com.phian404.survivalpoints.entity.ai.GuardianEatBreadGoal;
@@ -10,6 +11,7 @@ import com.phian404.survivalpoints.entity.ai.GuardianRetreatGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianTargetGoal;
 import com.phian404.survivalpoints.init.GuardianTuning;
 import com.phian404.survivalpoints.init.ModEntityEvents;
+import com.phian404.survivalpoints.init.PerfDiagnostics;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -1077,7 +1079,9 @@ public class BaseGuardianEntity extends PathfinderMob {
         boolean targetMoved = (dx * dx + dz * dz) > 25.0D;
 
         if (this.getNavigation().isDone() || this.navRetargetTimer <= 0 || targetMoved) {
+            long start = System.nanoTime();
             this.getNavigation().moveTo(x, y, z, speed);
+            PerfDiagnostics.addPathRebuild(System.nanoTime() - start);
             this.navTargetX = x;
             this.navTargetY = y;
             this.navTargetZ = z;
@@ -1271,6 +1275,10 @@ public class BaseGuardianEntity extends PathfinderMob {
         boolean hurt = super.hurt(source, amount);
         if (hurt) {
             this.damageStunTicks = 3;
+            // Сводка по нагрузке сервера в момент удара (если включён /sp_perf on).
+            if (!this.level().isClientSide && this.level() instanceof ServerLevel serverLevel) {
+                PerfDiagnostics.onGuardianHurt(serverLevel, this, source, amount);
+            }
         }
         return hurt;
     }
