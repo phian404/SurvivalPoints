@@ -1,6 +1,8 @@
 package com.phian404.survivalpoints.entity.ai;
 
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.init.GuardianFeatureFlags;
+import com.phian404.survivalpoints.init.GuardianTrace;
 import com.phian404.survivalpoints.init.GuardianTuning;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
@@ -35,6 +37,9 @@ public class GuardianRetreatGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        if (!GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.PANIC)) {
+            return false;
+        }
         if (this.guardian.getAIState() != BaseGuardianEntity.GuardianState.PANIC) {
             return false;
         }
@@ -52,6 +57,7 @@ public class GuardianRetreatGoal extends Goal {
     public void start() {
         this.screamTimer = 0;
         this.guardian.resetNavigationTarget();
+        GuardianTrace.event(this.guardian, "паника: отступление");
         if (this.target != null) {
             this.guardian.callForHelp(this.target);
         }
@@ -60,6 +66,20 @@ public class GuardianRetreatGoal extends Goal {
     @Override
     public void stop() {
         this.guardian.getNavigation().stop();
+    }
+
+    /**
+     * Гол обновляется каждый тик.
+     *
+     * <p>Ванильный {@code GoalSelector} вызывает {@code tick()} цели только
+     * каждый второй тик: на нечётных тиках работает {@code tickRunningGoals(false)},
+     * который трогает только голы с {@code requiresUpdateEveryTick() == true}.
+     * Без этого переопределения отступление обновлялось бы 10 раз в секунду
+     * вместо 20 — выходило рваным.
+     */
+    @Override
+    public boolean requiresUpdateEveryTick() {
+        return true;
     }
 
     @Override

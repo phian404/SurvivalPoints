@@ -234,3 +234,31 @@ backups/_inspect_*.java   — декомпилированные исходни�
 (см. [`DESIGN_CAMP_SOCIAL.md`](../../DESIGN_CAMP_SOCIAL.md) §7).
 Якорь рубежа в сущности — временный: в волнах 2–3 его заменит настоящий **пост лагеря**
 (см. [`DESIGN_CAMP_SYSTEM.md`](../../DESIGN_CAMP_SYSTEM.md) §4.3 и [`DESIGN_CAMP_SOCIAL.md`](../../DESIGN_CAMP_SOCIAL.md) §12.7).
+
+## 7. Реворк стража (волна R0)
+
+**План:** [`GUARDIAN_REWORK_PLAN.md`](../../../../../GUARDIAN_REWORK_PLAN.md). **Откат:** тег `pre-rework-guardian`, ветка `backup/pre-rework-guardian` (коммит `fdb8acb`).
+
+### R0.0 — подготовка (сделано)
+
+- [x] **Частота тика целей.** Ванильный `Mob.serverAiStep()` вызывает `goalSelector.tick()` **только каждый второй тик** (на нечётных тиках — `tickRunningGoals(false)`, который трогает только голы с `requiresUpdateEveryTick() == true`). Наши голы этого не переопределяли ⇒ вся логика работала на **10 Гц вместо 20 Гц** — отсюда «рывки», «резкость» и задержка реакции до 2 тиков. Исправлено в 4 голах: [`GuardianRangedAttackGoal`](entity/ai/GuardianRangedAttackGoal.java), [`GuardianMeleeAttackGoal`](entity/ai/GuardianMeleeAttackGoal.java), [`GuardianRetreatGoal`](entity/ai/GuardianRetreatGoal.java), [`GuardianEatBreadGoal`](entity/ai/GuardianEatBreadGoal.java).
+- [x] **Диагностика:** [`GuardianTrace`](init/GuardianTrace.java) (лог + чат, `/sp_trace`), [`GuardianSnapshot`](init/GuardianSnapshot.java) (снимок состояния), [`GuardianHangDetector`](init/GuardianHangDetector.java) (детектор зависания, `/sp_hang`), `/sp_guard detail <N>`.
+- [x] **Флаги механик:** [`GuardianFeatureFlags`](init/GuardianFeatureFlags.java) + `/sp_flag` — `CUSTOM_MOVE`, `CUSTOM_SWING`, `EAT_BREAD`, `STANDOFF`, `RALLY`, `LOOK_PLAYER`, `PANIC`, `RANGED`.
+
+### Ключевые факты о ванилле (проверены через MCP, не по памяти)
+
+- `GoalSelector.availableGoals` — `LinkedHashSet` ⇒ **порядок обхода = порядок регистрации**; `priority` влияет только через `WrappedGoal.canBeReplacedBy()`. Голы регистрировать **от важного к менее важному**.
+- `MoveControl.tick()` в состоянии WAIT делает `setZza(0)` **после** `goalSelector.tick()` ⇒ свой `setZza()` из гола обнуляется; рабочий путь — `MoveControl.strafe()`.
+- `MoveControl.strafe()` жёстко ставит `speedModifier = 0.25` ⇒ скорость настраивается только через `speedModifier` (нужен свой подкласс `MoveControl`).
+- `MoveControl.tick()` прыгает, если моб **внутри блока с коллизией** ⇒ при перестроении пути страж может подпрыгивать — это один из кандидатов на «зависание в воздухе».
+- `MeleeAttackGoal` уже умеет всё для ближнего боя: путь, `setAggressive`, `getLookControl().setLookAt`, `mob.swing()` ⇒ дефолтная анимация удара.
+- Ванильных целей у стража **ноль**: `Mob.registerGoals()` пуст, `PathfinderMob` целей не регистрирует ⇒ все конфликты приоритетов — наши собственные.
+- `LivingEntity.aiStep()`: цели → `navigation.tick()` → `moveControl.tick()` → `lookControl.tick()` → прыжок → `xxa *= 0.98; zza *= 0.98` → `travel()`. Вход движения, заданный голом, применяется **в том же тике**.
+
+### Следующие шаги
+
+- [ ] R0.1 — убрать автомат состояний (`GuardianState`/`updateAIState()`/`CombatState`), голы как источник истины.
+- [ ] R0.2 — движение на ванили: `GuardianMoveControl.strafeWithSpeed()` + `navigation.moveTo()`, удалить `moveDirectly`/`moveAlongPath`, `Attributes.MOVEMENT_SPEED = 0.30`.
+- [ ] R0.3 — ближний бой на ванильном `MeleeAttackGoal`, удалить кастомную анимацию взмаха (`DATA_SWING_START`).
+- [ ] R0.4 — еда: уступка угрозе + watchdog флага `eating` (устраняет «статую с хлебом»).
+- [ ] R0.5 — порядок регистрации целей, флаги, `RandomStrollGoal` → `WaterAvoidingRandomStrollGoal`.

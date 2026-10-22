@@ -1,6 +1,8 @@
 package com.phian404.survivalpoints.entity.ai;
 
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.init.GuardianFeatureFlags;
+import com.phian404.survivalpoints.init.GuardianTrace;
 import com.phian404.survivalpoints.init.GuardianTuning;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.LivingEntity;
@@ -68,6 +70,20 @@ public class GuardianRangedAttackGoal extends Goal {
         this.guardian.getNavigation().stop();
     }
 
+    /**
+     * Гол обновляется каждый тик.
+     *
+     * <p>Ванильный {@code GoalSelector} вызывает {@code tick()} цели только
+     * каждый второй тик: на нечётных тиках работает {@code tickRunningGoals(false)},
+     * который трогает только голы с {@code requiresUpdateEveryTick() == true}.
+     * Без этого переопределения движение обновлялось бы 10 раз в секунду
+     * вместо 20 — выходило рваным, а реакция на цель запаздывала.
+     */
+    @Override
+    public boolean requiresUpdateEveryTick() {
+        return true;
+    }
+
     @Override
     public void tick() {
         if (this.target == null) {
@@ -105,7 +121,8 @@ public class GuardianRangedAttackGoal extends Goal {
             this.guardian.resetStandoff();
         }
 
-        if (this.guardian.isStandoffReached()) {
+        if (GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.STANDOFF)
+                && this.guardian.isStandoffReached()) {
             // Рубеж занят. Сближаться больше НЕЛЬЗЯ — именно это и давало
             // «приблизился — отошёл — приблизился»: стоило врагу отойти, и страж
             // снова к нему подходил. Теперь сближение бывает ровно один раз.
@@ -143,7 +160,10 @@ public class GuardianRangedAttackGoal extends Goal {
         }
 
         // Дошли до рабочей дистанции — занимаем рубеж и запоминаем его точку.
-        this.guardian.setStandoffReached(this.guardian.position());
+        if (GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.STANDOFF)) {
+            this.guardian.setStandoffReached(this.guardian.position());
+            GuardianTrace.event(this.guardian, "занял рубеж");
+        }
         this.holdPosition();
     }
 

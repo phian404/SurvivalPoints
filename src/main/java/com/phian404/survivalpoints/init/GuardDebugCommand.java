@@ -15,6 +15,7 @@ import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -40,14 +41,22 @@ public class GuardDebugCommand {
     private static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("sp_guard")
                 .requires(source -> source.hasPermission(0))
+                .then(Commands.literal("detail")
+                        .then(Commands.argument("index", IntegerArgumentType.integer(1, 64))
+                                .executes(ctx -> detail(ctx, IntegerArgumentType.getInteger(ctx, "index")))))
                 .then(Commands.argument("radius", IntegerArgumentType.integer(1, 128))
                         .executes(ctx -> report(ctx, IntegerArgumentType.getInteger(ctx, "radius"))))
                 .executes(ctx -> report(ctx, DEFAULT_RADIUS)));
     }
 
-    private static int report(CommandContext<CommandSourceStack> ctx, int radius) {
-        CommandSourceStack source = ctx.getSource();
-
+    /**
+     * Список стражей рядом.
+     *
+     * <p>Список отсортирован по расстоянию до игрока — иначе порядок выдачи
+     * сущностей не гарантирован и номера в {@code /sp_guard} и
+     * {@code /sp_guard detail} могли бы не совпадать.
+     */
+    private static List<BaseGuardianEntity> findGuardians(CommandSourceStack source, int radius) {
         Vec3 pos = source.getPosition();
         AABB area = new AABB(
                 pos.x - radius, pos.y - radius, pos.z - radius,
@@ -57,6 +66,36 @@ public class GuardDebugCommand {
                 BaseGuardianEntity.class,
                 area,
                 e -> true);
+        guards.sort(Comparator.comparingDouble(guard -> guard.distanceToSqr(pos)));
+        return guards;
+    }
+
+    /** Подробный снимок одного стража: {@code /sp_guard detail <номер>}. */
+    private static int detail(CommandContext<CommandSourceStack> ctx, int index) {
+        CommandSourceStack source = ctx.getSource();
+        List<BaseGuardianEntity> guards = findGuardians(source, DEFAULT_RADIUS);
+
+        if (guards.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("§7[SP] Стражей рядом нет")
+                    .withStyle(ChatFormatting.GRAY), false);
+            return 0;
+        }
+        if (index < 1 || index > guards.size()) {
+            source.sendSuccess(() -> Component.literal("§7[SP] Нет стража с номером " + index
+                    + " (найдено " + guards.size() + ")").withStyle(ChatFormatting.GRAY), false);
+            return 0;
+        }
+
+        final BaseGuardianEntity guard = guards.get(index - 1);
+        source.sendSuccess(() -> Component.literal(GuardianSnapshot.detail(guard, index - 1))
+                .withStyle(ChatFormatting.WHITE), false);
+        return 1;
+    }
+
+    private static int report(CommandContext<CommandSourceStack> ctx, int radius) {
+        CommandSourceStack source = ctx.getSource();
+
+        List<BaseGuardianEntity> guards = findGuardians(source, radius);
 
         if (guards.isEmpty()) {
             source.sendSuccess(() -> Component.literal("§7[SP] Стражей в радиусе " + radius + " не найдено")

@@ -1,6 +1,8 @@
 package com.phian404.survivalpoints.entity.ai;
 
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.init.GuardianFeatureFlags;
+import com.phian404.survivalpoints.init.GuardianTrace;
 import com.phian404.survivalpoints.init.GuardianTuning;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
@@ -34,6 +36,9 @@ public class GuardianEatBreadGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        if (!GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.EAT_BREAD)) {
+            return false;
+        }
         return this.guardian.getTarget() == null
                 && !this.guardian.isEating()
                 && this.guardian.getBreadCooldown() <= 0
@@ -47,6 +52,7 @@ public class GuardianEatBreadGoal extends Goal {
         this.guardian.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.BREAD));
         this.duration = 20 + this.random.nextInt(21);
         this.eatTimer = 0;
+        GuardianTrace.event(this.guardian, "начал есть хлеб (" + this.duration + " тиков)");
     }
 
     @Override
@@ -98,5 +104,19 @@ public class GuardianEatBreadGoal extends Goal {
         this.guardian.setEating(false);
         // Возвращаем правильное оружие (меч или арбалет) по текущему состоянию ИИ.
         this.guardian.syncEquipmentToState();
+        GuardianTrace.event(this.guardian, " закончил есть хлеб");
+    }
+
+    /**
+     * Гол обновляется каждый тик.
+     *
+     * <p>Ванильный {@code GoalSelector} вызывает {@code tick()} цели только
+     * каждый второй тик: на нечётных тиках работает {@code tickRunningGoals(false)},
+     * который трогает только голы с {@code requiresUpdateEveryTick() == true}.
+     * Без этого еда лечила бы вдвое медленнее задуманного (0.2 HP за 2 тика).
+     */
+    @Override
+    public boolean requiresUpdateEveryTick() {
+        return true;
     }
 }

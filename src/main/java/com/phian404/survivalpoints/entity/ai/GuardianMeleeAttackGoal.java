@@ -1,6 +1,7 @@
 package com.phian404.survivalpoints.entity.ai;
 
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.init.GuardianTrace;
 import com.phian404.survivalpoints.init.GuardianTuning;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
@@ -71,6 +72,20 @@ public class GuardianMeleeAttackGoal extends Goal {
         this.guardian.getNavigation().stop();
     }
 
+    /**
+     * Гол обновляется каждый тик.
+     *
+     * <p>Ванильный {@code GoalSelector} вызывает {@code tick()} цели только
+     * каждый второй тик: на нечётных тиках работает {@code tickRunningGoals(false)},
+     * который трогает только голы с {@code requiresUpdateEveryTick() == true}.
+     * Без этого переопределения движение обновлялось бы 10 раз в секунду
+     * вместо 20 — выходило рваным, а реакция на цель запаздывала.
+     */
+    @Override
+    public boolean requiresUpdateEveryTick() {
+        return true;
+    }
+
     @Override
     public void tick() {
         if (this.target == null) {
@@ -93,12 +108,14 @@ public class GuardianMeleeAttackGoal extends Goal {
                 // видно, как рука заносится, и удар приходит в конце движения.
                 // Раньше анимация стартовала вместе с ударом — выглядело лагом.
                 this.guardian.startMeleeSwing();
+                GuardianTrace.event(this.guardian, "замах мечом");
             }
             this.windup++;
 
             if (this.attackCooldown <= 0 && this.windup >= GuardianTuning.MELEE_WINDUP_TICKS) {
                 this.guardian.doHurtTarget(this.target);
                 this.guardian.swing(InteractionHand.MAIN_HAND);
+                GuardianTrace.event(this.guardian, "удар мечом");
                 this.attackCooldown = GuardianTuning.MELEE_ATTACK_COOLDOWN;
                 this.windup = 0;
             }

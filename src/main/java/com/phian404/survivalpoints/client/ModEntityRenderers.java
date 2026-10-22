@@ -2,6 +2,7 @@ package com.phian404.survivalpoints.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.init.GuardianFeatureFlags;
 import com.phian404.survivalpoints.init.GuardianTuning;
 import com.phian404.survivalpoints.init.ModEntities;
 import net.minecraft.client.model.HumanoidModel;
@@ -96,7 +97,8 @@ public class ModEntityRenderers {
                             this.swingStartLocal = this.localTime;
                         }
                         float phase = -1.0F;
-                        if (swingStart > 0) {
+                        if (swingStart > 0
+                                && GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.CUSTOM_SWING)) {
                             phase = (this.localTime - this.swingStartLocal)
                                     / (float) GuardianTuning.MELEE_SWING_ANIM_TICKS;
                         }

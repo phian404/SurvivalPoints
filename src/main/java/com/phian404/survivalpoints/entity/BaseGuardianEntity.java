@@ -9,6 +9,10 @@ import com.phian404.survivalpoints.entity.ai.GuardianMeleeAttackGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianRangedAttackGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianRetreatGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianTargetGoal;
+import com.phian404.survivalpoints.init.GuardianFeatureFlags;
+import com.phian404.survivalpoints.init.GuardianHangDetector;
+import com.phian404.survivalpoints.init.GuardianSnapshot;
+import com.phian404.survivalpoints.init.GuardianTrace;
 import com.phian404.survivalpoints.init.GuardianTuning;
 import com.phian404.survivalpoints.init.ModEntityEvents;
 import com.phian404.survivalpoints.init.PerfDiagnostics;
@@ -183,6 +187,19 @@ public class BaseGuardianEntity extends PathfinderMob {
      * и даём отбросу отработать как положено.
      */
     private int damageStunTicks = 0;
+
+    /**
+     * Сколько тиков страж находится в воздухе, не падая.
+     *
+     * <p>Нужен детектору «зависания»: если страж висит в воздухе и не падает
+     * дольше {@link GuardianTuning#HANG_DETECT_TICKS} тиков — это тот самый
+     * редкий случай, который не удалось воспроизвести вручную.
+     */
+    private int airborneTicks = 0;
+
+    /** Отчёт о зависании уже отправлен — чтобы не спамить. */
+    private boolean hangReported = false;
+
     private int swingSoundCooldown = 0;
     private int breadCooldown = 0;
     private boolean eating = false;
@@ -354,7 +371,11 @@ public class BaseGuardianEntity extends PathfinderMob {
     }
 
     public void setAIState(GuardianState state) {
+        GuardianState previous = this.getAIState();
         this.entityData.set(DATA_AI_STATE, (byte) state.ordinal());
+        if (previous != state) {
+            GuardianTrace.event(this, "state " + previous + " -> " + state);
+        }
     }
 
     /** Состояние для рендера: PANIC и RANGED — это арбалет, MELEE — меч. */
@@ -394,7 +415,8 @@ public class BaseGuardianEntity extends PathfinderMob {
         GuardianState current = this.getAIState();
         GuardianState next;
 
-        if (this.getHealth() < this.getMaxHealth() * GuardianTuning.PANIC_HP_RATIO) {
+        if (GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.PANIC)
+                && this.getHealth() < this.getMaxHealth() * GuardianTuning.PANIC_HP_RATIO) {
             // Паника имеет приоритет над всем: отступаем и стреляем из арбалета.
             next = GuardianState.PANIC;
         } else if (current == GuardianState.MELEE && distance <= GuardianTuning.MELEE_EXIT_DISTANCE) {
@@ -433,11 +455,13 @@ public class BaseGuardianEntity extends PathfinderMob {
         if (this.getAIState() == GuardianState.MELEE) {
             if (!current.is(Items.IRON_SWORD)) {
                 this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+                GuardianTrace.event(this, "оружие: меч");
             }
         } else {
             // RANGED, PANIC и IDLE — всегда арбалет.
             if (!current.is(Items.CROSSBOW)) {
                 this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.CROSSBOW));
+                GuardianTrace.event(this, "оружие: арбалет");
             }
         }
     }
@@ -486,6 +510,10 @@ public class BaseGuardianEntity extends PathfinderMob {
 
         this.updateRangedCombat();
         this.updateChargingFlag();
+
+        // Детектор «зависания в воздухе»: ловим редкий случай, когда страж
+        // остаётся висеть после отбрасывания.
+        GuardianHangDetector.check(this);
 
         // В покое голова держится строго ровно. LookControl каждый тик сбрасывает
         // наклон в ноль, но если активен LookAtPlayerGoal, он тут же снова наклоняет
@@ -650,6 +678,10 @@ public class BaseGuardianEntity extends PathfinderMob {
      * использовали одну и ту же логику и не зависели от того, какой гол активен.
      */
     private void updateRangedCombat() {
+        if (!GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.RANGED)) {
+            this.resetChargeTime();
+            return;
+        }
         GuardianState state = this.getAIState();
         if (state != GuardianState.RANGED && state != GuardianState.PANIC) {
             this.resetChargeTime();
@@ -712,6 +744,7 @@ public class BaseGuardianEntity extends PathfinderMob {
         if (!weapon.is(Items.CROSSBOW)) return;
 
         this.shotsFired++;
+        GuardianTrace.event(this, "выстрел");
 
         // Ванильная стрела. Отдельный подкласс не нужен: «отскок» при отменённом
         // уроне — штатная ванильная механика (else-ветка AbstractArrow.onHitEntity),
@@ -853,6 +886,7 @@ public class BaseGuardianEntity extends PathfinderMob {
     public void onArrowHit(float amount) {
         this.arrowsHit++;
         this.damageDealt += amount;
+        GuardianTrace.event(this, "попадание стрелы " + GuardianSnapshot.fmt(amount, 1));
     }
 
     public int getShotsFired() {
@@ -883,6 +917,7 @@ public class BaseGuardianEntity extends PathfinderMob {
      */
     public void callForHelp(LivingEntity attacker) {
         if (this.level().isClientSide) return;
+        if (!GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.RALLY)) return;
         if (!this.canScreamForHelp()) return;
 
         int responders = 0;
@@ -967,6 +1002,11 @@ public class BaseGuardianEntity extends PathfinderMob {
      */
     public void moveDirectly(Vec3 direction, double speed) {
         if (direction.lengthSqr() < 1.0E-6D) {
+            return;
+        }
+        // Механика отключена флагом — тогда движением ведёт только ванильная
+        // навигация (так сравниваем самописную физику с ванильной).
+        if (!GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.CUSTOM_MOVE)) {
             return;
         }
         this.moveRequested = true;
@@ -1221,6 +1261,29 @@ public class BaseGuardianEntity extends PathfinderMob {
 
     public boolean isEating() {
         return this.eating;
+    }
+
+    /** Сколько тиков после урона нельзя рулить движением. */
+    public int getDamageStunTicks() {
+        return this.damageStunTicks;
+    }
+
+    /** Сколько тиков страж висит в воздухе, не падая. */
+    public int getAirborneTicks() {
+        return this.airborneTicks;
+    }
+
+    public void setAirborneTicks(int ticks) {
+        this.airborneTicks = ticks;
+    }
+
+    /** Отчёт о зависании уже был отправлен. */
+    public boolean isHangReported() {
+        return this.hangReported;
+    }
+
+    public void setHangReported(boolean reported) {
+        this.hangReported = reported;
     }
 
     public void setEating(boolean eating) {

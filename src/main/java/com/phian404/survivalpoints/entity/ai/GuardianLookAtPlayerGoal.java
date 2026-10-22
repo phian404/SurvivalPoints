@@ -1,6 +1,7 @@
 package com.phian404.survivalpoints.entity.ai;
 
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.init.GuardianFeatureFlags;
 import com.phian404.survivalpoints.init.GuardianTuning;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.player.Player;
@@ -36,7 +37,8 @@ public class GuardianLookAtPlayerGoal extends LookAtPlayerGoal {
 
     @Override
     public boolean canUse() {
-        return this.guardian.getAIState() == BaseGuardianEntity.GuardianState.IDLE
+        return GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.LOOK_PLAYER)
+                && this.guardian.getAIState() == BaseGuardianEntity.GuardianState.IDLE
                 && super.canUse();
     }
 
