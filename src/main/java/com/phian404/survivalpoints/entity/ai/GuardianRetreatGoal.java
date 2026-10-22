@@ -20,9 +20,9 @@ import java.util.EnumSet;
  * впереди и семь фиксированных углов), из-за чего страж «скользил вдоль стен»,
  * бесконечно колебался между направлениями и застревал в яме.
  *
- * <p>Скорость при этом считает сам страж — в мировых координатах, от следующего
- * узла маршрута. Поэтому курс тела можно держать развёрнутым к врагу: навигация
- * не управляет скоростью, только маршрутом.
+ * <p>Пока враг не подошёл вплотную, страж пятится лицом к нему: шаг назад
+ * относительно курса тела ({@code MoveControl.strafe}). Если упёрся в стену —
+ * идёт в обход по маршруту.
  */
 public class GuardianRetreatGoal extends Goal {
 
@@ -57,29 +57,16 @@ public class GuardianRetreatGoal extends Goal {
     public void start() {
         this.screamTimer = 0;
         this.guardian.resetNavigationTarget();
-        GuardianTrace.event(this.guardian, "паника: отступление");
         if (this.target != null) {
             this.guardian.callForHelp(this.target);
         }
+        GuardianTrace.event(this.guardian, "паника: отступление");
     }
 
     @Override
     public void stop() {
         this.guardian.getNavigation().stop();
-    }
-
-    /**
-     * Гол обновляется каждый тик.
-     *
-     * <p>Ванильный {@code GoalSelector} вызывает {@code tick()} цели только
-     * каждый второй тик: на нечётных тиках работает {@code tickRunningGoals(false)},
-     * который трогает только голы с {@code requiresUpdateEveryTick() == true}.
-     * Без этого переопределения отступление обновлялось бы 10 раз в секунду
-     * вместо 20 — выходило рваным.
-     */
-    @Override
-    public boolean requiresUpdateEveryTick() {
-        return true;
+        this.guardian.standStill();
     }
 
     @Override
@@ -100,7 +87,7 @@ public class GuardianRetreatGoal extends Goal {
 
         if (distance >= GuardianTuning.PANIC_RETREAT_DISTANCE) {
             // Безопасная дистанция достигнута — стоим и ведём огонь.
-            this.guardian.stopHorizontalMovement();
+            this.guardian.standStill();
             return;
         }
 
@@ -110,11 +97,22 @@ public class GuardianRetreatGoal extends Goal {
         }
         away = away.normalize();
 
-        // Точка отхода привязана к ВРАГУ, а не к стражу, иначе цель убегала бы
-        // вместе с нами и маршрут пересчитывался бы каждый тик.
-        Vec3 fleePoint = this.target.position().add(away.scale(GuardianTuning.PANIC_RETREAT_DISTANCE));
+        if (this.guardian.horizontalCollision) {
+            // Упёрлись в стену — идём в обход по маршруту.
+            Vec3 fleePoint = this.guardian.position().add(away.scale(2.0D));
+            this.guardian.followPath(fleePoint.x, this.guardian.getY(), fleePoint.z,
+                    GuardianTuning.RETREAT_SPEED);
+            return;
+        }
 
-        this.guardian.navigateTo(fleePoint.x, this.target.getY(), fleePoint.z, GuardianTuning.NAV_SPEED);
-        this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, away);
+        if (GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.CUSTOM_MOVE)) {
+            // Старая самодельная физика — оставлена только для сравнения
+            // с ванильным движением (A/B по флагу CUSTOM_MOVE).
+            this.guardian.moveDirectly(away, GuardianTuning.RETREAT_SPEED);
+            return;
+        }
+
+        // Пятится лицом к врагу: тело развёрнуто на цель, шаг делается назад.
+        this.guardian.strafeWithSpeed(-1.0F, 0.0F, GuardianTuning.RETREAT_SPEED);
     }
 }

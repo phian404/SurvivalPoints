@@ -24,9 +24,14 @@ import java.util.EnumSet;
  *       Разворот тела всегда лицом к врагу.</li>
  * </ul>
  *
- * <p>Маршрут в обоих режимах строит навигация (обход стен, выход из ям, подъёмы),
- * а скорость страж считает сам в мировых координатах — так тело остаётся
- * развёрнутым к врагу независимо от направления маршрута.
+ * <p>Движение — ванильное:
+ * <ul>
+ *   <li><b>Сближение</b> — маршрут ({@code navigation.moveTo}): тело ведёт путь,
+ *       голка смотрит на врага;</li>
+ *   <li><b>Отход</b> — шаг назад относительно курса тела ({@code MoveControl.strafe}):
+ *       страж пятится, оставаясь лицом к врагу;</li>
+ *   <li><b>Стоять на рубеже</b> — вход движения обнуляется, страж стоит.</li>
+ * </ul>
  */
 public class GuardianRangedAttackGoal extends Goal {
 
@@ -68,20 +73,7 @@ public class GuardianRangedAttackGoal extends Goal {
     @Override
     public void stop() {
         this.guardian.getNavigation().stop();
-    }
-
-    /**
-     * Гол обновляется каждый тик.
-     *
-     * <p>Ванильный {@code GoalSelector} вызывает {@code tick()} цели только
-     * каждый второй тик: на нечётных тиках работает {@code tickRunningGoals(false)},
-     * который трогает только голы с {@code requiresUpdateEveryTick() == true}.
-     * Без этого переопределения движение обновлялось бы 10 раз в секунду
-     * вместо 20 — выходило рваным, а реакция на цель запаздывала.
-     */
-    @Override
-    public boolean requiresUpdateEveryTick() {
-        return true;
+        this.guardian.standStill();
     }
 
     @Override
@@ -99,11 +91,8 @@ public class GuardianRangedAttackGoal extends Goal {
                 double distSq = dx * dx + dz * dz;
 
                 if (distSq > GuardianTuning.RALLY_ARRIVE_DISTANCE * GuardianTuning.RALLY_ARRIVE_DISTANCE) {
-                    Vec3 toPoint = new Vec3(dx, 0.0D, dz).normalize();
-
-                    this.guardian.navigateTo(point.getX() + 0.5D, point.getY(), point.getZ() + 0.5D,
-                            GuardianTuning.NAV_SPEED);
-                    this.guardian.moveAlongPath(GuardianTuning.RALLY_SPEED, toPoint);
+                    this.guardian.followPath(point.getX() + 0.5D, point.getY(), point.getZ() + 0.5D,
+                            GuardianTuning.RALLY_SPEED);
                     return;
                 }
 
@@ -121,8 +110,9 @@ public class GuardianRangedAttackGoal extends Goal {
             this.guardian.resetStandoff();
         }
 
-        if (GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.STANDOFF)
-                && this.guardian.isStandoffReached()) {
+        boolean standoffEnabled = GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.STANDOFF);
+
+        if (standoffEnabled && this.guardian.isStandoffReached()) {
             // Рубеж занят. Сближаться больше НЕЛЬЗЯ — именно это и давало
             // «приблизился — отошёл — приблизился»: стоило врагу отойти, и страж
             // снова к нему подходил. Теперь сближение бывает ровно один раз.
@@ -141,26 +131,13 @@ public class GuardianRangedAttackGoal extends Goal {
             // Ещё не вышли на рабочую дистанцию — сближаемся по маршруту.
             // Это происходит один раз за бой: дальше страж держит занятую
             // позицию и не лезет обратно, даже если враг отошёл.
-            Vec3 toTarget = this.target.position().subtract(this.guardian.position());
-            if (toTarget.lengthSqr() < 1.0E-6D) {
-                return;
-            }
-            toTarget = toTarget.normalize();
-
-            if (distance < 2.0D) {
-                // Совсем близко — путь не строим (он всё равно каждый тик
-                // перестраивался бы и стоил бы дорого).
-                this.guardian.moveDirectly(toTarget, GuardianTuning.ADVANCE_SPEED);
-                return;
-            }
-            this.guardian.navigateTo(this.target.getX(), this.target.getY(), this.target.getZ(),
-                    GuardianTuning.NAV_SPEED);
-            this.guardian.moveAlongPath(GuardianTuning.ADVANCE_SPEED, toTarget);
+            this.guardian.followPath(this.target.getX(), this.target.getY(), this.target.getZ(),
+                    GuardianTuning.ADVANCE_SPEED);
             return;
         }
 
         // Дошли до рабочей дистанции — занимаем рубеж и запоминаем его точку.
-        if (GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.STANDOFF)) {
+        if (standoffEnabled) {
             this.guardian.setStandoffReached(this.guardian.position());
             GuardianTrace.event(this.guardian, "занял рубеж");
         }
@@ -168,35 +145,25 @@ public class GuardianRangedAttackGoal extends Goal {
     }
 
     /**
-     * Стоять на месте: гасим скорость и гасим навигацию.
+     * Стоять на месте: обнуляем вход движения и гасим навигацию.
      *
      * <p>Навигацию обязательно сбрасываем: иначе маршрут (а с ним прыжки
-     * ванильного MoveControl) продолжает вести стража по старой цели — он
-     * подпрыгивал и «зависал» в воздухе, хотя стоять должен был на месте.
+     * ванильного MoveControl) продолжает вести стража по старой цели.
      */
     private void holdPosition() {
-        this.guardian.stopHorizontalMovement();
-        this.guardian.resetNavigationTarget();
+        this.guardian.standStill();
     }
 
     /**
      * Отход от подошедшего вплотную врага.
      *
-     * <p>Пятится страж ОТ врага (а не к якорю): якорь — это точка, где страж
-     * стоял, и привязка к ней давала «отход на 2 блока, зомби подошёл, снова
-     * отход» — дёрганье. Отход непрерывный, поэтому пятится плавно.
+     * <p>Пятится страж ОТ врага (лицом к нему): шаг назад относительно курса
+     * тела. Отход непрерывный, поэтому пятится плавно.
      *
-     * <p>Предел отхода — якорь плюс {@link GuardianTuning#RETREAT_MAX_BACKSTEP}:
-     * иначе страж «убегает» за карту.
+     * <p>Предел отхода — якорь рубежа плюс
+     * {@link GuardianTuning#RETREAT_MAX_BACKSTEP}: иначе страж «убегает» за карту.
      */
     private void retreatFromTarget() {
-        Vec3 away = this.guardian.position().subtract(this.target.position());
-        if (away.lengthSqr() < 1.0E-6D) {
-            this.holdPosition();
-            return;
-        }
-        away = away.normalize();
-
         Vec3 anchor = this.guardian.getStandoffAnchor();
         if (anchor != null) {
             double fromAnchor = this.guardian.position().subtract(anchor).length();
@@ -207,17 +174,28 @@ public class GuardianRangedAttackGoal extends Goal {
             }
         }
 
-        // Отход — ПРЯМЫМ движением назад: путь строить не нужно. Раньше цель
-        // отхода была в 2 блоках от стража, путь тут же считался пройденным, и
-        // навигация перестраивала его КАЖДЫЙ тик — главная подозрительная
-        // нагрузка на сервер (из-за неё проседал TPS, а стражи «зависали»).
         if (this.guardian.horizontalCollision) {
-            // Упёрлись в стену — только тут включаем навигацию, она обойдёт.
-            Vec3 fleePoint = this.guardian.position().add(away.scale(2.0D));
-            this.guardian.navigateTo(fleePoint.x, this.guardian.getY(), fleePoint.z, GuardianTuning.NAV_SPEED);
-            this.guardian.moveAlongPath(GuardianTuning.RETREAT_SPEED, away);
+            // Упёрлись в стену — идём в обход по маршруту.
+            Vec3 away = this.guardian.position().subtract(this.target.position());
+            if (away.lengthSqr() < 1.0E-6D) {
+                this.holdPosition();
+                return;
+            }
+            Vec3 fleePoint = this.guardian.position().add(away.normalize().scale(2.0D));
+            this.guardian.followPath(fleePoint.x, this.guardian.getY(), fleePoint.z,
+                    GuardianTuning.RETREAT_SPEED);
             return;
         }
-        this.guardian.moveDirectly(away, GuardianTuning.RETREAT_SPEED);
+
+        if (GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.CUSTOM_MOVE)) {
+            // Старая самодельная физика — оставлена только для сравнения
+            // с ванильным движением (A/B по флагу CUSTOM_MOVE).
+            Vec3 away = this.guardian.position().subtract(this.target.position());
+            if (away.lengthSqr() > 1.0E-6D) {
+                this.guardian.moveDirectly(away.normalize(), GuardianTuning.RETREAT_SPEED);
+            }
+            return;
+        }
+        this.guardian.strafeWithSpeed(-1.0F, 0.0F, GuardianTuning.RETREAT_SPEED);
     }
 }

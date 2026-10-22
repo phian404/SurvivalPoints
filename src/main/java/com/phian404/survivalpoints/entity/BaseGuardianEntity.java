@@ -91,17 +91,6 @@ public class BaseGuardianEntity extends PathfinderMob {
             SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.FLOAT);
 
     /**
-     * Тик, в котором начался взмах мечом (0 — взмаха не было).
-     *
-     * <p>Именно тик, а не остаток счётчика: клиент сам считает фазу взмаха
-     * по времени, и анимация получается плавной. Счётчик, обновляемый раз
-     * в тик на сервере, приходил на клиент пачками — движение выглядело
-     * дёрганным и отрывистым.
-     */
-    private static final EntityDataAccessor<Integer> DATA_SWING_START =
-            SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.INT);
-
-    /**
      * Сглаженный курс тела.
      *
      * <p>Собственное поле, а не {@code yBodyRot}: ванильный {@code yBodyRot}
@@ -141,6 +130,17 @@ public class BaseGuardianEntity extends PathfinderMob {
 
     /** Просил ли кто-нибудь двигаться в прошлом тике. */
     private boolean moveRequested = false;
+
+    /** Наш MoveControl: шаг относительно курса тела + удержание курса тела. */
+    private final GuardianMoveControl guardianMoveControl;
+
+    /**
+     * Развёрнуто ли тело на врага.
+     *
+     * <p>В бою — да: тело смотрит на врага, а движение идёт шагом назад.
+     * При ходьбе по маршруту — нет: тело ведёт маршрут, на цель смотрит голова.
+     */
+    private boolean bodyFacesTarget = true;
 
 
     /**
@@ -270,19 +270,11 @@ public class BaseGuardianEntity extends PathfinderMob {
         super(type, level);
         this.setCanPickUpLoot(true);
 
-        // Ванильный MoveControl каждый тик доворачивает курс моба к направлению
-        // маршрута (rotlerp, до 90°/тик). Это воюет с нашим разворотом корпуса
-        // к цели: при отступлении маршрут и цель указывают в противоположные
-        // стороны, и курс скачет между ними. Оставляем от MoveControl всё, кроме
-        // доворачивания курса — в первую очередь прыжки через препятствия.
-        this.moveControl = new MoveControl(this) {
-            @Override
-            public void tick() {
-                float savedYaw = this.mob.getYRot();
-                super.tick();
-                this.mob.setYRot(savedYaw);
-            }
-        };
+        // Свой MoveControl: шагает относительно курса тела (ванильный strafe) и
+        // не даёт ванильному MoveControl доворачивать корпус к маршруту, когда
+        // страж в бою должен смотреть на врага.
+        this.guardianMoveControl = new GuardianMoveControl(this);
+        this.moveControl = this.guardianMoveControl;
     }
 
     // ==================== Регистрация ====================
@@ -294,7 +286,6 @@ public class BaseGuardianEntity extends PathfinderMob {
         this.entityData.define(DATA_AI_STATE, (byte) GuardianState.IDLE.ordinal());
         this.entityData.define(DATA_HEAD_PITCH, 0.0F);
         this.entityData.define(DATA_HEAD_YAW, 0.0F);
-        this.entityData.define(DATA_SWING_START, 0);
     }
 
     @Override
@@ -601,23 +592,16 @@ public class BaseGuardianEntity extends PathfinderMob {
         return this.entityData.get(DATA_HEAD_YAW);
     }
 
-    /**
-     * Запустить анимацию взмаха мечом.
-     *
-     * <p>Синхронизируется ТИК начала взмаха: клиент считает фазу сам, по
-     * времени, поэтому движение руки плавное, без ступенек.
-     */
-    public void startMeleeSwing() {
-        this.entityData.set(DATA_SWING_START, this.tickCount);
-    }
-
-    /** Тик начала взмаха (0 — взмаха не было). */
-    public int getSyncedSwingStart() {
-        return this.entityData.get(DATA_SWING_START);
-    }
-
     private void applyFacing() {
         if (!this.shouldFaceTarget()) {
+            return;
+        }
+        if (this.getAIState() == GuardianState.MELEE) {
+            // В ближнем бою за разворот отвечает ванильный MeleeAttackGoal —
+            // он доворачивает взгляд через LookControl. Наш разворот сюда не
+            // лезет, иначе два контроллера дерутся за голову.
+            this.entityData.set(DATA_HEAD_PITCH, this.getXRot());
+            this.entityData.set(DATA_HEAD_YAW, this.getYHeadRot());
             return;
         }
         LivingEntity target = this.getTarget();
@@ -996,6 +980,48 @@ public class BaseGuardianEntity extends PathfinderMob {
     // ==================== Перемещение и застревание ====================
 
     /**
+     * Шаг относительно курса тела.
+     *
+     * <p>Тело при этом развёрнуто на врага, поэтому шаг назад (-1, 0) — это
+     * отход лицом к врагу. Движение считает ванильная физика: трение, гравитация
+     * и отбрасывание работают как положено (своя перезапись скорости их гасила).
+     *
+     * @param forwards      1 — вперёд, -1 — назад
+     * @param right         1 — вправо, -1 — влево
+     * @param blocksPerTick скорость в блоках за тик
+     */
+    public void strafeWithSpeed(float forwards, float right, double blocksPerTick) {
+        this.guardianMoveControl.setKeepYaw(true);
+        this.bodyFacesTarget = true;
+        this.guardianMoveControl.strafeWithSpeed(forwards, right, blocksPerTick);
+    }
+
+    /**
+     * Идти к точке по маршруту.
+     *
+     * <p>Тело ведёт маршрут (ванильная навигация обходит стены, ищет выход из
+     * ямы и умеет подъёмы), на цель смотрит только голова.
+     *
+     * @param blocksPerTick скорость в блоках за тик
+     */
+    public void followPath(double x, double y, double z, double blocksPerTick) {
+        this.guardianMoveControl.clearStrafe();
+        this.guardianMoveControl.setKeepYaw(false);
+        this.bodyFacesTarget = false;
+        double modifier = blocksPerTick
+                / Math.max(0.01D, this.getAttributeValue(Attributes.MOVEMENT_SPEED));
+        this.navigateTo(x, y, z, modifier);
+    }
+
+    /** Стоять на месте: обнулить вход движения и сбросить маршрут. */
+    public void standStill() {
+        this.guardianMoveControl.clearStrafe();
+        this.guardianMoveControl.setKeepYaw(true);
+        this.bodyFacesTarget = true;
+        this.resetNavigationTarget();
+    }
+
+    /**
      * Поворачивает моба лицом к точке и записывает горизонтальную скорость
      * в мировых координатах. Направление не зависит от текущего курса моба,
      * поэтому страж может одновременно смотреть на врага и от него отходить.
@@ -1118,7 +1144,9 @@ public class BaseGuardianEntity extends PathfinderMob {
         // тогда, когда цель ушла совсем.
         boolean targetMoved = (dx * dx + dz * dz) > 25.0D;
 
-        if (this.getNavigation().isDone() || this.navRetargetTimer <= 0 || targetMoved) {
+        // Путь перестраивается по таймеру, а не «как только закончился»: на
+        // короткой дистанции маршрут строился бы каждый тик (дорого).
+        if (this.navRetargetTimer <= 0 || targetMoved) {
             long start = System.nanoTime();
             this.getNavigation().moveTo(x, y, z, speed);
             PerfDiagnostics.addPathRebuild(System.nanoTime() - start);
@@ -1241,10 +1269,14 @@ public class BaseGuardianEntity extends PathfinderMob {
         desiredPitch = Mth.clamp(desiredPitch, -GuardianTuning.MAX_HEAD_PITCH, GuardianTuning.MAX_HEAD_PITCH);
         this.headPitch = Mth.lerp(GuardianTuning.FACE_PITCH_SPEED, this.headPitch, desiredPitch);
 
-        this.setYRot(this.bodyYaw);
+        if (this.bodyFacesTarget) {
+            // Тело развёрнуто на врага — курс применяем. При ходьбе по маршруту
+            // тело ведёт маршрут, и курс трогать нельзя.
+            this.setYRot(this.bodyYaw);
+            this.yBodyRot = this.bodyYaw;
+        }
         this.setYHeadRot(this.headYaw);
         this.setXRot(this.headPitch);
-        this.yBodyRot = this.bodyYaw;
 
         // Наклон головы клиент обнуляет каждый тик (LookControl), поэтому
         // его дублируем в SynchedEntityData. Курс тела передавать не нужно:

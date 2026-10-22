@@ -35,7 +35,7 @@ public class GuardianTraceCommand {
     private static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("sp_trace")
                 .requires(source -> source.hasPermission(2))
-                .executes(GuardianTraceCommand::status)
+                .executes(GuardianTraceCommand::toggleTrace)
                 .then(Commands.literal("on")
                         .executes(ctx -> setTrace(ctx, true)))
                 .then(Commands.literal("off")
@@ -55,6 +55,21 @@ public class GuardianTraceCommand {
                         .executes(ctx -> setHang(ctx, true)))
                 .then(Commands.literal("off")
                         .executes(ctx -> setHang(ctx, false))));
+    }
+
+    /**
+     * Переключатель трассировки.
+     *
+     * <p>Без аргументов команда переключает режим — так удобнее, чем помнить
+     * {@code on}/{@code off}.
+     */
+    private static int toggleTrace(CommandContext<CommandSourceStack> ctx) {
+        boolean value = !GuardianTrace.isEnabled();
+        GuardianTrace.setEnabled(value);
+        ctx.getSource().sendSuccess(() -> Component.literal("§7[SP] Трассировка стража: §f"
+                + (value ? "ВКЛ (события в лог и чат)" : "выкл"))
+                .withStyle(ChatFormatting.GRAY), false);
+        return 1;
     }
 
     private static int setTrace(CommandContext<CommandSourceStack> ctx, boolean value) {

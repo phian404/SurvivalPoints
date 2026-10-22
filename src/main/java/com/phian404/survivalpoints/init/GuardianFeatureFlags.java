@@ -38,8 +38,7 @@ public final class GuardianFeatureFlags {
 
     /** Механики, которые можно временно отключить. */
     public enum Flag {
-        CUSTOM_MOVE("CUSTOM_MOVE", "самописная физика движения"),
-        CUSTOM_SWING("CUSTOM_SWING", "кастомная анимация взмаха мечом"),
+        CUSTOM_MOVE("CUSTOM_MOVE", "самописная физика движения (для сравнения с ванильной)"),
         EAT_BREAD("EAT_BREAD", "еда хлебом"),
         STANDOFF("STANDOFF", "удержание рабочего рубежа и отступление"),
         RALLY("RALLY", "сбор союзников (зов о помощи)"),
