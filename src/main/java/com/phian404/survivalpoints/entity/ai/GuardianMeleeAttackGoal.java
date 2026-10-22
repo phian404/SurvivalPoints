@@ -31,7 +31,7 @@ public class GuardianMeleeAttackGoal extends MeleeAttackGoal {
     private final BaseGuardianEntity guardian;
 
     public GuardianMeleeAttackGoal(BaseGuardianEntity guardian) {
-        super(guardian, GuardianTuning.MELEE_SPEED, true);
+        super(guardian, GuardianTuning.MELEE_SPEED_MODIFIER, true);
         this.guardian = guardian;
         // Ванильный MeleeAttackGoal флагов не объявляет — значит, он не берёт
         // MOVE и мирно сосуществует с голом дальнего боя. Без флагов оба гола
@@ -77,7 +77,7 @@ public class GuardianMeleeAttackGoal extends MeleeAttackGoal {
         if (target != null) {
             Path path = this.guardian.getNavigation().createPath(target, 0);
             if (path != null) {
-                this.guardian.getNavigation().moveTo(path, GuardianTuning.MELEE_SPEED);
+                this.guardian.getNavigation().moveTo(path, GuardianTuning.MELEE_SPEED_MODIFIER);
             }
         }
         this.guardian.setAggressive(true);

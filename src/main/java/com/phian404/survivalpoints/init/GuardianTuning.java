@@ -166,6 +166,16 @@ public final class GuardianTuning {
     public static final double MELEE_ENTER_DISTANCE = 4.0D;
 
     /**
+     * Множитель скорости ванильного {@code MeleeAttackGoal}.
+     *
+     * <p>Ванильный {@code navigation.moveTo(path, speed)} трактует скорость как
+     * МНОЖИТЕЛЬ {@code Attributes.MOVEMENT_SPEED}, а не как блоки за тик:
+     * итог = speed × 0.25. Чтобы в ближний бой страж шёл теми же 0.65 блоками
+     * за тик, множитель должен быть 2.6.
+     */
+    public static final double MELEE_SPEED_MODIFIER = 2.6D;
+
+    /**
      * Дальше этой дистанции страж возвращается к арбалету (гистерезис, чтобы не дёргался).
      *
      * <p>Широкий коридор 4..7: пока зомби в нём, страж остаётся в ближнем бою
