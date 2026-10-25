@@ -25,6 +25,7 @@ import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.control.MoveControl;
@@ -66,6 +67,9 @@ public class BaseGuardianEntity extends PathfinderMob {
 
     private static final EntityDataAccessor<Byte> DATA_AI_STATE =
             SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.BYTE);
+
+    private static final EntityDataAccessor<Float> DATA_CROSSBOW_CHARGE_PROGRESS =
+            SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.FLOAT);
 
     /**
      * Синхронизированный наклон головы (в градусах).
@@ -292,6 +296,7 @@ public class BaseGuardianEntity extends PathfinderMob {
     protected void defineSynchedData() {
         super.defineSynchedData();
         this.entityData.define(DATA_CHARGING, false);
+        this.entityData.define(DATA_CROSSBOW_CHARGE_PROGRESS, 0.0F);
         this.entityData.define(DATA_AI_STATE, (byte) GuardianState.IDLE.ordinal());
         this.entityData.define(DATA_HEAD_PITCH, 0.0F);
         this.entityData.define(DATA_HEAD_YAW, 0.0F);
@@ -419,6 +424,10 @@ public class BaseGuardianEntity extends PathfinderMob {
                 && this.getHealth() < this.getMaxHealth() * GuardianTuning.PANIC_HP_RATIO) {
             // Паника имеет приоритет над всем: отступаем и стреляем из арбалета.
             next = GuardianState.PANIC;
+        } else if (target instanceof Creeper) {
+            // Против крипера держим арбалет даже вблизи; ranged goal сам отступит,
+            // если крипер подойдёт слишком близко.
+            next = GuardianState.RANGED;
         } else if (current == GuardianState.MELEE && distance <= GuardianTuning.MELEE_EXIT_DISTANCE) {
             // Гистерезис: из меча возвращаемся к арбалету только на расстоянии.
             next = GuardianState.MELEE;
@@ -478,6 +487,7 @@ public class BaseGuardianEntity extends PathfinderMob {
         this.moveRequested = false;
 
         super.tick();
+        this.updateSwingTime();
         if (this.level().isClientSide) {
             return;
         }
@@ -657,6 +667,13 @@ public class BaseGuardianEntity extends PathfinderMob {
                 && weapon.is(Items.CROSSBOW);
         if (this.entityData.get(DATA_CHARGING) != raising) {
             this.entityData.set(DATA_CHARGING, raising);
+        }
+
+        float chargeProgress = weapon.is(Items.CROSSBOW)
+                ? Mth.clamp((float) this.crossbowChargeTime / GuardianTuning.CROSSBOW_CHARGE_TICKS, 0.0F, 1.0F)
+                : 0.0F;
+        if (this.entityData.get(DATA_CROSSBOW_CHARGE_PROGRESS) != chargeProgress) {
+            this.entityData.set(DATA_CROSSBOW_CHARGE_PROGRESS, chargeProgress);
         }
 
         // Тег «Charged» на самом арбалете означает «заряжен» — он должен стоять
@@ -867,6 +884,10 @@ public class BaseGuardianEntity extends PathfinderMob {
 
     public boolean isCharging() {
         return this.entityData.get(DATA_CHARGING);
+    }
+
+    public float getCrossbowChargeProgress() {
+        return this.entityData.get(DATA_CROSSBOW_CHARGE_PROGRESS);
     }
 
     public int getCrossbowChargeTime() {

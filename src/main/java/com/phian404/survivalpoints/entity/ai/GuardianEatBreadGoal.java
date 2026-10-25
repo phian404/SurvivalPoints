@@ -60,9 +60,9 @@ public class GuardianEatBreadGoal extends Goal {
     public void tick() {
         this.eatTimer++;
 
-        // Каждые 2 тика — звук, анимация руки и частицы.
-        if (this.eatTimer % 2 == 0) {
-            this.guardian.swing(InteractionHand.MAIN_HAND, true);
+        // Каждые 4 тика — звук и частицы. Swing не вызываем: он запускает
+        // ванильную анимацию подъёма руки, которая не нужна при еде.
+        if (this.eatTimer % 4 == 0) {
             this.guardian.playSound(net.minecraft.sounds.SoundEvents.GENERIC_EAT, 0.5F, 1.0F);
 
             if (this.guardian.level() instanceof ServerLevel serverLevel) {

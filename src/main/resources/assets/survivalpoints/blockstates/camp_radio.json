@@ -1,0 +1,6 @@
+{
+  "variants": {
+    "powered=true": { "model": "survivalpoints:block/camp_radio" },
+    "powered=false": { "model": "survivalpoints:block/camp_radio" }
+  }
+}

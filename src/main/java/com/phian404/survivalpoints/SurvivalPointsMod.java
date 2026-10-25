@@ -1,5 +1,7 @@
 package com.phian404.survivalpoints;
 
+import com.phian404.survivalpoints.init.ModBlocks;
+import com.phian404.survivalpoints.init.ModCreativeTabs;
 import com.phian404.survivalpoints.init.ModEntities;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
@@ -17,6 +19,8 @@ public class SurvivalPointsMod {
         // именем survivalpoints:base_guardian, из-за чего живая регистрация
         // зависела от порядка инициализации классов.
         ModEntities.ENTITY_TYPES.register(FMLJavaModLoadingContext.get().getModEventBus());
+        ModBlocks.register(FMLJavaModLoadingContext.get().getModEventBus());
+        ModCreativeTabs.register(FMLJavaModLoadingContext.get().getModEventBus());
 
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::setup);
     }
