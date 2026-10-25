@@ -2,6 +2,7 @@ package com.phian404.survivalpoints.init;
 
 import com.phian404.survivalpoints.SurvivalPointsMod;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.entity.BaseSurvivorNpcEntity;
 import net.minecraft.client.model.geom.ModelLayerLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
@@ -35,9 +36,21 @@ public class ModEntities {
                             .build("survivalpoints:base_guardian")
             );
 
+    public static final RegistryObject<EntityType<BaseSurvivorNpcEntity>> BASE_SURVIVOR =
+            ENTITY_TYPES.register("base_survivor", () ->
+                    EntityType.Builder.of(BaseSurvivorNpcEntity::new, MobCategory.CREATURE)
+                            .sized(0.6F, 1.8F)
+                            .clientTrackingRange(8)
+                            .build("survivalpoints:base_survivor")
+            );
+
     public static final RegistryObject<ForgeSpawnEggItem> BASE_GUARDIAN_SPAWN_EGG =
             ModBlocks.ITEMS.register("base_guardian_spawn_egg", () ->
                     new ForgeSpawnEggItem(BASE_GUARDIAN, 0x3A3A3A, 0xF28C28, new Item.Properties()));
+
+    public static final RegistryObject<ForgeSpawnEggItem> BASE_SURVIVOR_SPAWN_EGG =
+            ModBlocks.ITEMS.register("base_survivor_spawn_egg", () ->
+                    new ForgeSpawnEggItem(BASE_SURVIVOR, 0x6B6B6B, 0xD9C08C, new Item.Properties()));
 
     public static ModelLayerLocation BASE_GUARDIAN_LAYER;
 }

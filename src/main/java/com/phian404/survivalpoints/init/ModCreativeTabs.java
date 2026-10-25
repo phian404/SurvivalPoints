@@ -18,6 +18,7 @@ public class ModCreativeTabs {
                     .displayItems((params, output) -> {
                         output.accept(ModBlocks.CAMP_RADIO_ITEM.get());
                         output.accept(ModEntities.BASE_GUARDIAN_SPAWN_EGG.get());
+                        output.accept(ModEntities.BASE_SURVIVOR_SPAWN_EGG.get());
                     })
                     .build());
 

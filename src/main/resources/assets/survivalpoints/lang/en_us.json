@@ -1,5 +1,7 @@
 {
   "block.survivalpoints.camp_radio": "Radio Tower",
   "item.survivalpoints.base_guardian_spawn_egg": "Base Guardian Spawn Egg",
+  "item.survivalpoints.base_survivor_spawn_egg": "Survivor Spawn Egg",
+  "entity.survivalpoints.base_survivor": "Survivor",
   "itemGroup.survivalpoints": "SurvivalPoints"
 }

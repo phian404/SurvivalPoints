@@ -1,5 +1,6 @@
 package com.phian404.survivalpoints.entity;
 
+import com.phian404.survivalpoints.entity.role.SurvivorRole;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 
@@ -58,7 +59,7 @@ import java.util.stream.Collectors;
  * мировых координатах, от следующего узла маршрута. Благодаря этому тело можно
  * держать развёрнутым к врагу, даже когда маршрут уводит в сторону.
  */
-public class BaseGuardianEntity extends PathfinderMob {
+public class BaseGuardianEntity extends BaseSurvivorEntity {
 
     public static EntityType<BaseGuardianEntity> TYPE;
 
@@ -281,6 +282,7 @@ public class BaseGuardianEntity extends PathfinderMob {
 
     public BaseGuardianEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
+        this.setRoleInternal(SurvivorRole.GUARDIAN);
         this.setCanPickUpLoot(true);
 
         // Свой MoveControl: шагает относительно курса тела (ванильный strafe) и
@@ -1504,6 +1506,10 @@ public class BaseGuardianEntity extends PathfinderMob {
                                         MobSpawnType spawnType, @Nullable SpawnGroupData spawnGroupData,
                                         @Nullable CompoundTag dataTag) {
         this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.CROSSBOW));
+        // Скин выбирается один раз при первичном появлении и сохраняется в NBT.
+        if (!this.level().isClientSide && dataTag == null) {
+            this.rollRandomSkin();
+        }
         return super.finalizeSpawn(level, difficulty, spawnType, spawnGroupData, dataTag);
     }
 }

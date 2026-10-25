@@ -2,6 +2,7 @@ package com.phian404.survivalpoints.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.entity.BaseSurvivorNpcEntity;
 import com.phian404.survivalpoints.init.ModEntities;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -31,7 +32,9 @@ public class ModEntityRenderers {
 
                     @Override
                     public ResourceLocation getTextureLocation(BaseGuardianEntity entity) {
-                        return ResourceLocation.fromNamespaceAndPath("survivalpoints", "textures/entity/base_guardian.png");
+                        // Текстура выбирается по синхронизированному индексу скина,
+                        // поэтому превращённый NPC сохраняет свой внешний вид.
+                        return SurvivorSkin.textureFor(entity.getSkinIndex());
                     }
 
                     /**
@@ -91,6 +94,66 @@ public class ModEntityRenderers {
             
             return renderer;
         });
+
+        // Базовый выживший: та же гуманоидная модель, но пассивное поведение.
+        event.registerEntityRenderer(ModEntities.BASE_SURVIVOR.get(), context -> {
+            MobRenderer<BaseSurvivorNpcEntity, HumanoidModel<BaseSurvivorNpcEntity>> renderer =
+                    new MobRenderer<>(context,
+                            new SurvivorModel(context.bakeLayer(
+                                    net.minecraft.client.model.geom.ModelLayers.PLAYER)),
+                            0.5F) {
+                        @Override
+                        public ResourceLocation getTextureLocation(BaseSurvivorNpcEntity entity) {
+                            return SurvivorSkin.textureFor(entity.getSkinIndex());
+                        }
+                    };
+            return renderer;
+        });
+    }
+
+    /**
+     * Централизованный выбор текстуры скина выжившего.
+     *
+     * <p>Индекс приходит с сервера через {@code SynchedEntityData} и сохраняется
+     * в NBT, поэтому все клиенты видят одинаковый вариант, а перезаход его не
+     * меняет. Новые варианты добавляются здесь и увеличивают
+     * {@code BaseSurvivorEntity.SKIN_COUNT}.
+     */
+    public static final class SurvivorSkin {
+        /**
+         * Набор скинов. Сейчас используются ванильные текстуры игрока, чтобы
+         * не добавлять новые ресурсы; собственные варианты можно добавить
+         * сюда же, увеличив {@code BaseSurvivorEntity.SKIN_COUNT}.
+         */
+        private static final ResourceLocation[] TEXTURES = new ResourceLocation[] {
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/steve.png"),
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/alex.png"),
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/ari.png"),
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/efe.png"),
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/kai.png"),
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/makena.png"),
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/noor.png"),
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/sunny.png"),
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/zuri.png")
+        };
+
+        private SurvivorSkin() {
+        }
+
+        public static ResourceLocation textureFor(int index) {
+            if (index < 0 || index >= TEXTURES.length) {
+                return TEXTURES[0];
+            }
+            return TEXTURES[index];
+        }
+    }
+
+    /** Модель базового выжившего: без боевых поз стража. */
+    public static class SurvivorModel extends HumanoidModel<BaseSurvivorNpcEntity> {
+
+        public SurvivorModel(net.minecraft.client.model.geom.ModelPart root) {
+            super(root);
+        }
     }
 
     /**

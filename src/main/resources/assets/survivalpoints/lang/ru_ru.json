@@ -1,5 +1,7 @@
 {
   "itemGroup.survivalpoints": "SurvivalPoints",
   "block.survivalpoints.camp_radio": "Радио вышка лагеря",
-  "item.survivalpoints.base_guardian_spawn_egg": "Яйцо призыва стража"
+  "item.survivalpoints.base_guardian_spawn_egg": "Яйцо призыва стража",
+  "item.survivalpoints.base_survivor_spawn_egg": "Яйцо призыва выжившего",
+  "entity.survivalpoints.base_survivor": "Выживший"
 }
