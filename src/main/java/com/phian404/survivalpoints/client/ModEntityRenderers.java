@@ -10,6 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.EntityRenderersEvent;
+import net.minecraftforge.client.event.ModelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Quaternionf;
@@ -92,6 +93,18 @@ public class ModEntityRenderers {
         });
     }
 
+    /**
+     * Регистрирует ванильные pulling-модели арбалета как дополнительные модели.
+     * Без этого ModelManager.getModel() для них возвращает missing-model
+     * (куб с ошибочной текстурой), хотя сами модели существуют в ваниле.
+     */
+    @SubscribeEvent
+    public static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
+        event.register(net.minecraft.client.resources.model.ModelResourceLocation.vanilla("crossbow_pulling_0", "inventory"));
+        event.register(net.minecraft.client.resources.model.ModelResourceLocation.vanilla("crossbow_pulling_1", "inventory"));
+        event.register(net.minecraft.client.resources.model.ModelResourceLocation.vanilla("crossbow_pulling_2", "inventory"));
+    }
+
     // GuardianModel class definition
     public static class GuardianModel extends HumanoidModel<BaseGuardianEntity> {
 
@@ -103,11 +116,13 @@ public class ModEntityRenderers {
         public void setupAnim(BaseGuardianEntity entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
             BaseGuardianEntity.CombatState currentCombatState = entity.getCombatState();
             boolean currentCharging = entity.isCharging();
+            boolean currentEating = entity.isEating();
 
-            if (currentCombatState == BaseGuardianEntity.CombatState.RANGED) {
+            float chargeProgress = entity.getCrossbowChargeProgress();
+            if (currentCombatState == BaseGuardianEntity.CombatState.RANGED && !currentEating) {
                 if (currentCharging) {
-                    this.rightArmPose = net.minecraft.client.model.HumanoidModel.ArmPose.CROSSBOW_CHARGE;
-                    this.leftArmPose = net.minecraft.client.model.HumanoidModel.ArmPose.CROSSBOW_CHARGE;
+                    this.rightArmPose = net.minecraft.client.model.HumanoidModel.ArmPose.EMPTY;
+                    this.leftArmPose = net.minecraft.client.model.HumanoidModel.ArmPose.EMPTY;
                 } else {
                     this.rightArmPose = net.minecraft.client.model.HumanoidModel.ArmPose.CROSSBOW_HOLD;
                     this.leftArmPose = net.minecraft.client.model.HumanoidModel.ArmPose.CROSSBOW_HOLD;
@@ -118,6 +133,26 @@ public class ModEntityRenderers {
             }
 
             super.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
+            if (currentCharging && !currentEating
+                    && currentCombatState == BaseGuardianEntity.CombatState.RANGED) {
+                // Повторяем ванильный animateCrossbowCharge для праворукой позы,
+                // используя chargeProgress стража вместо getTicksUsingItem() игрока.
+                float progress = net.minecraft.util.Mth.clamp(chargeProgress, 0.0F, 1.0F);
+                float baseArmX = -0.97079635F;
+
+                this.rightArm.xRot = baseArmX;
+                this.rightArm.yRot = -0.8F;
+                this.leftArm.xRot = net.minecraft.util.Mth.lerp(progress, baseArmX, (float) (-Math.PI / 2));
+                this.leftArm.yRot = net.minecraft.util.Mth.lerp(progress, 0.4F, 0.85F);
+            }
+            if (currentEating) {
+                this.rightArm.xRot = 0.0F;
+                this.rightArm.yRot = 0.0F;
+                this.rightArm.zRot = 0.0F;
+                this.leftArm.xRot = 0.0F;
+                this.leftArm.yRot = 0.0F;
+                this.leftArm.zRot = 0.0F;
+            }
 
             // Анимацию удара мечом не трогаем: её рисует ванильная
             // HumanoidModel (setupAttackAnimation по LivingEntity.swingAnimation).
