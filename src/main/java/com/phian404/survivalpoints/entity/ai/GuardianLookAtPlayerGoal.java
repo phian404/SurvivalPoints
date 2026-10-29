@@ -37,14 +37,14 @@ public class GuardianLookAtPlayerGoal extends LookAtPlayerGoal {
 
     @Override
     public boolean canUse() {
+        // В покое — то есть когда ни один боевой гол не активен.
         return GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.LOOK_PLAYER)
-                && this.guardian.getAIState() == BaseGuardianEntity.GuardianState.IDLE
+                && !this.guardian.isCombatGoalActive()
                 && super.canUse();
     }
 
     @Override
     public boolean canContinueToUse() {
-        return this.guardian.getAIState() == BaseGuardianEntity.GuardianState.IDLE
-                && super.canContinueToUse();
+        return !this.guardian.isCombatGoalActive() && super.canContinueToUse();
     }
 }

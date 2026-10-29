@@ -122,7 +122,7 @@ public class ModEntityRenderers {
                         // super.render(), чтобы и тело, и слои (CustomWeaponLayer)
                         // использовали актуальную геометрию.
                         this.model = entity.getGender() == SurvivorGender.FEMALE ? models[1] : models[0];
-                        if (entity.getAIState() != BaseGuardianEntity.GuardianState.IDLE) {
+                        if (entity.isFacingTarget()) {
                             // Тело рисуется по yBodyRot, а он ванильными пакетами
                             // НЕ передаётся: клиент считает его сам, из направления
                             // движения. Поэтому подставляем курс, который приходит
@@ -135,7 +135,11 @@ public class ModEntityRenderers {
                             // как у обычных мобов, и ступенек не видно.
                             entity.yBodyRot = entity.getYRot();
 
-                            if (entity.getAIState() != BaseGuardianEntity.GuardianState.MELEE) {
+                            // В ближнем бою голову ведёт ванильный MeleeAttackGoal
+                            // (LookControl), а не синхронизированные значения.
+                            // isAggressive() выставлен меч-голом и клиенту доступен;
+                            // getRunningGoals() на клиенте пуст — цели там не тикают.
+                            if (!entity.isAggressive()) {
                                 // Голова ведётся отдельно от корпуса: она доворачивается
                                 // к цели быстрее него. Её курс клиентский LookControl
                                 // портит (уводит к корпусу и зажимает 75°), поэтому
@@ -245,12 +249,14 @@ public class ModEntityRenderers {
 
         @Override
         public void setupAnim(BaseGuardianEntity entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
-            BaseGuardianEntity.CombatState currentCombatState = entity.getCombatState();
+            // Поза арбалета определяется предметом в руке, а не состоянием:
+            // предмет доступен клиенту и не зависит от синхронизации enum.
             boolean currentCharging = entity.isCharging();
             boolean currentEating = entity.isEating();
+            boolean holdingCrossbow = entity.getMainHandItem().is(net.minecraft.world.item.Items.CROSSBOW);
 
             float chargeProgress = entity.getCrossbowChargeProgress();
-            if (currentCombatState == BaseGuardianEntity.CombatState.RANGED && !currentEating) {
+            if (holdingCrossbow && !currentEating) {
                 if (currentCharging) {
                     this.rightArmPose = net.minecraft.client.model.HumanoidModel.ArmPose.EMPTY;
                     this.leftArmPose = net.minecraft.client.model.HumanoidModel.ArmPose.EMPTY;
@@ -264,8 +270,7 @@ public class ModEntityRenderers {
             }
 
             super.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
-            if (currentCharging && !currentEating
-                    && currentCombatState == BaseGuardianEntity.CombatState.RANGED) {
+            if (currentCharging && !currentEating && holdingCrossbow) {
                 // Повторяем ванильный animateCrossbowCharge для праворукой позы,
                 // используя chargeProgress стража вместо getTicksUsingItem() игрока.
                 float progress = net.minecraft.util.Mth.clamp(chargeProgress, 0.0F, 1.0F);

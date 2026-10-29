@@ -26,10 +26,10 @@ import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.*;
-import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.control.MoveControl;
+import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
 import net.minecraft.world.entity.player.Player;
@@ -42,17 +42,23 @@ import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
  * Страж — гуманоидный защитник.
  *
- * <p>Архитектура: вся боевая логика вынесена в {@link GuardianState} — единый автомат
- * состояний. Голды отвечают ТОЛЬКО за перемещение, и каждый из них работает
- * исключительно в своём состоянии. Это исключает ситуацию, когда три гола одновременно
- * пишут в {@code setDeltaMovement} и дёргают моба в разные стороны (старый баг:
- * страж «зависал» в стене и умирал в углу).
+ * <p>Архитектура: <b>боевое поведение определяют голы</b> ({@code GoalSelector}) —
+ * они единственный источник истины. Каждый боевой гол сам проверяет живую цель
+ * и дистанцию, поэтому одновременно перемещением управляет ровно один гол
+ * (флаг {@code MOVE} у них один). Отдельного автомата состояний больше нет:
+ * {@link GuardianState} остался только диагностическим описанием для {@code /sp_guard}.
+ * Раньше два «мозга» рассинхронизировались, и это давало «статую с хлебом» и
+ * задержку переключения в тик.
  *
  * <p>Перемещение в бою: <b>маршрут строит навигация</b> (она обходит стены, ищет
  * выход из ямы и умеет подъёмы на блок), а <b>скорость считает сам страж</b> — в
@@ -66,8 +72,26 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     private static final EntityDataAccessor<Boolean> DATA_CHARGING =
             SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.BOOLEAN);
 
+    /**
+     * Диагностический кэш фактического состояния.
+     *
+     * <p>Раньше это был автомат состояний, который САМ решал, что делать («второй
+     * мозг» рядом с {@code GoalSelector}). Теперь значение только описывает уже
+     * случившееся: боевое поведение определяют голы, а поле заполняется из них
+     * один раз в тик для {@code /sp_guard}. Логика его не читает.
+     */
     private static final EntityDataAccessor<Byte> DATA_AI_STATE =
             SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.BYTE);
+
+    /**
+     * Синхронизированный признак «страж развёрнут к цели».
+     *
+     * <p>Рендеру нужно знать, подставлять ли серверный курс тела. Из ванильного
+     * состояния для этого годится только {@code isAggressive()} — но в дальнем
+     * бою он {@code false}, поэтому отдельный признак.
+     */
+    private static final EntityDataAccessor<Boolean> DATA_FACING_TARGET =
+            SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.BOOLEAN);
 
     private static final EntityDataAccessor<Float> DATA_CROSSBOW_CHARGE_PROGRESS =
             SynchedEntityData.defineId(BaseGuardianEntity.class, EntityDataSerializers.FLOAT);
@@ -149,8 +173,13 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
 
 
     /**
-     * Единственный источник правды о том, что страж делает прямо сейчас.
-     * Значение синхронизируется с клиентом и используется рендером.
+     * Диагностическое описание того, что страж делает прямо сейчас.
+     *
+     * <p><b>Не управляет поведением.</b> Раньше это был автомат состояний, и
+     * каждый боевой гол работал «только в своём состоянии». Теперь решения
+     * принимают сами голы (живая цель + дистанция), а это значение
+     * восстанавливается из факта: активен ли меч-гол, паникует ли страж.
+     * Нужно только для {@code /sp_guard}.
      */
     public enum GuardianState {
         /** Цели нет: ходит, ест хлеб, осматривается. */
@@ -162,9 +191,6 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         /** Мало ХП: отступает, стреляет и зовёт союзников. Всегда с арбалетом. */
         PANIC
     }
-
-    /** Состояние для клиентского рендера (обратная совместимость). */
-    public enum CombatState { RANGED, MELEE }
 
     // ==================== Заряд и кулдауны ====================
 
@@ -217,6 +243,28 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     private int swingSoundCooldown = 0;
     private int breadCooldown = 0;
     private boolean eating = false;
+
+    /**
+     * Сколько тиков подряд цель не видна.
+     *
+     * <p>Защита от недостижимой цели: зомби под землёй или за глухой стеной не
+     * виден, поэтому страж не может стрелять, но цель не теряет — дистанция в
+     * пределах {@link GuardianTuning#TARGET_DROP_DISTANCE}. Счётчик доходит до
+     * {@link GuardianTuning#NO_LINE_OF_SIGHT_TICKS} и цель сбрасывается, иначе
+     * страж навсегда остаётся «статуей» с бесконечным зовом на помощь.
+     */
+    private int noLineOfSightTicks = 0;
+
+    /**
+     * Кого страж уже признал недостижимым: UUID → тик, с которого цель можно
+     * брать снова.
+     *
+     * <p>Без этой памяти сброс не работает: поиск цели идёт по расстоянию, и тот
+     * же монстр назначается обратно следующим сканом — цикл «сбросил → назначил»
+     * каждые {@link GuardianTuning#NO_LINE_OF_SIGHT_TICKS} тиков, бой не
+     * прекращается и хлеб недоступен.
+     */
+    private final Map<UUID, Integer> unreachableTargets = new HashMap<>();
 
     /**
      * Сколько тиков осталось «пульсу» еды.
@@ -316,6 +364,7 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         this.entityData.define(DATA_CHARGING, false);
         this.entityData.define(DATA_CROSSBOW_CHARGE_PROGRESS, 0.0F);
         this.entityData.define(DATA_AI_STATE, (byte) GuardianState.IDLE.ordinal());
+        this.entityData.define(DATA_FACING_TARGET, false);
         this.entityData.define(DATA_HEAD_PITCH, 0.0F);
         this.entityData.define(DATA_HEAD_YAW, 0.0F);
     }
@@ -324,13 +373,17 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     protected void registerGoals() {
         super.registerGoals();
 
-        // Каждый боевой гол работает ТОЛЬКО в своём состоянии (проверка в canUse).
-        // Поэтому одновременно активен максимум один гол перемещения.
-        this.goalSelector.addGoal(0, new GuardianRetreatGoal(this));      // PANIC
-        this.goalSelector.addGoal(1, new GuardianMeleeAttackGoal(this));  // MELEE
-        this.goalSelector.addGoal(2, new GuardianRangedAttackGoal(this));  // RANGED
-        this.goalSelector.addGoal(3, new GuardianEatBreadGoal(this));     // IDLE
-        this.goalSelector.addGoal(4, new RandomStrollGoal(this, 1.0D));    // IDLE
+        // ПОРЯДОК РЕГИСТРАЦИИ — ЭТО ПРИОРИТЕТ (К1): обход идёт по порядку
+        // регистрации, а не по числам priority (числа сравниваются только при
+        // вытеснении). Флаг MOVE у боевых голов один (К2), поэтому одновременно
+        // перемещением управляет ровно один гол — первый подходящий.
+        //
+        // Паника → ближний бой → дальний бой → еда → прогулка → взгляд.
+        this.goalSelector.addGoal(0, new GuardianRetreatGoal(this));       // паника
+        this.goalSelector.addGoal(1, new GuardianMeleeAttackGoal(this));   // меч
+        this.goalSelector.addGoal(2, new GuardianRangedAttackGoal(this));  // арбалет
+        this.goalSelector.addGoal(3, new GuardianEatBreadGoal(this));      // еда
+        this.goalSelector.addGoal(4, new RandomStrollGoal(this, 1.0D));     // покой
 
         // Взгляд на игрока — только в покое. Ванильный LookAtPlayerGoal при
         // появлении цели продолжает работать: его canUse() требует отсутствия
@@ -384,6 +437,12 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
 
     // ==================== Состояние ====================
 
+    /**
+     * Диагностическое описание текущего состояния.
+     *
+     * <p>Только чтение для {@code /sp_guard}. Поведение на нём не строится —
+     * источник истины для боевых решений это голы и живая цель.
+     */
     public GuardianState getAIState() {
         byte id = this.entityData.get(DATA_AI_STATE);
         GuardianState[] values = GuardianState.values();
@@ -393,84 +452,80 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         return values[id];
     }
 
-    public void setAIState(GuardianState state) {
-        GuardianState previous = this.getAIState();
-        this.entityData.set(DATA_AI_STATE, (byte) state.ordinal());
-        if (previous != state) {
-            GuardianTrace.event(this, "state " + previous + " -> " + state);
-        }
-    }
-
-    /** Состояние для рендера: PANIC и RANGED — это арбалет, MELEE — меч. */
-    public CombatState getCombatState() {
-        return this.getAIState() == GuardianState.MELEE ? CombatState.MELEE : CombatState.RANGED;
-    }
-
+    /**
+     * Паникует ли страж: мало ХП и есть живая цель.
+     *
+     * <p>Раньше это было состояние автомата. Теперь — вычисляемый предикат:
+     * он не может «залипнуть» и не требует синхронизации с порядком тиков.
+     */
     public boolean isPanicking() {
-        return this.getAIState() == GuardianState.PANIC;
+        if (!GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.PANIC)) {
+            return false;
+        }
+        LivingEntity target = this.getTarget();
+        return target != null && target.isAlive()
+                && this.getHealth() < this.getMaxHealth() * GuardianTuning.PANIC_HP_RATIO;
+    }
+
+    /** Активен ли гол ближнего боя — он владеет мечом и подходом вплотную. */
+    public boolean isMeleeActive() {
+        return this.goalSelector.getRunningGoals()
+                .anyMatch(wrapped -> wrapped.getGoal() instanceof GuardianMeleeAttackGoal);
+    }
+
+    /** Активен ли любой из боевых голов (меч, арбалет, отступление). */
+    public boolean isCombatGoalActive() {
+        return this.goalSelector.getRunningGoals()
+                .anyMatch(wrapped -> {
+                    Goal goal = wrapped.getGoal();
+                    return goal instanceof GuardianMeleeAttackGoal
+                            || goal instanceof GuardianRangedAttackGoal
+                            || goal instanceof GuardianRetreatGoal;
+                });
     }
 
     /**
-     * Автомат состояний. Вызывается каждый тик на сервере.
+     * Обновляет диагностический кэш состояния из фактического положения дел.
      *
-     * <p>Раньше здесь стоял ранний выход при ХП < 40% — из-за этого экипировка
-     * «замораживалась» и страж, попав в панику с мечом в руке, уже не доставал арбалет.
-     * Теперь паника — это отдельное состояние, в котором оружие всегда правильное.
+     * <p>Вычисление идёт <b>из голы</b>, а не наоборот: если активен меч-гол —
+     * состояние MELEE, если паника — PANIC, иначе RANGED либо IDLE. Раньше было
+     * наоборот (голы спрашивали состояние), и это давало «второй мозг» с
+     * задержкой в тик (К3/К4).
      */
-    public void updateAIState() {
-        if (this.isEating()) {
-            this.setAIState(GuardianState.IDLE);
-            return;
-        }
-
-        LivingEntity target = this.getTarget();
-        if (target == null || !target.isAlive()) {
-            if (this.getAIState() != GuardianState.IDLE) {
-                this.setAIState(GuardianState.IDLE);
-                this.getNavigation().stop();
-            }
-            // Цели нет — рубеж больше не актуален.
-            this.resetStandoff();
-            return;
-        }
-
-        double distance = this.distanceTo(target);
-        GuardianState current = this.getAIState();
+    private void updateStateCache() {
         GuardianState next;
-
-        if (GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.PANIC)
-                && this.getHealth() < this.getMaxHealth() * GuardianTuning.PANIC_HP_RATIO) {
-            // Паника имеет приоритет над всем: отступаем и стреляем из арбалета.
+        LivingEntity target = this.getTarget();
+        if (this.isEating() || target == null || !target.isAlive()) {
+            next = GuardianState.IDLE;
+        } else if (this.isPanicking()) {
             next = GuardianState.PANIC;
-        } else if (target instanceof Creeper) {
-            // Против крипера держим арбалет даже вблизи; ranged goal сам отступит,
-            // если крипер подойдёт слишком близко.
-            next = GuardianState.RANGED;
-        } else if (current == GuardianState.MELEE && distance <= GuardianTuning.MELEE_EXIT_DISTANCE) {
-            // Гистерезис: из меча возвращаемся к арбалету только на расстоянии.
-            next = GuardianState.MELEE;
-        } else if (distance < GuardianTuning.MELEE_ENTER_DISTANCE) {
+        } else if (this.isMeleeActive()) {
             next = GuardianState.MELEE;
         } else {
             next = GuardianState.RANGED;
         }
 
-        if (next != current) {
-            this.setAIState(next);
-            // Старый путь навигации может тянуть моба в другую сторону — гасим его.
-            this.getNavigation().stop();
-            this.resetChargeTime();
-            // Уход в панику или в покой — новый бой, рабочий рубеж надо занять заново.
-            // Переход MELEE ↔ RANGED рубеж НЕ сбрасывает: именно из-за этого
-            // страж после ближнего боя снова лезёл к врагу и «качели».
-            if (next == GuardianState.PANIC || next == GuardianState.IDLE) {
-                this.resetStandoff();
-            }
+        byte id = (byte) next.ordinal();
+        if (this.entityData.get(DATA_AI_STATE) != id) {
+            GuardianTrace.event(this, "state -> " + next);
+            this.entityData.set(DATA_AI_STATE, id);
+        }
+
+        // Синхронный флаг разворота — для рендера. isAggressive() тут не годится:
+        // в дальнем бою он false, а тело всё равно должно смотреть на цель.
+        boolean facing = this.shouldFaceTarget();
+        if (this.entityData.get(DATA_FACING_TARGET) != facing) {
+            this.entityData.set(DATA_FACING_TARGET, facing);
         }
     }
 
+    /** Развёрнут ли страж к цели (синхронизировано; читается рендером). */
+    public boolean isFacingTarget() {
+        return this.entityData.get(DATA_FACING_TARGET);
+    }
+
     /**
-     * Приводит оружие в соответствие с текущим состоянием.
+     * Приводит оружие в соответствие с активным боевым голом.
      * Вызывается каждый тик — самовосстанавливается, если предмет выпал.
      */
     public void syncEquipmentToState() {
@@ -479,13 +534,13 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         }
 
         ItemStack current = this.getItemBySlot(EquipmentSlot.MAINHAND);
-        if (this.getAIState() == GuardianState.MELEE) {
+        if (this.isMeleeActive()) {
             if (!current.is(Items.IRON_SWORD)) {
                 this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
                 GuardianTrace.event(this, "оружие: меч");
             }
         } else {
-            // RANGED, PANIC и IDLE — всегда арбалет.
+            // Арбалет — во всех остальных случаях (дальний бой, паника, покой).
             if (!current.is(Items.CROSSBOW)) {
                 this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.CROSSBOW));
                 GuardianTrace.event(this, "оружие: арбалет");
@@ -526,8 +581,14 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         }
 
         this.tickCountdowns();
+        // Снимаем метки «недостижим» с тех, кто снова виден или подошёл вплотную,
+        // ДО выбора цели — иначе подошедший враг остался бы проигнорированным.
+        this.tickUnreachableTargets();
         this.validateTarget();
-        this.updateAIState();
+        // Сначала кэш состояния — он описывает уже принятые голами решения
+        // этого тика (голы тикали внутри super.tick() выше). Затем экипировка:
+        // она зависит от того, какой боевой гол активен.
+        this.updateStateCache();
         this.syncEquipmentToState();
 
         // Разворот тела делаем ДО выстрела: страж должен быть уже повёрнут
@@ -546,7 +607,8 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         // В покое голова держится строго ровно. LookControl каждый тик сбрасывает
         // наклон в ноль, но если активен LookAtPlayerGoal, он тут же снова наклоняет
         // голову к игроку. Гасим наклон принудительно — в покое страж смотрит перед собой.
-        if (this.getAIState() == GuardianState.IDLE) {
+        // Нет активного боевого гола — страж в покое, наклон гасим.
+        if (!this.isCombatGoalActive()) {
             this.setXRot(0.0F);
         }
     }
@@ -559,9 +621,9 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
      * сломает направление движения.
      */
     public boolean shouldFaceTarget() {
-        GuardianState state = this.getAIState();
-        if (state != GuardianState.RANGED && state != GuardianState.PANIC
-                && state != GuardianState.MELEE) {
+        // Разворот — пока работает боевой гол (или союзник идёт на точку сбора).
+        // Раньше проверялось состояние автомата; теперь — факт активности гола.
+        if (!this.isCombatGoalActive() && !this.hasRallyPoint()) {
             return false;
         }
         LivingEntity target = this.getTarget();
@@ -633,7 +695,7 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         if (!this.shouldFaceTarget()) {
             return;
         }
-        if (this.getAIState() == GuardianState.MELEE) {
+        if (this.isMeleeActive()) {
             // В ближнем бою за разворот отвечает ванильный MeleeAttackGoal —
             // он доворачивает взгляд через LookControl. Наш разворот сюда не
             // лезет, иначе два контроллера дерутся за голову.
@@ -676,17 +738,140 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         }
     }
 
-    /** Сбрасываем цель, если враг мёртв или слишком далеко. */
+    /**
+     * Сбрасываем цель, если враг мёртв, слишком далеко **или недостижим**.
+     *
+     * <p>Последнее — ключевое: цель за землёй/стеной не видна, поэтому страж
+     * не может ни выстрелить, ни сблизиться, но формально держит её. Без этого
+     * он остаётся в панике навсегда и бесконечно зовёт на помощь.
+     */
     private void validateTarget() {
         LivingEntity target = this.getTarget();
         if (target == null) {
+            this.noLineOfSightTicks = 0;
             return;
         }
+
+        // Сколько тиков цель остаётся невидимой. Счётчик копится только пока
+        // цель есть и жива: при сбросе цели он обнуляется ниже.
+        if (target.isAlive() && this.getSensing().hasLineOfSight(target)) {
+            this.noLineOfSightTicks = 0;
+        } else if (target.isAlive()) {
+            this.noLineOfSightTicks++;
+        }
+
         double max = GuardianTuning.TARGET_DROP_DISTANCE * GuardianTuning.TARGET_DROP_DISTANCE;
-        if (!target.isAlive() || this.distanceToSqr(target) > max) {
+        boolean unreachable = this.noLineOfSightTicks >= GuardianTuning.NO_LINE_OF_SIGHT_TICKS;
+
+        if (!target.isAlive() || this.distanceToSqr(target) > max || unreachable) {
+            if (unreachable) {
+                // Запоминаем монстра, иначе поиск цели (он идёт только по
+                // расстоянию) назначит его же следующим сканом, и цикл
+                // «сбросил → назначил» не даст стражу выйти из боя.
+                this.markTargetUnreachable(target);
+                GuardianTrace.event(this, "цель недостижима ("
+                        + this.noLineOfSightTicks + " тиков без обзора) — сбрасываю");
+            }
             this.setTarget(null);
             this.clearRally();
+            this.noLineOfSightTicks = 0;
+            // Цель потеряна — рубеж больше не актуален, следующий бой начнётся
+            // со сближения. Раньше это делал автомат состояний; после его удаления
+            // сброс обязан жить там, где теряется цель (риск R4 решения R0.1).
+            this.resetStandoff();
         }
+    }
+
+    /**
+     * Обслужить память о недостижимых целях: снять устаревшие метки и метки с
+     * тех, кто снова стал досягаемым.
+     *
+     * <p>Ключевое — снятие по факту: если монстр, помеченный недостижимым,
+     * **сам пошёл на стража** (вышел из укрытия) или подошёл вплотную, метку
+     * надо снять немедленно. Иначе страж до конца кулдауна игнорирует врага,
+     * который стоит рядом и бьёт его, — то есть отходит вместо боя.
+     */
+    private void tickUnreachableTargets() {
+        if (this.unreachableTargets.isEmpty()) {
+            return;
+        }
+
+        int now = this.tickCount;
+        Iterator<Map.Entry<UUID, Integer>> iterator = this.unreachableTargets.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, Integer> entry = iterator.next();
+
+            // Срок истёк — метка больше не действует.
+            if (entry.getValue() <= now) {
+                iterator.remove();
+                continue;
+            }
+
+            // Монстр снова досягаем? Проверяем только живых: мёртвых снимаем
+            // вместе с истечением, отдельная ветка не нужна.
+            if (!(this.level() instanceof ServerLevel serverLevel)) {
+                continue;
+            }
+            Entity flagged = serverLevel.getEntity(entry.getKey());
+            if (flagged instanceof LivingEntity living && living.isAlive()
+                    && this.isReachableAgain(living)) {
+                GuardianTrace.event(this, "цель снова досягаема — метка снята: "
+                        + living.getType().getDescription().getString());
+                iterator.remove();
+            }
+        }
+    }
+
+    /**
+     * Стал ли помеченный недостижимым монстр снова доступен для атаки.
+     *
+     * <p>Два независимых признака: он снова виден, либо подошёл вплотную —
+     * в упор он опасен независимо от обзора, и страж обязан реагировать.
+     */
+    private boolean isReachableAgain(LivingEntity flagged) {
+        if (this.getSensing().hasLineOfSight(flagged)) {
+            return true;
+        }
+        return this.distanceTo(flagged) <= GuardianTuning.MELEE_ENTER_DISTANCE;
+    }
+
+    /**
+     * Запомнить монстра как недостижимого на
+     * {@link GuardianTuning#UNREACHABLE_TARGET_COOLDOWN_TICKS} тиков.
+     *
+     * <p>Память чистится здесь же: истёкшие записи удаляются, так что карта
+     * не растёт при долгой жизни стража.
+     */
+    private void markTargetUnreachable(LivingEntity target) {
+        int now = this.tickCount;
+        this.unreachableTargets.entrySet().removeIf(entry -> entry.getValue() <= now);
+
+        if (this.unreachableTargets.size() >= GuardianTuning.UNREACHABLE_TARGETS_MAX
+                && !this.unreachableTargets.containsKey(target.getUUID())) {
+            // Карта переполнена: освобождаем место под новую запись, удаляя
+            // запись с самым ранним сроком истечения.
+            this.unreachableTargets.entrySet().stream()
+                    .min(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .ifPresent(this.unreachableTargets::remove);
+        }
+
+        this.unreachableTargets.put(target.getUUID(),
+                now + GuardianTuning.UNREACHABLE_TARGET_COOLDOWN_TICKS);
+    }
+
+    /** Считается ли монстр недостижимым прямо сейчас (для выбора цели). */
+    public boolean isTargetUnreachable(LivingEntity candidate) {
+        if (this.unreachableTargets.isEmpty()) {
+            return false;
+        }
+        Integer until = this.unreachableTargets.get(candidate.getUUID());
+        return until != null && until > this.tickCount;
+    }
+
+    /** Сколько монстров сейчас в памяти недостижимых (для диагностики). */
+    public int getUnreachableTargetCount() {
+        return this.unreachableTargets.size();
     }
 
     private void updateChargingFlag() {
@@ -724,8 +909,10 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
             this.resetChargeTime();
             return;
         }
-        GuardianState state = this.getAIState();
-        if (state != GuardianState.RANGED && state != GuardianState.PANIC) {
+        // Стреляет только дальний бой и паника. В ближнем бою арбалет убран,
+        // поэтому проверка по оружию ниже и так отсечёт лишнее — но явный
+        // выход дешевле и не даёт копить заряд «в мечевом» бою.
+        if (!this.isCombatGoalActive() || (this.isMeleeActive() && !this.isPanicking())) {
             this.resetChargeTime();
             return;
         }
@@ -961,10 +1148,24 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
      * Зов о помощи. Союзники в радиусе получают точку сбора и цель,
      * после чего реально приходят к зовущему (а не просто «берут цель на себя»).
      */
+    /**
+     * Сколько тиков цель остаётся без прямой видимости.
+     *
+     * <p>Для диагностики: при приближении к
+     * {@link GuardianTuning#NO_LINE_OF_SIGHT_TICKS} видно, что страж вот-вот
+     * откажется от недостижимой цели.
+     */
+    public int getNoLineOfSightTicks() {
+        return this.noLineOfSightTicks;
+    }
+
     public void callForHelp(LivingEntity attacker) {
         if (this.level().isClientSide) return;
         if (!GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.RALLY)) return;
         if (!this.canScreamForHelp()) return;
+        // Зов имеет смысл, только если угроза реальна — то есть видна.
+        // Иначе страж, застрявший на цели под землёй, зовёт бесконечно.
+        if (attacker != null && !this.getSensing().hasLineOfSight(attacker)) return;
 
         int responders = 0;
         for (BaseGuardianEntity ally : this.getAlliesInRadius(GuardianTuning.ALLY_SEARCH_RADIUS)) {
@@ -1438,7 +1639,7 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     public void swing(net.minecraft.world.InteractionHand hand) {
         super.swing(hand);
         if (hand == net.minecraft.world.InteractionHand.MAIN_HAND
-                && this.getCombatState() == CombatState.MELEE) {
+                && this.isMeleeActive()) {
             this.playSwordSwingSound();
         }
     }
@@ -1453,7 +1654,7 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     @Override
     public boolean doHurtTarget(Entity entityIn) {
         boolean flag = super.doHurtTarget(entityIn);
-        if (flag && this.getCombatState() == CombatState.MELEE) {
+        if (flag && this.isMeleeActive()) {
             this.playSound(SoundEvents.PLAYER_ATTACK_KNOCKBACK, 1.0F, 1.0F);
             GuardianTrace.event(this, "удар мечом");
         }

@@ -51,6 +51,15 @@ public class GuardianTargetGoal extends Goal {
         }
     }
 
+    /**
+     * Ближайший монстр, пригодный в цель.
+     *
+     * <p>Кроме типа и живости учитывается память о недостижимых целях: монстр,
+     * от которого страж уже отказался (не видно, не достать), не берётся снова,
+     * пока не истечёт {@link GuardianTuning#UNREACHABLE_TARGET_COOLDOWN_TICKS}.
+     * Без этого поиск назначал того же зомби обратно, и сброс цели не давал
+     * никакого эффекта — страж зацикливался «сбросил → назначил».
+     */
     private LivingEntity findNearestMonster() {
         if (this.guardian.level().isClientSide) {
             return null;
@@ -58,7 +67,8 @@ public class GuardianTargetGoal extends Goal {
 
         return this.guardian.level().getEntitiesOfClass(LivingEntity.class,
                         this.guardian.getBoundingBox().inflate(GuardianTuning.TARGET_DETECT_DISTANCE),
-                        e -> (e instanceof Monster) && !(e instanceof BaseGuardianEntity) && e.isAlive())
+                        e -> (e instanceof Monster) && !(e instanceof BaseGuardianEntity) && e.isAlive()
+                                && !this.guardian.isTargetUnreachable(e))
                 .stream()
                 .min(Comparator.comparingDouble(this.guardian::distanceToSqr))
                 .orElse(null);

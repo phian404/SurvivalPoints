@@ -48,17 +48,24 @@ public class GuardianRangedAttackGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (this.guardian.getAIState() != BaseGuardianEntity.GuardianState.RANGED) {
+        // Дальний бой — это «есть цель и это не ближний бой». Меч-гол забирает
+        // цель себе на близкой дистанции (и уступает крипера), поэтому явная
+        // проверка дистанции здесь не нужна: порядок регистрации решает (К1/К2).
+        this.target = this.guardian.getTarget();
+        if (this.target == null || !this.target.isAlive()) {
             return false;
         }
-        this.target = this.guardian.getTarget();
-        return this.target != null && this.target.isAlive();
+        if (!this.guardian.isAlive()) {
+            return false;
+        }
+        return this.guardian.isPanicking() || !this.guardian.isMeleeActive();
     }
 
     @Override
     public boolean canContinueToUse() {
-        return this.guardian.getAIState() == BaseGuardianEntity.GuardianState.RANGED
-                && this.target != null && this.target.isAlive();
+        return this.target != null && this.target.isAlive()
+                && this.guardian.isAlive()
+                && (this.guardian.isPanicking() || !this.guardian.isMeleeActive());
     }
 
     @Override

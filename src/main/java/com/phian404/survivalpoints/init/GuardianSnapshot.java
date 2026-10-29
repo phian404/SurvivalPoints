@@ -37,6 +37,7 @@ public final class GuardianSnapshot {
                 .append(" onGround=").append(guard.onGround())
                 .append(" vy=").append(fmt(guard.getDeltaMovement().y, 3))
                 .append(" stun=").append(guard.getDamageStunTicks())
+                .append(" noSight=").append(guard.getNoLineOfSightTicks())
                 .append(" nav=").append(guard.getNavigation().isDone() ? "нет" : "есть");
         return sb.toString();
     }
@@ -52,7 +53,9 @@ public final class GuardianSnapshot {
                 .append('/').append(Math.round(guard.getMaxHealth()))
                 .append(" §7weapon=").append(guard.getMainHandItem().getHoverName().getString())
                 .append(" §7eating=").append(guard.isEating())
-                .append(" §7stun=").append(guard.getDamageStunTicks());
+                .append(" §7stun=").append(guard.getDamageStunTicks())
+                .append(" §7noSight=").append(guard.getNoLineOfSightTicks())
+                .append(" §7unreachable=").append(guard.getUnreachableTargetCount());
 
         LivingEntity target = guard.getTarget();
         if (target == null) {

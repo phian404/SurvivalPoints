@@ -6,6 +6,7 @@ import com.phian404.survivalpoints.init.GuardianTuning;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.level.pathfinder.Path;
@@ -46,24 +47,33 @@ public class GuardianMeleeAttackGoal extends MeleeAttackGoal {
         if (!this.guardian.isAlive()) {
             return false;
         }
-        if (this.guardian.getAIState() != BaseGuardianEntity.GuardianState.MELEE) {
+        // Паника имеет приоритет над всем — в ней страж отходит с арбалетом,
+        // меч не достаёт.
+        if (this.guardian.isPanicking()) {
             return false;
         }
         LivingEntity target = this.guardian.getTarget();
-        return target != null && target.isAlive()
-                && this.guardian.distanceTo(target) <= GuardianTuning.MELEE_ENTER_DISTANCE;
+        if (target == null || !target.isAlive()) {
+            return false;
+        }
+        // Против крипера держим арбалет даже вплотную: подходить к нему с мечом
+        // смертельно. Ranged-гол сам отступит, если крипер подойдёт слишком близко.
+        if (target instanceof Creeper) {
+            return false;
+        }
+        return this.guardian.distanceTo(target) <= GuardianTuning.MELEE_ENTER_DISTANCE;
     }
 
     @Override
     public boolean canContinueToUse() {
-        if (!this.guardian.isAlive()) {
-            return false;
-        }
-        if (this.guardian.getAIState() != BaseGuardianEntity.GuardianState.MELEE) {
+        if (!this.guardian.isAlive() || this.guardian.isPanicking()) {
             return false;
         }
         LivingEntity target = this.guardian.getTarget();
+        // Гистерезис удержан: из боя выходим только на дальней дистанции,
+        // иначе на границе включения страж дёргался меч ↔ арбалет.
         return target != null && target.isAlive()
+                && !(target instanceof Creeper)
                 && this.guardian.distanceTo(target) <= GuardianTuning.MELEE_EXIT_DISTANCE;
     }
 

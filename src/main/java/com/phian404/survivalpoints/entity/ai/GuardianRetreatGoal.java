@@ -37,10 +37,9 @@ public class GuardianRetreatGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (!GuardianFeatureFlags.isEnabled(GuardianFeatureFlags.Flag.PANIC)) {
-            return false;
-        }
-        if (this.guardian.getAIState() != BaseGuardianEntity.GuardianState.PANIC) {
+        // Паника — вычисляемый предикат (мало ХП + живая цель), а не состояние
+        // автомата: он не может «залипнуть» и виден сразу, без задержки в тик.
+        if (!this.guardian.isPanicking()) {
             return false;
         }
         this.target = this.guardian.getTarget();
@@ -49,7 +48,7 @@ public class GuardianRetreatGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        return this.guardian.getAIState() == BaseGuardianEntity.GuardianState.PANIC
+        return this.guardian.isPanicking()
                 && this.target != null && this.target.isAlive();
     }
 
@@ -57,6 +56,10 @@ public class GuardianRetreatGoal extends Goal {
     public void start() {
         this.screamTimer = 0;
         this.guardian.resetNavigationTarget();
+        // Уход в панику — новый бой: рабочий рубеж надо занять заново.
+        // Раньше это делал автомат состояний (ветка PANIC); после его удаления
+        // сброс выполняется здесь, на входе в панику (риск R4 решения R0.1).
+        this.guardian.resetStandoff();
         if (this.target != null) {
             this.guardian.callForHelp(this.target);
         }

@@ -7,7 +7,7 @@
 |---|---|---|
 | Этап 0 — рубеж в сущности | ✅ выполнен | `standoffReached`/`standoffAnchor` — поля сущности, сохраняются в NBT |
 | R0.0 — `requiresUpdateEveryTick` у боевых голов | ⚠️ частично | переопределён у [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:108) и [`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:120); у `GuardianRangedAttackGoal` и `GuardianRetreatGoal` — **нет** |
-| R0.1 — удалить автомат состояний | ⬜ не начат, **разблокирован** | `GuardianState`, `DATA_AI_STATE`, `CombatState`, `updateAIState()` присутствуют и используются. Развилка решена владельцем (вариант A) — [`GUARDIAN_STATE_DECISION.md`](GUARDIAN_STATE_DECISION.md) |
+| R0.1 — удалить автомат состояний | ✅ выполнен | `CombatState`/`getCombatState()`/`updateAIState()`/`setAIState()` удалены; `isPanicking()` — вычисляемый предикат; боевые голы гейтятся живой целью и `isMeleeActive()`/`isCombatGoalActive()`; `GuardianState`/`DATA_AI_STATE` оставлены как диагностический кэш (`updateStateCache()`); рендер переведён на `DATA_FACING_TARGET` + предмет в руке. См. [`GUARDIAN_STATE_DECISION.md`](GUARDIAN_STATE_DECISION.md) |
 | R0.2 — движение на ванили | ⚠️ частично | `GuardianMoveControl.strafeWithSpeed` есть и применяется; `moveDirectly`/`setDeltaMovement` остались под флагом `CUSTOM_MOVE` |
 | R0.3 — ближний бой на ванильном `MeleeAttackGoal` | ✅ выполнен | [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:31) наследует ванильный гол; кастомная анимация взмаха удалена |
 | R0.4 — еда: уступка угрозе + watchdog | ⚠️ частично | Сделано: флаг `eating` не сериализуется; watchdog-пульс (`EAT_PULSE_TIMEOUT_TICKS`) в [`tickCountdowns()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:648); `canContinueToUse()` рвёт еду по цели **и** по `damageStunTicks > 0` ([`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:106)). Осталось: `canUse()` проверяет только `getTarget() == null` (скана «монстр рядом» нет); ранний выход `syncEquipmentToState()` по `isEating()` сохранён — оба пункта ждут R0.1 (см. R0.4) |
@@ -161,6 +161,108 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 **2.3. Симптом.** Страж подпрыгивает на месте при перестроении пути, а наша перезапись скорости не даёт ему нормально двигаться/приземляться — визуально «висит в воздухе». Редкость объясняется тем, что нужно совпадение: удар + перестроение пути + блок под ногами.
 
 **2.4. Почему это надо чинить именно так.** Убирая ручную перезапись скорости (R0.2), мы возвращаем ванильную физику: отброс отрабатывает как положено, трение/инерция работают, а прыжок (F6) остаётся **ровно тем же** — владелец просил его не трогать, и мы его не трогаем.
+
+### Пункт 7 — недостижимая цель (под землёй): «статуя» в панике с бесконечным зовом — ✅ ИСПРАВЛЕНО (A + C)
+
+> Наблюдение владельца, подтверждено в игре: страж в панике рядом с врагом, который
+> находится в закрытом месте (под землёй), **стоит на месте**, смотрит на него,
+> остаётся в `PANIC` и **постоянно зовёт на помощь**. Проблема старая (была до R0.1).
+> Диагноз ниже сверен с кодом и логом `run/logs/latest.log`.
+
+**Проверка по коду — четыре независимые причины, сцепленные в одну петлю:**
+
+**7.1. Цель выбирается без учёта достижимости.**
+[`GuardianTargetGoal.findNearestMonster()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianTargetGoal.java:59)
+берёт ближайшего `Monster` **только по расстоянию** — линии видимости и проходимости
+маршрута не проверяет. Цель за стеной или под землёй выбирается на равных правах.
+
+**7.2. Почему страж стоит, а не отходит.**
+[`GuardianRetreatGoal.tick()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java:86)
+сравнивает с `PANIC_RETREAT_DISTANCE` (10) **прямолинейное 3D-расстояние**
+(`distanceTo`). Зомби под землёй в 10 блоках по горизонтали даёт расстояние больше 10 ⇒
+срабатывает ветка «безопасная дистанция достигнута — стоим и ведём огонь»
+(`standStill()`). Страж **никогда не начинает отход**, потому что код считает, что он уже отошёл.
+В логе это видно буквально: `target=Зомби@10,5`, `moveSpd=0,00`, `nav=нет`, `goals: GuardianRetreatGoal`.
+
+**7.3. Почему он не стреляет.**
+[`updateRangedCombat()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:791)
+требует `getSensing().hasLineOfSight(target)` ⇒ для цели за бронёй земли условие ложно,
+заряд не копится, выстрела нет. Дополнительно гейт по дистанции в
+[`updateRangedCombat()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:764)
+сам по себе не мешает — мешает именно отсутствие видимости.
+
+**7.4. Почему зов бесконечный.**
+[`GuardianRetreatGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java:85)
+зовёт каждые `SCREAM_INTERVAL = 100` тиков, а кулдаун
+[`HELP_SCREAM_COOLDOWN = 200`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java:340)
+пропускает каждый второй вызов. При нескольких стражax рядом
+(`RALLY_RADIUS = 24`) сообщение «Помогите мне!» идёт практически непрерывно.
+Зов не привязан к тому, **может ли цель вообще быть атакована**.
+
+**Замыкание петли:** ХП не растёт (в логе `hp=1/20`), поэтому паника не заканчивается;
+цель не сбрасывается (`TARGET_DROP_DISTANCE = 24` в 3D не превышен);
+еда недоступна ([`GuardianEatBreadGoal.canUse()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:42)
+требует `getTarget() == null` — а цель как раз есть).
+Итог: страж навсегда стоит с 1 ХП, не стреляет, не отходит, не лечится и зовёт.
+
+**Что сделано (вариант A + C, выбраны владельцем):**
+
+1. **A — отказ от недостижимой цели.** Новое поле `noLineOfSightTicks` + константа
+   [`GuardianTuning.NO_LINE_OF_SIGHT_TICKS = 100`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java:358).
+   В [`validateTarget()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:713) счётчик растёт, пока цель жива и не видна
+   (`getSensing().hasLineOfSight`), и обнуляется, как только обзор вернулся. При достижении
+   порога цель сбрасывается вместе с рубежом и счётчиком, с записью в `GuardianTrace`.
+   После сброса страж выходит из паники (`isPanicking()` требует живую цель) и **получает
+   возможность поесть** — петля разрывается.
+2. **C — зов привязан к видимости.** В [`callForHelp()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1012) добавлен ранний выход,
+   если угроза не видна. Дополнительно [`SCREAM_INTERVAL`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java:342) поднят со 100 до 200
+   (не меньше `HELP_SCREAM_COOLDOWN`): раньше каждый второй зов блокировался кулдауном,
+   и таймер начинал отсчёт заново — отсюда рваный и слишком частый зов.
+3. **Диагностика.** Счётчик виден в `/sp_guard` как `noSight=` (`oneLine` и `detail`) —
+   по нему видно, приближается ли страж к отказу от цели.
+
+4. **A-3 — метка снимается, как только враг снова досягаем (третья итерация).**
+   Наблюдение владельца: враг вышел из укрытия и идёт на стража, а тот
+   **отходит** и не атакует до конца кулдауна (30 с). Причина — метка снималась
+   только по таймеру. Добавлено [`tickUnreachableTargets()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:788),
+   вызываемый каждый тик **до** выбора цели: метка снимается, если монстр снова
+   виден (`hasLineOfSight`) **или** подошёл вплотную
+   (`MELEE_ENTER_DISTANCE` — в упор он опасен независимо от обзора). Снятие
+   пишется в `GuardianTrace`.
+
+5. **A-2 — память о недостижимых целях (вторая итерация).** Первая версия A
+   не сработала: лог показал ровно `IDLE → RANGED → IDLE` каждые 5 с (=100 тиков),
+   потому что [`GuardianTargetGoal.findNearestMonster()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianTargetGoal.java:64)
+   выбирает монстра **только по расстоянию** и сразу назначал того же зомби обратно.
+   Добавлено: `Map<UUID, Integer> unreachableTargets` в сущности,
+   [`markTargetUnreachable()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:745),
+   [`isTargetUnreachable()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:773) и фильтр в выборе цели.
+   Константы: [`UNREACHABLE_TARGET_COOLDOWN_TICKS = 600`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java:360) (30 с),
+   [`UNREACHABLE_TARGETS_MAX = 16`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java:374).
+   Истёкшие записи удаляются при каждой записи, при переполнении вытесняется самая
+   старая — карта не растёт. Память не сериализуется: после загрузки мира она
+   пуста, что безопасно (худший случай — однократный повторный сброс).
+
+Отдельной настройки счётчика в NBT нет намеренно: значение энергозависимо, как и
+состояние голов; после загрузки мира счёт просто начинается заново.
+
+**Исходные варианты (для истории):**
+
+| # | Вариант | Что делаем | Объём | Плюсы | Минусы |
+|---|---------|-----------|-------|-------|--------|
+| A | **Отказ от недостижимой цели** (основной) | Счётчик `noLineOfSightTicks`: пока цель без `hasLineOfSight` — копим; при превышении порога (напр. 100 тиков = 5 с) `setTarget(null)` + `resetStandoff()`. Счётчик сбрасывается, как только цель снова видна | ~25–35 строк, `BaseGuardianEntity` | Разрывает всю петлю: страж выходит из паники и **может поесть**; работает и для мечника, и для стрелка | Нужен аккуратный порог, чтобы не бросать цель, которая просто спряталась за угол на секунду |
+| B | **Не выбирать цель без видимости** | Фильтр `hasLineOfSight` в [`findNearestMonster()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianTargetGoal.java:59) | ~5 строк | Самое дешёвое | Ломает честное поведение: монстр за углом в 3 блоках станет «невидимым», и страж его проигнорирует. **Не рекомендуется отдельно** |
+| C | **Анти-спам зова** | Звать только при `hasLineOfSight` на цель; `SCREAM_INTERVAL` поднять до значения не меньше кулдауна | ~5 строк | Убирает шум в чате и звук | Не решает главное — страж всё равно «статуя». Как дополнение к A — да |
+| D | **Проверять достижимость маршрутом** | `Navigation.createPath(target, 0) != null` при выборе цели | ~10–15 строк | Точнее всего отражает «можно ли дойти» | Дороже (построение пути на каждого кандидата); при пересканировании раз в 20 тиков приемлемо, но требует аккуратной проверки производительности |
+
+**Рекомендация:** **A + C**. A снимает причину (страж выходит из петли и лечится), C убирает
+шум. B отдельно не берём из-за ложных срабатываний; D — запасной вариант, если A окажется
+недостаточно (например, цель в яме с прямой видимостью, но без маршрута).
+
+**Проверка владельца:** поставить стражу низкое ХП рядом с зомби **в закрытой комнате** или
+под землёй — страж через ~5 секунд перестаёт смотреть на него, выходит из паники и **ест хлеб**;
+сообщений «Помогите мне!» больше нет. Как только зомби появляется в зоне видимости — цель берётся
+снова, паника возвращается.
 
 ### Пункт 3 — ближний бой
 
