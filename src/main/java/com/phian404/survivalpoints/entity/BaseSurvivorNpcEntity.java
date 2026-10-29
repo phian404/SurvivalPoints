@@ -61,9 +61,13 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
                                         MobSpawnType spawnType, @Nullable SpawnGroupData spawnGroupData,
                                         @Nullable net.minecraft.nbt.CompoundTag dataTag) {
         // Скин выбирается один раз на сервере при первичном появлении и затем
-        // сохраняется в NBT, поэтому перезаход его не меняет.
+        // сохраняется в NBT, поэтому перезаход его не меняет. Рост назначается
+        // следом: rollRandomScale() берёт диапазон из уже установленного пола.
+        // Имя назначается последним: набор имён зависит от пола.
         if (!this.level().isClientSide && dataTag == null) {
             this.rollRandomSkin();
+            this.rollRandomScale();
+            this.ensureName();
         }
         return super.finalizeSpawn(level, difficulty, spawnType, spawnGroupData, dataTag);
     }

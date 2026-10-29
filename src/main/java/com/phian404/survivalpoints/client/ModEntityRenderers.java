@@ -2,11 +2,19 @@ package com.phian404.survivalpoints.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.BaseSurvivorNpcEntity;
+import com.phian404.survivalpoints.entity.SurvivorSkin;
+import com.phian404.survivalpoints.entity.role.SurvivorGender;
 import com.phian404.survivalpoints.init.ModEntities;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.HumanoidArmorModel;
 import net.minecraft.client.model.HumanoidModel;
+import net.minecraft.client.model.geom.ModelLayers;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.MobRenderer;
+import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
@@ -19,16 +27,70 @@ import org.joml.Quaternionf;
 @Mod.EventBusSubscriber(modid = "survivalpoints", bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public class ModEntityRenderers {
 
+    /**
+     * Квадрат радиуса, в пределах которого рисуется имя NPC (16 блоков).
+     *
+     * <p>Проверка выполняется в {@code shouldShowName} рендерера, то есть на
+     * клиенте и относительно локального игрока. Поэтому каждый игрок видит
+     * имена по своему расстоянию, без серверной синхронизации и без тика на
+     * каждую сущность.
+     */
+    private static final double NAME_VISIBLE_RADIUS_SQR = 16.0 * 16.0;
+
+    /**
+     * Общее условие показа имени: ванильные правила плюс дистанция до игрока.
+     *
+     * <p>{@code super.shouldShowName} сохраняет штатные условия (имя задано,
+     * {@code CustomNameVisible} включён, подсказка по прицелу), а расстояние
+     * только сужает их.
+     */
+    private static boolean shouldShowNameWithinRange(BaseSurvivorEntity entity) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        return player != null && entity.distanceToSqr(player) <= NAME_VISIBLE_RADIUS_SQR;
+    }
+
     @SubscribeEvent
     public static void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.BASE_GUARDIAN.get(), context -> {
             
-            MobRenderer<BaseGuardianEntity, HumanoidModel<BaseGuardianEntity>> renderer = 
-                new MobRenderer<>(context, 
-                    // GuardianModel replaces inline model definition
-                    new GuardianModel(context.bakeLayer(net.minecraft.client.model.geom.ModelLayers.PLAYER)),
-                    0.5F) {
+            // Две геометрии модели: WIDE (Steve, руки 4px) и SLIM (Alex, руки 3px).
+            // Выбор делается в render() по полу сущности. Слои свои, а не
+            // ModelLayers.PLAYER/PLAYER_SLIM: к ванильному мешу добавлен
+            // клиновидный выступ торса (см. SurvivorBodyModel).
+            //
+            // Массив, а не две локальные переменные: геометрия выбирается по полу
+            // в render(). Параметры выступа — константы (SurvivorChestTuning),
+            // поэтому модели строятся один раз при регистрации рендерера.
+            GuardianModel[] models = new GuardianModel[]{
+                    new GuardianModel(SurvivorBodyModel.chestLayer(false).bakeRoot()),
+                    new GuardianModel(SurvivorBodyModel.chestLayer(true).bakeRoot())
+            };
+
+            MobRenderer<BaseGuardianEntity, HumanoidModel<BaseGuardianEntity>> renderer =
+                new MobRenderer<>(context, models[0], 0.5F) {
                     // setupRotations removed to restore interpolation
+
+                    /** Имя рисуется только в радиусе 16 блоков от игрока. */
+                    @Override
+                    protected boolean shouldShowName(BaseGuardianEntity entity) {
+                        return super.shouldShowName(entity)
+                                && shouldShowNameWithinRange(entity);
+                    }
+
+                    /**
+                     * Индивидуальный рост стража.
+                     *
+                     * <p>{@code LivingEntityRenderer.render} вызывает этот метод
+                     * внутри {@code pushPose()}, до отрисовки модели и слоёв,
+                     * поэтому тело, броня, оружие ({@link CustomWeaponLayer}) и
+                     * тень масштабируются согласованно. Хитбокс сущности при
+                     * этом не меняется — это осознанно.
+                     */
+                    @Override
+                    protected void scale(BaseGuardianEntity entity, PoseStack pose, float partialTicks) {
+                        float scale = entity.getScale();
+                        pose.scale(scale, scale, scale);
+                    }
 
                     @Override
                     public ResourceLocation getTextureLocation(BaseGuardianEntity entity) {
@@ -54,6 +116,12 @@ public class ModEntityRenderers {
                     @Override
                     public void render(BaseGuardianEntity entity, float entityYaw, float partialTicks,
                                        PoseStack pose, MultiBufferSource buffer, int packedLight) {
+                        // Геометрия выбирается по полу, а не по таблице скинов:
+                        // пол — источник истины, таблица применяется только при
+                        // первичном назначении и миграции. Модель подменяется до
+                        // super.render(), чтобы и тело, и слои (CustomWeaponLayer)
+                        // использовали актуальную геометрию.
+                        this.model = entity.getGender() == SurvivorGender.FEMALE ? models[1] : models[0];
                         if (entity.getAIState() != BaseGuardianEntity.GuardianState.IDLE) {
                             // Тело рисуется по yBodyRot, а он ванильными пакетами
                             // НЕ передаётся: клиент считает его сам, из направления
@@ -90,6 +158,14 @@ public class ModEntityRenderers {
                     }
                 };
 
+            // Броня рисуется до оружия, как в ванильном PlayerRenderer, поэтому
+            // арбалет/меч остаются поверх нагрудника. Один слой покрывает оба
+            // пола: ваниль использует один LayerDefinition для SLIM и WIDE брони
+            // (ModelLayers.PLAYER_SLIM_INNER_ARMOR == PLAYER_INNER_ARMOR).
+            renderer.addLayer(new HumanoidArmorLayer<>(renderer,
+                    new HumanoidArmorModel<>(context.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
+                    new HumanoidArmorModel<>(context.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)),
+                    context.getModelManager()));
             renderer.addLayer(new CustomWeaponLayer<>(renderer));
             
             return renderer;
@@ -97,59 +173,51 @@ public class ModEntityRenderers {
 
         // Базовый выживший: та же гуманоидная модель, но пассивное поведение.
         event.registerEntityRenderer(ModEntities.BASE_SURVIVOR.get(), context -> {
+            SurvivorModel[] models = new SurvivorModel[]{
+                    new SurvivorModel(SurvivorBodyModel.chestLayer(false).bakeRoot()),
+                    new SurvivorModel(SurvivorBodyModel.chestLayer(true).bakeRoot())
+            };
             MobRenderer<BaseSurvivorNpcEntity, HumanoidModel<BaseSurvivorNpcEntity>> renderer =
-                    new MobRenderer<>(context,
-                            new SurvivorModel(context.bakeLayer(
-                                    net.minecraft.client.model.geom.ModelLayers.PLAYER)),
-                            0.5F) {
+                    new MobRenderer<>(context, models[0], 0.5F) {
+                        /** Имя рисуется только в радиусе 16 блоков от игрока. */
+                        @Override
+                        protected boolean shouldShowName(BaseSurvivorNpcEntity entity) {
+                            return super.shouldShowName(entity)
+                                    && shouldShowNameWithinRange(entity);
+                        }
+
+                        /** Индивидуальный рост мирного NPC (см. рендерер стража). */
+                        @Override
+                        protected void scale(BaseSurvivorNpcEntity entity, PoseStack pose, float partialTicks) {
+                            float scale = entity.getScale();
+                            pose.scale(scale, scale, scale);
+                        }
+
                         @Override
                         public ResourceLocation getTextureLocation(BaseSurvivorNpcEntity entity) {
                             return SurvivorSkin.textureFor(entity.getSkinIndex());
                         }
+
+                        @Override
+                        public void render(BaseSurvivorNpcEntity entity, float entityYaw, float partialTicks,
+                                          PoseStack pose, MultiBufferSource buffer, int packedLight) {
+                            // Геометрия выбирается по полу (источник истины).
+                            this.model = entity.getGender() == SurvivorGender.FEMALE ? models[1] : models[0];
+                            super.render(entity, entityYaw, partialTicks, pose, buffer, packedLight);
+                        }
                     };
+            // Мирному NPC броня нужна так же, как стражу: игрок может надеть
+            // на него нагрудник. Порядок тот же — броня под оружием.
+            renderer.addLayer(new HumanoidArmorLayer<>(renderer,
+                    new HumanoidArmorModel<>(context.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
+                    new HumanoidArmorModel<>(context.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)),
+                    context.getModelManager()));
             return renderer;
         });
     }
 
-    /**
-     * Централизованный выбор текстуры скина выжившего.
-     *
-     * <p>Индекс приходит с сервера через {@code SynchedEntityData} и сохраняется
-     * в NBT, поэтому все клиенты видят одинаковый вариант, а перезаход его не
-     * меняет. Новые варианты добавляются здесь и увеличивают
-     * {@code BaseSurvivorEntity.SKIN_COUNT}.
-     */
-    public static final class SurvivorSkin {
-        /**
-         * Набор скинов. Сейчас используются ванильные текстуры игрока, чтобы
-         * не добавлять новые ресурсы; собственные варианты можно добавить
-         * сюда же, увеличив {@code BaseSurvivorEntity.SKIN_COUNT}.
-         */
-        private static final ResourceLocation[] TEXTURES = new ResourceLocation[] {
-                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/steve.png"),
-                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/alex.png"),
-                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/ari.png"),
-                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/efe.png"),
-                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/kai.png"),
-                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/makena.png"),
-                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/noor.png"),
-                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/sunny.png"),
-                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/player/wide/zuri.png")
-        };
-
-        private SurvivorSkin() {
-        }
-
-        public static ResourceLocation textureFor(int index) {
-            if (index < 0 || index >= TEXTURES.length) {
-                return TEXTURES[0];
-            }
-            return TEXTURES[index];
-        }
-    }
-
     /** Модель базового выжившего: без боевых поз стража. */
-    public static class SurvivorModel extends HumanoidModel<BaseSurvivorNpcEntity> {
+    public static class SurvivorModel extends SurvivorBodyModel<BaseSurvivorNpcEntity> {
 
         public SurvivorModel(net.minecraft.client.model.geom.ModelPart root) {
             super(root);
@@ -169,7 +237,7 @@ public class ModEntityRenderers {
     }
 
     // GuardianModel class definition
-    public static class GuardianModel extends HumanoidModel<BaseGuardianEntity> {
+    public static class GuardianModel extends SurvivorBodyModel<BaseGuardianEntity> {
 
         public GuardianModel(net.minecraft.client.model.geom.ModelPart root) {
             super(root);

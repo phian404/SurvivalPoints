@@ -1507,8 +1507,12 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
                                         @Nullable CompoundTag dataTag) {
         this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.CROSSBOW));
         // Скин выбирается один раз при первичном появлении и сохраняется в NBT.
+        // Рост назначается следом: диапазон зависит от уже установленного пола.
+        // Имя назначается последним: набор имён зависит от пола.
         if (!this.level().isClientSide && dataTag == null) {
             this.rollRandomSkin();
+            this.rollRandomScale();
+            this.ensureName();
         }
         return super.finalizeSpawn(level, difficulty, spawnType, spawnGroupData, dataTag);
     }

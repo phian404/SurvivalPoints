@@ -62,7 +62,12 @@ public final class RoleAssignmentService {
         entity.setCampId(campId);
         entity.setCampPostId(postId);
         if (!level.isClientSide) {
+            // Скин, рост и имя назначаются один раз здесь же: этот метод создаёт
+            // сущность «с нуля» и не вызывает finalizeSpawn, поэтому дубля нет.
+            // Имя — последним, потому что набор имён зависит от пола.
             entity.rollRandomSkin();
+            entity.rollRandomScale();
+            entity.ensureName();
         }
         return entity;
     }
@@ -126,6 +131,12 @@ public final class RoleAssignmentService {
     private static void copySharedState(BaseSurvivorEntity source, BaseSurvivorEntity replacement) {
         replacement.setIdentityId(source.getIdentityId());
         replacement.setSkinIndex(source.getSkinIndex());
+        // Пол переносится явно и не пересчитывается из скина: смена роли не
+        // должна менять пол, даже если таблица скинов говорит иное.
+        replacement.setGender(source.getGender());
+        // Рост тоже переносится, а не перегенерируется: иначе NPC «прыгал» бы
+        // в размере при каждой смене роли.
+        replacement.setScale(source.getScale());
         replacement.setCampId(source.getCampId());
         replacement.setCampPostId(source.getCampPostId());
 
@@ -133,6 +144,10 @@ public final class RoleAssignmentService {
                 source.getYRot(), source.getXRot());
         replacement.setYHeadRot(source.getYHeadRot());
 
+        // Имя к этому моменту уже назначено (ensureName() в точках создания),
+        // поэтому перенос всегда сохраняет прежнее имя: смена роли не должна
+        // генерировать новое. Проверка hasCustomName() оставлена как защита для
+        // сущностей, созданных в обход сервиса.
         if (source.hasCustomName()) {
             replacement.setCustomName(source.getCustomName());
             replacement.setCustomNameVisible(source.isCustomNameVisible());
