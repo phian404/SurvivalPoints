@@ -947,11 +947,38 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
             return;
         }
         if (this.isMeleeActive()) {
-            // В ближнем бою за разворот отвечает ванильный MeleeAttackGoal —
-            // он доворачивает взгляд через LookControl. Наш разворот сюда не
-            // лезет, иначе два контроллера дерутся за голову.
+            // В ближнем бою голову ведёт ванильный MeleeAttackGoal (LookControl),
+            // но он крутит только голову, а тело (yBodyRot) доворачивается
+            // медленно, по маршруту. Из-за этого первый удар наносится спиной
+            // к врагу. Доворачиваем тело к цели сами (как в дальнем бою),
+            // голову не трогаем — за ней следит LookControl.
+            LivingEntity meleeTarget = this.getTarget();
+            if (meleeTarget != null && meleeTarget.isAlive()) {
+                float desiredYaw = yawToTarget(meleeTarget.getX() - this.getX(),
+                        meleeTarget.getZ() - this.getZ());
+                float diff = Mth.wrapDegrees(desiredYaw - this.bodyYaw);
+                if (Math.abs(diff) <= GuardianTuning.FACE_SNAP_ANGLE) {
+                    this.bodyYaw = desiredYaw;
+                } else {
+                    float step = Mth.clamp(diff * GuardianTuning.FACE_SMOOTHING,
+                            -GuardianTuning.FACE_TURN_SPEED_DEG, GuardianTuning.FACE_TURN_SPEED_DEG);
+                    this.bodyYaw = Mth.wrapDegrees(this.bodyYaw + step);
+                }
+                this.setYRot(this.bodyYaw);
+                this.yBodyRot = this.bodyYaw;
+            }
+
+            // Голова ограничена 75° от корпуса (как в faceTarget), иначе
+            // LookControl уводит её на 180° — выглядит крипово. Ограничение
+            // применяем к текущему курсу головы, который ведёт ванильный гол.
+            float headYaw = this.getYHeadRot();
+            float headOffset = Mth.clamp(Mth.wrapDegrees(headYaw - this.bodyYaw),
+                    -GuardianTuning.MAX_HEAD_YAW_OFFSET, GuardianTuning.MAX_HEAD_YAW_OFFSET);
+            headYaw = Mth.wrapDegrees(this.bodyYaw + headOffset);
+            this.setYHeadRot(headYaw);
+
             this.entityData.set(DATA_HEAD_PITCH, this.getXRot());
-            this.entityData.set(DATA_HEAD_YAW, this.getYHeadRot());
+            this.entityData.set(DATA_HEAD_YAW, headYaw);
             return;
         }
         LivingEntity target = this.getTarget();

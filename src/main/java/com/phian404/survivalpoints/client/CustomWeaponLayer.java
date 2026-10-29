@@ -38,6 +38,13 @@ public class CustomWeaponLayer<T extends LivingEntity, M extends HumanoidModel<T
                 poseStack.translate(-0.05D, 0.4D, -0.10D); // <-- ИЗМЕНЕНО ЗДЕСЬ
                 poseStack.mulPose(new Quaternionf().rotationX((float) Math.toRadians(-85)));
                 poseStack.mulPose(new Quaternionf().rotationZ((float) Math.toRadians(0)));
+            } else if (itemstack.is(Items.BREAD)) {
+                // ХЛЕБ (еда): нейтральная поза в кисти, без поворотов арбалета.
+                // Раньше хлеб попадал в ветку арбалета (не меч) и рисовался
+                // с rotationZ(35°)+rotationX(90°) и scale(0.8) — «мини-арбалет».
+                poseStack.translate(-0.1D, 0.55D, -0.10D);
+                poseStack.mulPose(new Quaternionf().rotationX((float) Math.toRadians(90)));
+                poseStack.mulPose(new Quaternionf().rotationZ((float) Math.toRadians(180)));
             } else {
                 // АРБАЛЕТ: Используем более стабильные значения
                 boolean isCharged = false;
