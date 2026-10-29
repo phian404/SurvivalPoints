@@ -1,8 +1,8 @@
 # DESIGN_CAMP_SYSTEM.md — Система лагерей SurvivalPoints
 
 > Детальное техническое задание и план реализации системы лагерей.
-> Общий обзор замысла мода — в [`PROJECT_VISION.md`](PROJECT_VISION.md).
-> Среда, архитектура ИИ и правила работы — в [`AI_CONTEXT.md`](src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md).
+> Общий обзор замысла мода — в [`PROJECT_VISION.md`](../Architecture/PROJECT_VISION.md).
+> Среда, архитектура ИИ и правила работы — в [`AI_CONTEXT.md`](../../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md).
 > Социально-экономический слой (глава, торговля, репутация, задания, ферма, роли оружия, генерация лагеря) —
 > в [`DESIGN_CAMP_SOCIAL.md`](DESIGN_CAMP_SOCIAL.md).
 >
@@ -58,7 +58,7 @@
 
 | Элемент | Реализация | Зачем |
 |---|---|---|
-| Забор | Кастомный `CampFenceBlock` (наследник `WallBlock`/`IronFenceBlock`) | Периметр, стены, укрытие |
+| Забор | Кастомный `CampFenceBlock` (наследник `WallBlock` или `IronBarsBlock`) | Периметр, стены, укрытие |
 | Ворота | `CampGateBlock` + `BlockEntity` (открыто/закрыто, авто-закрытие ночью) | Единственный вход, днём открыты |
 | Вышка | `CampWatchtowerBlock` + `BlockEntity` (высота, тип поста) | Обзор 360°, повышенный бонус |
 | Склад | `CampStorageBlock` + `BlockEntity` (слоты ресурсов лагеря) | Сундук-хранилище: еда/патроны/материалы |
@@ -124,7 +124,14 @@ graph TB
 
 ### 5.1 Новые состояния
 
-Текущий автомат ([`BaseGuardianEntity`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:131)) имеет `IDLE / RANGED / MELEE / PANIC`. Для лагеря добавляются:
+Текущий автомат ([`BaseGuardianEntity`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:155)) имеет `IDLE / RANGED / MELEE / PANIC`.
+
+> **Статус решения: открыт.** Расширять `GuardianState` лагерными состояниями или реализовывать
+> их отдельными целями — не утверждено. В [`GUARDIAN_REWORK_PLAN.md`](../Combat/GUARDIAN_REWORK_PLAN.md) R0.1
+> предлагает обратное — убрать автомат состояний. До решения владельца таблица ниже описывает
+> **требуемое поведение**, а не конкретный способ реализации.
+
+Для лагеря требуются состояния:
 
 | Состояние | Условие | Поведение |
 |---|---|---|
@@ -198,7 +205,7 @@ graph TB
 | `CAMP_ALERT_RADIUS_NIGHT` | `64` | Зона тревоги ночью |
 | `CAMP_POST_COUNT` | `8` | Сколько постов по умолчанию |
 
-Все — в [`GuardianTuning`](src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java) или в отдельный `CampTuning` (рекомендуется отдельный, чтобы не раздувать `GuardianTuning`).
+Все — в [`GuardianTuning`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java) или в отдельный `CampTuning` (рекомендуется отдельный, чтобы не раздувать `GuardianTuning`).
 
 ### 7.2 Алгоритм пополнения
 
@@ -230,7 +237,7 @@ flowchart TD
 
 ### 7.4 Снабжение
 
-- **Еда.** Ферма выращивает пшеницу → переработка в хлеб (рецепт за лагерным верстаком или авто) → склад → [`GuardianEatBreadGoal`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java) берёт хлеб из склада лагеря, а не из мира.
+- **Еда.** Ферма выращивает пшеницу → переработка в хлеб (рецепт за лагерным верстаком или авто) → склад → [`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java) берёт хлеб из склада лагеря, а не из мира.
 - **Боеприпасы/оружие.** Склад хранит арбалеты/стрелы/патроны; при найме стражу выдаётся снаряжение из склада.
 - **Расходники.** Ловушки и вышки могут требовать ресурсы (редстоун/железо) — расход из склада.
 
@@ -258,12 +265,19 @@ flowchart TD
 
 ## 9. Глава лагеря
 
-| Аспект | Вариант |
+**Реализованная архитектура — [`plan.md`](../Entities/plan.md).** Лидер — обычный NPC с данными лидерства,
+а не отдельный `EntityType`. Отдельный тип только ради лидерства не создаётся. Модель понятий
+(тип сущности, профессия, навыки, назначение, лидерство) — в
+[`NPC_CAMP_SIMULATION_DESIGN.md`](../Entities/NPC_CAMP_SIMULATION_DESIGN.md) §1.1.
+
+| Аспект | Решение |
 |---|---|
-| Кто | NPC `CampLeaderNpc` (отдельная сущность или житель-«глава» на позиции) |
+| Кто | Мирный NPC (`BaseSurvivorNpcEntity`) с данными лидерства; отдельный класс-сущность не нужен |
+| Связь с лагерем | Постоянный `identityId`, а не runtime UUID сущности |
 | Где | У склада / в центре лагеря |
 | Что делает | Выдаёт задания, принимает пожертвования, открывает торговлю, решает, кого пустить |
-| Данные | `CampSavedData#leaderPos`, `#reputation` (по игрокам), `#taskState` |
+| Интерфейс | Собственный экран управления лагерем (см. [`DESIGN_CAMP_SOCIAL.md`](DESIGN_CAMP_SOCIAL.md) §12.6) |
+| Данные | Позиция/привязка лидера в `CampRecord`, репутация по игрокам, состояние заданий |
 | Задания | Триплет: тип (убить мобов / собрать пшеницу / починить забор) + счётчик + награда (репутация, предметы) |
 
 Связь с «личным лагерем»: репутация игрока в лагере определяет, может ли он вербовать стража и торговать.
@@ -276,13 +290,10 @@ flowchart TD
 |---|---|
 | Блок | `CampRadioBlock` + `BlockEntity` |
 | **Якорь** | Лагерь существует, пока стоит его радио вышка. Отдельного «маяка» нет — это экономит один блок и даёт смысловую связку «вышка = связь = призыв» |
-| **Потолок** | Мировых лагерей — ограниченное число (напр. 3–4 на мир). **Личный лагерь — 1 на игрока** |
-| **Якорь** | Лагерь существует, пока стоит его радио вышка. Отдельного «маяка» нет — это экономит один блок и даёт смысловую связку «вышка = связь = призыв» |
-| **Потолок** | Мировых лагерей — ограниченное число (напр. 3–4 на мир). **Личный лагерь — 1 на игрока** |
+| **Потолок** | Мировых лагерей — ограниченное число (точное значение не утверждено, в документах встречаются 3, 4 и «3–4»). **Личный лагерь — 1 на игрока** |
 | Когда работает | Днём, если лагерь обеспечен «зарядом» (ресурс в инвентаре BE или редстоун-сигнал) |
 | Что делает | Раз в `CAMP_RADIO_CALL_INTERVAL` (напр. раз в день) рассылает «объявление»: в радиусе `CAMP_RADIO_RANGE` (напр. 128) спавнится кандидат-выживший, идущий в лагерь |
 | Ночью | Выключена |
-| Уничтожена | Лагерь распадается: посты и привязки исчезают, склад выпадает в сундук, стражи теряют лагерь |
 | Уничтожена | Лагерь распадается: посты и привязки исчезают, склад выпадает в сундук, стражи теряют лагерь |
 | Расширение (будущее) | Объявление с торговым предложением для соседних лагерей → торговые отношения (§11) |
 
@@ -322,7 +333,7 @@ flowchart TD
 
 ### 12.2 Архитектура
 
-Не зашивать тип оружия в [`BaseGuardianEntity`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java). Ввести слой:
+Не зашивать тип оружия в [`BaseGuardianEntity`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java). Ввести слой:
 
 ```mermaid
 graph LR
@@ -358,29 +369,49 @@ graph LR
 | Статика в классе | Просто | Теряется при выгрузке, не работает с мультисервером | Отклонён |
 | Данные игрока | Привычно | Лагерь не принадлежит игроку; ломается при смене игрока | Отклонён |
 
-### 13.2 Состав `CampSavedData`
+### 13.2 Состав `CampRecord`
+
+**Фактически в коде** ([`CampRecord.java`](../../../src/main/java/com/phian404/survivalpoints/camp/CampRecord.java)):
 
 ```
 CampSavedData (per-dimension)
 └── camps: Map<UUID, CampRecord>
-    ├── id, name, centerX/Y/Z, radius
-    ├── ownerUuid (null для мировых лагерей)
-    ├── beaconPos, gatePos[], towerPos[], trapPos[], farmCenter, storagePos, radioPos, leaderPos
-    ├── posts: List<Post>            // тип, BlockPos, направление обзора
-    ├── guardians: Map<UUID, UUID>   // guardId -> postId
+    ├── id, name, center, radius
+    ├── owner (null для мировых лагерей)
+    ├── anchor: BlockPos            // позиция радио-вышки
+    ├── posts: List<CampPost>
+    ├── guardianPosts: Map<UUID, UUID>   // guardId -> postId
+    ├── relations: Map<UUID, CampRelation>
     ├── resources: food, bread, ammo, weapons, materials
-    ├── mode: DAY/NIGHT, alertRadius
-    ├── relation: Map<UUID, Relation>
-    └── timers: staffCheck, radioCall, farmTick
+    ├── mode: night, closed, alertRadius
+    └── timers: staffCheckTimer, radioCallTimer
 ```
+
+**Планируемые поля (в коде отсутствуют, целевая модель):**
+
+```
+    ├── beaconPos, gatePos[], towerPos[], trapPos[], farmCenter, storagePos, leaderPos
+    └── timers: farmTick
+```
+
+Поля из этого блока не реализованы: блоков лагеря, кроме радио-вышки, пока нет,
+а `leaderPos` не добавлен в сериализацию. Добавлять их следует вместе с реализацией
+соответствующих механик, а не заранее.
 
 ### 13.3 Привязка стража к лагерю
 
-В [`BaseGuardianEntity`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java) добавляются поля `campId` (UUID) и `postId` (UUID) + NBT-теги `Camp` и `Post`.
+Поля `campId` (UUID) и `postId` (UUID) живут в общей базе
+[`BaseSurvivorEntity`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseSurvivorEntity.java),
+а не в `BaseGuardianEntity`: привязка нужна любому NPC лагеря, не только стражу.
+NBT-теги: `CampId`, `CampPostId`.
+
+Связь «лагерь ↔ NPC» должна опираться на постоянный `identityId`
+([`BaseSurvivorEntity#getIdentityId()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseSurvivorEntity.java:76)),
+а не на runtime UUID сущности — см. [`plan.md`](../Entities/plan.md).
 
 ### 13.4 Тик лагеря
 
-Отдельный тик не нужен: лагеря тикаются **раз в 20 тиков** из общего обработчика (например, `ServerTickEvent` в [`ModEntityEvents`](src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java) или новом `CampEvents`). Проверка интервала пополнения — по счётчику в `SavedData`.
+Отдельный тик не нужен: лагеря тикаются **раз в 20 тиков** из общего обработчика (например, `ServerTickEvent` в [`ModEntityEvents`](../../../src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java) или новом `CampEvents`). Проверка интервала пополнения — по счётчику в `SavedData`.
 
 ---
 
@@ -409,8 +440,9 @@ com.phian404.survivalpoints
 │   │   ├── CampStorageBlockEntity.java
 │   │   ├── CampTrapBlockEntity.java
 │   │   └── CampRadioBlockEntity.java
-│   ├── CampLeaderNpc.java          — глава лагеря
-│   └── SurvivorCandidateNpc.java   — выживший, призванный по радио
+│   ├── (лидер лагеря — данные обычного NPC, отдельный класс не нужен;
+│   │    см. plan.md и NPC_CAMP_SIMULATION_DESIGN.md §1.1)
+│   └── (кандидат по радио — обычный NPC, создаётся через RoleAssignmentService)
 ├── entity/ai/
 │   ├── GuardianPostGoal.java       — NEW: стоять на посту
 │   ├── GuardianPatrolGoal.java     — NEW: обход периметра
@@ -498,7 +530,9 @@ sequenceDiagram
 ## 17. Список файлов (будущих)
 
 **Новые — блоки и BE:**
-`camp/block/CampBeaconBlock.java`, `CampFenceBlock.java`, `CampGateBlock.java`, `CampWatchtowerBlock.java`, `CampStorageBlock.java`, `CampTrapBlock.java`, `CampRadioBlock.java`, `camp/blockentity/*BlockEntity.java` (5 шт.), их `BlockItem`, регистрация в [`ModEntities`](src/main/java/com/phian404/survivalpoints/init/ModEntities.java)-подобном `ModBlocks`.
+`camp/block/CampFenceBlock.java`, `CampGateBlock.java`, `CampWatchtowerBlock.java`, `CampStorageBlock.java`, `CampTrapBlock.java`, `CampRadioBlock.java` (✅ реализован), `camp/blockentity/*BlockEntity.java`, их `BlockItem`, регистрация в [`ModBlocks`](../../../src/main/java/com/phian404/survivalpoints/init/ModBlocks.java).
+
+> Отдельного `CampBeaconBlock` **не планируется**: якорь лагеря — радио-вышка (§10).
 
 **Новые — данные:**
 `camp/CampSavedData.java`, `camp/CampRecord.java`, `camp/CampPost.java`, `camp/CampRelation.java`, `camp/CampManager.java`, `camp/CampTuning.java`.
@@ -507,7 +541,8 @@ sequenceDiagram
 `entity/ai/GuardianPostGoal.java`, `GuardianPatrolGoal.java`, `GuardianFarmGoal.java`, `GuardianAlertGoal.java`, `GuardianDefendGoal.java`.
 
 **Новые — существа:**
-`camp/CampLeaderNpc.java`, `camp/SurvivorCandidateNpc.java`.
+Отдельные классы сущностей для лидера и кандидата по радио **не создаются**: оба — обычные NPC
+из общей базы, создаваемые через `RoleAssignmentService` ([`plan.md`](../Entities/plan.md)).
 
 **Новые — слой оружия:**
 `weapon/WeaponProfile.java`, `BowProfile.java`, `CrossbowProfile.java`, `MeleeProfile.java`.
@@ -519,9 +554,9 @@ sequenceDiagram
 
 ## 18. Поэтапный план
 
-> **Актуальный порядок волн 0–10** (включая UI-волны, ферму, роли оружия и личный лагерь) —
-> в [`DESIGN_CAMP_SOCIAL.md`](DESIGN_CAMP_SOCIAL.md) §9 и [`ROADMAP.md`](ROADMAP.md) §2.
-> Ниже — детализация **базовой** части лагеря (волны 0–4).
+> **Канонический порядок волн и приоритеты — только [`ROADMAP.md`](../Roadmap/ROADMAP.md) §2.**
+> Нумерация «этапов» ниже — **не канон**: это детализация базовой части лагеря,
+> сохранённая ради критериев готовности. При расхождении номеров приоритет у `ROADMAP.md`.
 
 ### Этап 0 — Убрать остаточные качели (без лагерей)
 - Перенести `reachedStandoff` из гола в сущность.
@@ -554,7 +589,7 @@ sequenceDiagram
 - **Критерий:** при нехватке стражей лагерь через 5 минут набирает недостающих.
 
 ### Этап 6 — Радио вышка, выжившие, глава лагеря
-- Блок радио, `SurvivorCandidateNpc`, `CampLeaderNpc`, базовые задания.
+- Блок радио, кандидат-выживший как обычный NPC, лидер как NPC с данными лидерства, базовые задания.
 - **Критерий:** выживший появляется, идёт в лагерь, становится стражем.
 
 ### Этап 7 — Ферма, склад, экономика
@@ -610,7 +645,11 @@ sequenceDiagram
 ## 21. Решения, требующие выбора владельца
 
 > **Часть решений уже принята** — см. [`DESIGN_CAMP_SOCIAL.md`](DESIGN_CAMP_SOCIAL.md) §0 (зафиксировано)
-> и §11 (открытые вопросы по социальному слою). Список ниже — по **базовой** части лагеря.
+> и §11 (закрытые вопросы). Список ниже — по **базовой** части лагеря.
+>
+> **Закрыто после сверки:** п.7 (ночь — по `isNight()`), п.8 (ферма без перегрузки), п.9 (задания
+> входят в волну 6), п.10 (торговля между лагерями — задел, `CampRelation` остаётся), п.11 (TacZ
+> отложен, soft-dep), п.12 (скрытность — см. §5.4). Остаются открытыми пп.1–6.
 
 1. **Формат лагеря.** Гибрид (блоки + данные, рекомендация §3.2) или полностью виртуальный лагерь без построек?
 2. **Кто создаёт лагерь.** Только игрок (ПКМ по маяку) — или лагерь может возникнуть сам (например, рядом с разрушенным поселком, по сюжету)?
@@ -629,6 +668,10 @@ sequenceDiagram
 
 ## 22. Связанные документы
 
-- [`PROJECT_VISION.md`](PROJECT_VISION.md) — общий замысел мода, среда, дорожная карта.
-- [`AI_CONTEXT.md`](src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md) — текущее состояние кода, архитектура ИИ, правила работы, бэкапы, диагностика.
-- [`DEVELOPMENT_LOG_GUARDIAN_AI.txt`](DEVELOPMENT_LOG_GUARDIAN_AI.txt) — журнал доработок ИИ стража.
+- [`PROJECT_VISION.md`](../Architecture/PROJECT_VISION.md) — общий замысел мода, среда, дорожная карта.
+- [`ROADMAP.md`](../Roadmap/ROADMAP.md) — канон порядка волн и приоритетов.
+- [`plan.md`](../Entities/plan.md) — канон архитектуры NPC и смены роли.
+- [`DESIGN_CAMP_SOCIAL.md`](DESIGN_CAMP_SOCIAL.md) — социально-экономический слой лагеря.
+- [`NPC_CAMP_SIMULATION_DESIGN.md`](../Entities/NPC_CAMP_SIMULATION_DESIGN.md) — модель NPC, навыки, симуляция.
+- [`RADIO_TOWER_DETAIL.md`](RADIO_TOWER_DETAIL.md) — детали радио-вышки.
+- [`AI_CONTEXT.md`](../../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md) — текущее состояние кода, архитектура ИИ, правила работы, диагностика.

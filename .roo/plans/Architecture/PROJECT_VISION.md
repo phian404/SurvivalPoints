@@ -1,8 +1,8 @@
 # PROJECT_VISION.md — SurvivalPoints
 
 > **Единый документ проекта**: на чём пишем, что это за мод, что в ней должно быть и в каком порядке.
-> Детальный план системы лагерей — в [`DESIGN_CAMP_SYSTEM.md`](DESIGN_CAMP_SYSTEM.md).
-> Техническое состояние кода и правила работы — в [`AI_CONTEXT.md`](src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md).
+> Детальный план системы лагерей — в [`DESIGN_CAMP_SYSTEM.md`](../Camp/DESIGN_CAMP_SYSTEM.md).
+> Техническое состояние кода и правила работы — в [`AI_CONTEXT.md`](../../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md).
 
 ---
 
@@ -10,27 +10,37 @@
 
 | Параметр | Значение | Где задано |
 |---|---|---|
-| Загрузчик | **Minecraft Forge 47.4.28** | [`gradle.properties`](gradle.properties) |
-| Версия игры | **1.20.1** (диапазон `[1.20.1,1.21)`) | [`gradle.properties`](gradle.properties) |
-| Java | **17** | `sourceCompatibility` в [`build.gradle`](build.gradle) |
-| Маппинги | **official (Mojang)** | [`build.gradle`](build.gradle) |
-| Mod id | `survivalpoints` | [`SurvivalPointsMod.MOD_ID`](src/main/java/com/phian404/survivalpoints/SurvivalPointsMod.java:11) |
+| Загрузчик | **Minecraft Forge 47.4.28** | [`gradle.properties`](../../../gradle.properties) |
+| Версия игры | **1.20.1** (диапазон `[1.20.1,1.21)`) | [`gradle.properties`](../../../gradle.properties) |
+| Java | **17** | `sourceCompatibility` в [`build.gradle`](../../../build.gradle) |
+| Маппинги | **official (Mojang)** | [`build.gradle`](../../../build.gradle) |
+| Mod id | `survivalpoints` | [`SurvivalPointsMod.MOD_ID`](../../../src/main/java/com/phian404/survivalpoints/SurvivalPointsMod.java:11) |
 | IDE | VS Code + расширения Java/Gradle | `.vscode/` |
-| Сборка | `gradlew.bat compileJava` (~15–30 с), запуск клиента — `gradlew.bat runClient` | [`gradlew.bat`](gradlew.bat) |
+| Сборка | `gradlew.bat compileJava` (~15–30 с), запуск клиента — `gradlew.bat runClient` | [`gradlew.bat`](../../../gradlew.bat) |
 | Рабочий мир для тестов | `run/saves/Новый мир` | — |
 
 
 
-**Карта пакетов:**
+**Карта пакетов** (ориентир, может устареть — сверять с рабочим деревом):
 
 ```
 com.phian404.survivalpoints
-├── SurvivalPointsMod.java      — точка входа (@Mod), регистрация типов сущностей
-├── AI_CONTEXT.md                — состояние кода, правила работы, бэкапы, диагностика
-├── client/                      — рендереры, модели, слои оружия
-├── entity/                      — BaseGuardianEntity и все голы ИИ
-├── init/                        — Tuning, DeferredRegister, события, команды
-└── (будущее) camp/, weapon/     — система лагерей и слой оружия
+├── SurvivalPointsMod.java       — точка входа (@Mod)
+├── AI_CONTEXT.md                — состояние кода, правила работы, диагностика
+├── ModConstants.java, ModModelLayers.java
+├── client/                      — ModEntityRenderers (рендер NPC и стража), CustomWeaponLayer
+├── entity/                      — BaseSurvivorEntity (общая база), BaseSurvivorNpcEntity,
+│                                  BaseGuardianEntity, GuardianMoveControl
+│   ├── ai/                      — цели ИИ стража
+│   └── role/                    — SurvivorRole, RoleAssignmentService
+├── camp/                        — данные лагеря и генерация
+│   ├── CampTuning, CampRecord, CampPost, CampRelation, CampSavedData, CampManager
+│   ├── CampBlueprintParser, CampGenerator
+│   ├── block/CampRadioBlock
+│   └── blockentity/CampRadioBlockEntity
+├── init/                        — ModEntities, ModBlocks, ModCreativeTabs, Tuning,
+│                                  события, команды диагностики
+└── (будущее) weapon/            — слой оружия
 ```
 
 **Правила окружения:**
@@ -48,7 +58,7 @@ SurvivalPoints предназначен для зомби-апокалиптич
 
 Количество фракций и вариантов лагерей не должно быть жёстко ограничено стартовым контентом. Интеграции с оружейными модами, например TacZ, должны быть опциональными.
 
-Главная сущность текущей разработки — [`BaseGuardianEntity`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), гуманоидный страж-лучник. Он умеет искать врага, отступать, звать союзников, есть хлеб, стрелять из арбалета с упреждением, доворачивать корпус и голову к цели.
+Главная сущность текущей разработки — [`BaseGuardianEntity`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), гуманоидный страж-лучник. Он умеет искать врага, отступать, звать союзников, есть хлеб, стрелять из арбалета с упреждением, доворачивать корпус и голову к цели.
 
 Но страж — **часть лагеря, а не самоцель**. Главная механика мода впереди — **лагерь**: материальный, автономный, с постами, воротами, фермой, главой и собственной экономикой.
 
@@ -68,7 +78,7 @@ SurvivalPoints предназначен для зомби-апокалиптич
 | 6 | Восстановление HP хлебом | ✅ |
 | 7 | Диагностическая команда `/sp_guard` | ✅ |
 
-### 3.2 Лагерь (главный блок, подробно — в [`DESIGN_CAMP_SYSTEM.md`](DESIGN_CAMP_SYSTEM.md))
+### 3.2 Лагерь (главный блок, подробно — в [`DESIGN_CAMP_SYSTEM.md`](../Camp/DESIGN_CAMP_SYSTEM.md))
 
 | # | Механика | Статус |
 |---|---|---|
@@ -114,7 +124,7 @@ SurvivalPoints предназначен для зомби-апокалиптич
 - **Сверка с ванилью.** Перед новой механикой — найти ванильный аналог и понять, почему он так сделан.
 - **Бэкап перед каждой серией правок** в `backups/pre_*`.
 - **Диагностика.** Каждая неочевидная механика получает вывод в `/sp_guard` или `/sp_camp`.
-- **Константы — в одном месте.** Сейчас это [`GuardianTuning`](src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java); для лагеря — отдельный `CampTuning`.
+- **Константы — в одном месте.** Сейчас это [`GuardianTuning`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java); для лагеря — отдельный `CampTuning`.
 - **Никакой «магии».** Если поведение нельзя объяснить одним предложением — оно переусложнено.
 
 ---
@@ -122,39 +132,45 @@ SurvivalPoints предназначен для зомби-апокалиптич
 ## 6. Дорожная карта
 
 > Полный глобальный план (волны, приоритеты, зависимости, анти-бэклог, иллюзии, риски, бюджеты) —
-> в [`ROADMAP.md`](ROADMAP.md).
+> в [`ROADMAP.md`](../Roadmap/ROADMAP.md).
+
+**Канонический источник порядка волн и приоритетов — [`ROADMAP.md`](../Roadmap/ROADMAP.md) §2.**
+Схема ниже повторяет его для наглядности; при любом расхождении приоритет у `ROADMAP.md`.
 
 ```mermaid
 graph TD
-  A[Этап 0 - убрать остаточные качели] --> B[Этап 1 - каркас данных лагеря]
-  B --> C[Этап 2 - посты и привязка стражей]
-  C --> D[Этап 3 - материальная часть]
-  D --> E[Этап 4 - тревога, оборона, ночь]
-  E --> F[Этап 5 - штат и найм]
-  F --> G[Этап 6 - радио, выжившие, глава]
-  G --> H[Этап 7 - ферма и склад]
-  H --> I[Этап 8 - ловушки, вышки, разрушаемость]
-  I --> J[Этап 9 - отношения между лагерями]
-  J --> K[Этап 10 - TacZ]
-  K --> L[Этап 11 - личный лагерь]
+  A[Волна 0 - починить качели] --> B[Волна 1 - каркас данных лагеря]
+  B --> C[Волна 2 - материальная часть: блоки и генерация]
+  C --> D[Волна 3 - посты и привязка стражей]
+  D --> E[Волна 4 - еда и снабжение]
+  E --> F[Волна 5 - UI: глава, диалог, торговля, репутация]
+  F --> G[Волна 6 - задания, доска, журнал]
+  G --> H[Волна 7 - скот и деградация]
+  H --> I[Волна 8 - роли оружия и TacZ]
+  I --> J[Волна 9 - отношения между лагерями]
+  J --> K[Волна 10 - личный лагерь]
 ```
 
-Подробное описание этапов и критерии готовности — в [`DESIGN_CAMP_SYSTEM.md`](DESIGN_CAMP_SYSTEM.md) §18–19.
-
-**Волновой порядок (кратко):** 0 — починить качели → 1 — лагерь как данные → 2 — лагерь как место
-(4 блока) → 3 — стражи на постах → 4 — еда → 5 — население → 6 — глубина → 7 — оружие (TacZ) → 8 — личный лагерь.
+Детализация критериев готовности — в [`DESIGN_CAMP_SYSTEM.md`](../Camp/DESIGN_CAMP_SYSTEM.md) §18–19
+(нумерация там не каноническая).
 
 ---
 
 ## 7. Документы проекта
 
-| Документ | О чём |
-|---|---|
-| [`PROJECT_VISION.md`](PROJECT_VISION.md) | Этот файл: среда, видение, список механик, дорожная карта |
-| [`ROADMAP.md`](ROADMAP.md) | Глобальный план: волны и приоритеты, сторонние зависимости, бэкапы и git, каталог иллюзий, риски, бюджеты |
-| [`TESTING.md`](TESTING.md) | Чек-листы проверки по волнам: что тестировать, что должно быть, формат отчёта |
-| [`DESIGN_CAMP_SYSTEM.md`](DESIGN_CAMP_SYSTEM.md) | Детальное ТЗ системы лагерей: модель, блоки, посты, ночь, штат, ферма, радио, отношения, TacZ, этапы |
-| [`DESIGN_CAMP_SOCIAL.md`](DESIGN_CAMP_SOCIAL.md) | Социально-экономический слой: глава и UI, торговля, репутация, задания и журнал, ферма и скот, роли оружия, генерация лагеря |
-| [`AI_CONTEXT.md`](src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md) | Текущий код: архитектура ИИ, константы, правила работы, бэкапы, диагностика |
-| [`DEVELOPMENT_LOG_GUARDIAN_AI.txt`](DEVELOPMENT_LOG_GUARDIAN_AI.txt) | Журнал доработок ИИ стража |
-| [`changelog.txt`](changelog.txt) | История изменений релиза |
+| Документ | О чём | Статус |
+|---|---|---|
+| [`PROJECT_VISION.md`](PROJECT_VISION.md) | Этот файл: среда, видение, список механик, краткая дорожная карта | обзор |
+| [`ROADMAP.md`](../Roadmap/ROADMAP.md) | **Канон порядка и приоритетов**; зависимости, анти-бэклог, иллюзии, риски, бюджеты, git | канон |
+| [`plan.md`](../Entities/plan.md) | **Канон архитектуры NPC**: общая база, identity UUID, `RoleAssignmentService` | канон, реализовано |
+| [`DESIGN_CAMP_SYSTEM.md`](../Camp/DESIGN_CAMP_SYSTEM.md) | ТЗ базовой системы лагерей: модель, блоки, посты, ночь, штат, ферма, радио, данные | спецификация |
+| [`DESIGN_CAMP_SOCIAL.md`](../Camp/DESIGN_CAMP_SOCIAL.md) | Социально-экономический слой: глава и UI, торговля, репутация, задания и журнал, ферма и скот, роли оружия, генерация лагеря | спецификация |
+| [`NPC_CAMP_SIMULATION_DESIGN.md`](../Entities/NPC_CAMP_SIMULATION_DESIGN.md) | Модель NPC (тип/профессия/навыки/назначение/лидерство), навыки 0–10, симуляция лагерей, население | концепция, частично согласовано |
+| [`RADIO_TOWER_DETAIL.md`](../Camp/RADIO_TOWER_DETAIL.md) | Детали радио-вышки как якоря лагеря | спецификация |
+| [`WAVE2_PLAN.md`](../Camp/WAVE2_PLAN.md) | План волны 2: блоки и генерация лагеря | план волны |
+| [`GUARDIAN_REWORK_PLAN.md`](../Combat/GUARDIAN_REWORK_PLAN.md) | Реворк ИИ стража R0.0–R0.6 | план, частично выполнен |
+| [`TESTING.md`](../Testing/TESTING.md) | Чек-листы проверки по волнам и формат отчёта | спецификация |
+| [`CREATIVE_TAB_PLAN.md`](../Items/CREATIVE_TAB_PLAN.md) | Вкладка креатива и яйца призыва | план |
+| [`CAMP_IDEAS.md`](../Camp/CAMP_IDEAS.md) | **Банк идей**, не утверждённый план | идеи |
+| [`AI_CONTEXT.md`](../../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md) | Текущее состояние кода, правила работы, диагностика | контекст |
+| [`changelog.txt`](../../../changelog.txt) | История изменений релиза | история |

@@ -8,13 +8,16 @@
 
 ### 1.1 Блок (`CampRadioBlock`)
 
-| Аспект | Решение | Файл |
+| Аспект | Факт в коде | Файл |
 |---|---|---|
-| Класс | `Block` (не `BaseEntityBlock`) | [`CampRadioBlock.java`](src/main/java/com/phian404/survivalpoints/camp/block/CampRadioBlock.java) |
-| Материал | `Material.METAL` | — |
-| Прочность | 3.0F / 6.0F | — |
-| BE | `CampRadioBlockEntity` | [`CampRadioBlockEntity.java`](src/main/java/com/phian404/survivalpoints/camp/blockentity/CampRadioBlockEntity.java) |
-| Регистрация | `ModBlocks.CAMP_RADIO` | [`ModBlocks.java`](src/main/java/com/phian404/survivalpoints/init/ModBlocks.java) |
+| Класс | `CampRadioBlock extends BaseEntityBlock` | [`CampRadioBlock.java`](../../../src/main/java/com/phian404/survivalpoints/camp/block/CampRadioBlock.java) |
+| Свойства | `Properties.of().strength(3.0F, 6.0F).requiresCorrectToolForDrops()` | там же |
+| BlockState | `POWERED` (`BooleanProperty`), по умолчанию `false` | там же |
+| BE | `CampRadioBlockEntity extends BlockEntity` | [`CampRadioBlockEntity.java`](../../../src/main/java/com/phian404/survivalpoints/camp/blockentity/CampRadioBlockEntity.java) |
+| Регистрация | `ModBlocks.CAMP_RADIO`, `CAMP_RADIO_ITEM`, `CAMP_RADIO_BE` | [`ModBlocks.java`](../../../src/main/java/com/phian404/survivalpoints/init/ModBlocks.java) |
+
+> **Примечание.** Класс `Material` в 1.20.1 отсутствует; материал блока не задаётся — используются
+> свойства `Properties.of()`.
 
 ### 1.2 BE (`CampRadioBlockEntity`)
 
@@ -23,16 +26,41 @@
 | `campId` | `UUID` | Привязка к лагерю |
 | `charge` | `int` | Заряд (редстоун/ресурс) |
 
+**Конструктор.** Единственный — `CampRadioBlockEntity(BlockPos pos, BlockState state)`, вызывает
+`super(ModBlocks.CAMP_RADIO_BE.get(), pos, state)`. Конструктор без аргументов не добавлять:
+фабрика типа BE — `CampRadioBlockEntity::new` в
+[`ModBlocks`](../../../src/main/java/com/phian404/survivalpoints/init/ModBlocks.java:33).
+
+**Тикер блока.** `CampRadioBlock.getTicker(...)` обязан проверить
+`type == ModBlocks.CAMP_RADIO_BE.get()` и вернуть `null`, если тип не совпал или уровень клиентский;
+иначе возвращается тикер, вызывающий `CampRadioBlockEntity.tick(...)`
+([`CampRadioBlock`](../../../src/main/java/com/phian404/survivalpoints/camp/block/CampRadioBlock.java:65)).
+
 **Тик (`tick()`):**
 - Днём (`!level.isNight()`): работает
 - Ночью: выключена
-- Раз в 24000 тиков (`CAMP_RADIO_CALL_INTERVAL`): призыв выжившего (волна 6)
+- `charge` уменьшается на 1 каждый тик, пока больше нуля
+- Призыв выжившего раз в 24000 тиков (`CAMP_RADIO_CALL_INTERVAL`,
+  [`CampTuning`](../../../src/main/java/com/phian404/survivalpoints/camp/CampTuning.java:67)) —
+  **не реализован**: константа существует, вызова в BE нет
 
 ### 1.3 Логика якоря
 
-- Лагерь существует, пока стоит вышка (`CampRecord.anchor`)
-- Уничтожена (`BlockEvent.BreakEvent`) → распад лагеря (`CampSavedData.removeCamp`)
-- ПКМ (`use()`) → показать информацию о лагере
+**Реализовано в коде:**
+
+- `CampRecord.anchor` — поле позиции якоря, сохраняется в NBT лагеря.
+- ПКМ (`use()`) → сообщение в чат с названием лагеря, если `CampManager.findCampAt(...)` вернул запись.
+- `tick(...)` в BE переключает `POWERED` по времени суток и уменьшает `charge` на 1 за тик.
+
+**Целевой дизайн (в коде отсутствует):**
+
+- Автоматическое создание лагеря при установке вышки.
+- Автоматический распад лагеря при её разрушении.
+
+В [`CampRadioBlock`](../../../src/main/java/com/phian404/survivalpoints/camp/block/CampRadioBlock.java)
+нет `onPlace`/`setPlacedBy`/`onRemove`/`playerWillDestroy`, нет подписки на `BlockEvent`.
+Создание лагеря сейчас выполняется только вручную командой `/sp_camp create`
+через [`CampDebugCommand`](../../../src/main/java/com/phian404/survivalpoints/init/CampDebugCommand.java).
 
 ---
 
@@ -101,31 +129,44 @@ public CampRecord getCamp(UUID id) { ... }
 
 ### 3.3 События
 
-| Событие | Действие |
-|---|---|
-| `BlockEvent.PlaceEvent` | Установка вышки → создание лагеря |
-| `BlockEvent.BreakEvent` | Разрушение вышки → распад лагеря |
-| `ServerTickEvent` | Тик лагеря (режим, таймеры) |
+| Событие | Статус | Действие |
+|---|---|---|
+| `BlockEvent.PlaceEvent` | ⬜ не реализовано | Целевое: установка вышки → создание лагеря |
+| `BlockEvent.BreakEvent` | ⬜ не реализовано | Целевое: разрушение вышки → распад лагеря |
+| `ServerTickEvent` | ✅ реализовано | Тик лагеря (режим, таймеры) через `CampManager.onServerTick(...)`, вызов в [`ModEntityEvents`](../../../src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java) |
+| `BlockEntityTicker` блока | ✅ реализовано | `CampRadioBlock.getTicker(...)` → `CampRadioBlockEntity.tick(...)` |
+
+Подписки на `BlockEvent` в проекте нет. Поиск `onRemove|playerWillDestroy|BreakEvent|PlaceEvent`
+по `src/main/java/com/phian404/survivalpoints/init/` даёт только `findCampAt` в отладочной команде.
 
 ---
 
 ## 4. Стоимость
 
+Статус сверен с рабочим деревом. Отметка ✅ означает «файл есть и выполняет заявленную работу»,
+⬜ — «файл есть, но работа не реализована».
+
 | Часть | Строк | Статус |
 |---|---|---|
-| Блок (`CampRadioBlock`) | ~60 | ✅ |
-| BE (`CampRadioBlockEntity`) | ~80 | ✅ |
-| Регистрация (`ModBlocks`) | ~30 | ✅ |
-| Модель (`camp_radio.json`) | ~10 | ⬜ |
-| Текстура (`camp_radio.png`) | — | ⬜ |
-| Blockstates (`camp_radio.json`) | ~15 | ⬜ |
-| Генерация (`CampGenerator`) | ~80 | ⬜ |
+| Блок (`CampRadioBlock`) | ~60 | ✅ [`camp/block/CampRadioBlock.java`](../../../src/main/java/com/phian404/survivalpoints/camp/block/CampRadioBlock.java) |
+| BE (`CampRadioBlockEntity`) | ~80 | ✅ [`camp/blockentity/CampRadioBlockEntity.java`](../../../src/main/java/com/phian404/survivalpoints/camp/blockentity/CampRadioBlockEntity.java) |
+| Регистрация (`ModBlocks`) | ~30 | ✅ [`ModBlocks.java`](../../../src/main/java/com/phian404/survivalpoints/init/ModBlocks.java) |
+| Модель (`models/block/camp_radio.json`) | ~10 | ✅ простой `cube_all` |
+| Blockstates (`blockstates/camp_radio.json`) | ~15 | ✅ оба состояния `powered` указывают на одну модель |
+| Текстура (`textures/block/camp_radio.png`) | — | ✅ файл существует |
+| Генерация (`CampGenerator`) | ~80 | ⬜ **каркас**: [`CampGenerator.generate(...)`](../../../src/main/java/com/phian404/survivalpoints/camp/CampGenerator.java) содержит только комментарии, блоки не ставит |
+| Парсер блюпринтов (`CampBlueprintParser`) | ~60 | ✅ разбирает сетку, но не связан с `CampGenerator` |
+
+`CampGenerator.generate(ServerLevel, CampRecord)` нигде не вызывается: поиск по `src/`
+находит только объявление метода.
 
 ---
 
 ## 5. Открытые вопросы
 
-1. **Модель:** простой куб или сложная с антенной?
-2. **Текстура:** ванильная (`iron_block`) или своя?
-3. **Анимация:** только смена текстуры или частицы?
-4. **Звук:** ванильный (`SoundEvents`) или новый?
+1. **Модель:** простой куб или сложная с антенной? — сейчас реализован простой `cube_all`; усложнение не утверждено.
+2. **Текстура:** ванильная (`iron_block`) или своя? — закрыто: используется своя `textures/block/camp_radio.png`, файл существует.
+3. **Анимация:** только смена текстуры или частицы? — открыто. Сейчас `powered=true` и `powered=false` ведут на одну модель, визуальной разницы нет.
+4. **Звук:** ванильный (`SoundEvents`) или новый? — открыто.
+5. **Генерация лагеря:** как связать `CampBlueprintParser` с `CampGenerator` и кто вызывает `generate(...)`. Открыто.
+6. **Создание и распад лагеря от вышки:** реализовать через `onPlace`/`onRemove` или через `BlockEvent`. Не решено.

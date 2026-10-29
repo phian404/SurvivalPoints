@@ -21,7 +21,7 @@
 | Имена NPC | `Entities/npc-names-plan.md` |
 | Вкладка креатива и яйца призыва | `Items/CREATIVE_TAB_PLAN.md` |
 | Чек-листы проверки по волнам | `Testing/TESTING.md` |
-| Оптимизация правил и режимов Roo Code | `rules-optimization-plan.md` |
+| Оптимизация правил и режимов Roo Code (завершён) | `rules-optimization-plan.md` |
 
 ## Структура
 

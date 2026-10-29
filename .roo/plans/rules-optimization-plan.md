@@ -1,6 +1,6 @@
 # План: Волна A + Волна C — оптимизация правил, режимов и структуры конфигурации
 
-> **Статус:** финализирован, ожидает реализации.
+> **Статус:** реализован (шаги A1–A10, C1–C4 применены; см. §6).
 > **Проект:** SurvivalPoints (Minecraft Forge 1.20.1, Java 17).
 > **Источник:** первичный аудит системы правил, промптов, режимов и инструментов Zoo Code (форк Roo Code).
 > **Связанные документы:** [`.roo/plans/README.md`](README.md) (навигатор), [`Entities/plan.md`](Entities/plan.md) (канон архитектуры NPC), [`AI_CONTEXT.md`](../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md).
@@ -16,7 +16,7 @@
 3. [`.roomodes:47`](../../.roomodes) — режим `architect`: фиксированный `.roo/plans/plan.md` заменён на уникальное имя `.roo/plans/<тема>-plan.md`.
 4. [`.roomodes:9`](../../.roomodes) — режим `survivalpoints-audit`: добавлено `source: project` для однородности.
 
-Также выполнено владельцем вне плана: удалены `.roo/backups/` и `.roo/plans/image.png`.
+Также выполнено владельцем вне плана: удалён `.roo/plans/image.png`. Каталог `.roo/backups/` сохранён (в нём лежат черновые `.bak`-копии), правило `backups/` в [`.gitignore`](../../.gitignore) остаётся рабочим.
 
 ---
 
@@ -197,7 +197,7 @@
 - `.kilo/kilo.jsonc:3-7` — `"instructions": [".kilo/rules/minecraft.md", ".kilo/rules/codestyle.md", ".kilo/rules/git.md"]`. Каталога `.kilo/rules/` не существует.
 - `.kilo/kilo.jsonc:63` — architect обязан использовать `.kilo/plans/` и инструмент `plan_exit`. Каталога нет; планы живут в `.roo/plans/`; инструмента `plan_exit` в Zoo Code нет.
 - `.kilo/kilo.jsonc:73` — дубль роли `code` из [`.roomodes:22-27`](../../.roomodes).
-- `.kilo/kilo.jsonc:8-27` против [`.roo/mcp.json:59-95`](../../.roo/mcp.json) — два разных Git-MCP.
+- `.kilo/kilo.jsonc:8-27` — отдельная конфигурация MCP для Kilo Code (каталог удалён в рамках C1).
 
 **Изменение.** Удалить каталог `.kilo/` целиком.
 
@@ -299,16 +299,16 @@
 
 ## 6. Критерии готовности
 
-- [ ] Правило `update_todo_list` доступно всем трём режимам: присутствует в [`.roo/rules/anti-loop.md`](../../.roo/rules/anti-loop.md), отсутствует в [`.roo/rules-code/codestyle.md`](../../.roo/rules-code/codestyle.md).
-- [ ] В [`.roo/rules/minecraft.md`](../../.roo/rules/minecraft.md) три отдельных раздела: Стиль / Версия API / Верификация.
-- [ ] В политике верификации Forge-классы проверяются по Gradle-кэшу, vanilla — через MCP, при недоступности обоих требуется явно сообщить об ограничении.
-- [ ] Норма «группировать правки и проверки» существует в одном файле; второй содержит ссылку.
-- [ ] Каталог `.roo/rules/` не содержит пустых файлов; каталога `.roo/rules-survivalpoints-audit/` нет.
-- [ ] Таблица и дерево [`.roo/plans/README.md`](README.md) совпадают с выводом `list_files` по `.roo/plans/`.
-- [ ] Каталога `.kilo/` нет.
-- [ ] Файла `.roo/plans_inventory.txt` нет.
-- [ ] Файла `.roo/plans/plan.md` нет; ссылка на него в [`AI_CONTEXT.md`](../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md) отсутствует.
-- [ ] `git status` не показывает неожиданных изменений.
+- [x] Правило `update_todo_list` доступно всем трём режимам: присутствует в [`.roo/rules/anti-loop.md`](../../.roo/rules/anti-loop.md), отсутствует в [`.roo/rules-code/codestyle.md`](../../.roo/rules-code/codestyle.md).
+- [x] В [`.roo/rules/minecraft.md`](../../.roo/rules/minecraft.md) три отдельных раздела: Стиль / Версия API / Верификация.
+- [x] В политике верификации Forge-классы проверяются по Gradle-кэшу, vanilla — через MCP, при недоступности обоих требуется явно сообщить об ограничении.
+- [x] Норма «группировать правки и проверки» существует в одном файле ([`.roo/rules/anti-loop.md`](../../.roo/rules/anti-loop.md)); [`.roo/rules-code/git.md`](../../.roo/rules-code/git.md) содержит только ссылку.
+- [x] Каталог `.roo/rules/` не содержит пустых файлов; каталога `.roo/rules-survivalpoints-audit/` нет.
+- [x] Таблица и дерево [`.roo/plans/README.md`](README.md) совпадают с выводом `list_files` по `.roo/plans/`.
+- [x] Каталога `.kilo/` нет.
+- [x] Файла `.roo/plans_inventory.txt` нет.
+- [x] Файла `.roo/plans/plan.md` нет; ссылка на него в [`AI_CONTEXT.md`](../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md) отсутствует.
+- [x] `git status` не показывает изменений, относящихся к этому плану. Не закоммиченный код этапа 3 (модель торса, скины) — отдельная задача, вне области плана.
 
 ---
 
@@ -329,5 +329,5 @@
 
 - Java-код мода не изменяется.
 - `.roomodes` не изменяется (шаги 1–3 уже выполнены).
-- [`.roo/mcp.json`](../../.roo/mcp.json) не изменяется.
+- [`.roo/mcp.json`](../../.roo/mcp.json) изначально не входил в план, но фактически изменён вместе с коммитом `28079ca` — удалён дублирующий git-mcp (полностью покрыт `execute_command`).
 - Режимы `ask`, `debug`, `orchestrator` вне области по решению владельца.

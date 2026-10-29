@@ -78,11 +78,11 @@ src/main/resources/assets/survivalpoints/
 
 ### 2.2 Изменяемые файлы
 
-- [`CampRecord.java`](src/main/java/com/phian404/survivalpoints/camp/CampRecord.java) — добавить поля `gatePos`, `towerPos`, `storagePos`, `farmCenter`
-- [`CampManager.java`](src/main/java/com/phian404/survivalpoints/camp/CampManager.java) — метод `generateCampStructure(record)`
-- [`CampDebugCommand.java`](src/main/java/com/phian404/survivalpoints/init/CampDebugCommand.java) — команда `generate`
-- [`ModEntities.java`](src/main/java/com/phian404/survivalpoints/init/ModEntities.java) — регистрация блоков
-- [`SurvivalPointsMod.java`](src/main/java/com/phian404/survivalpoints/SurvivalPointsMod.java) — регистрация блоков
+- [`CampRecord.java`](../../../src/main/java/com/phian404/survivalpoints/camp/CampRecord.java) — добавить поля `gatePos`, `towerPos`, `storagePos`, `farmCenter`
+- [`CampManager.java`](../../../src/main/java/com/phian404/survivalpoints/camp/CampManager.java) — метод `generateCampStructure(record)`
+- [`CampDebugCommand.java`](../../../src/main/java/com/phian404/survivalpoints/init/CampDebugCommand.java) — команда `generate`
+- [`ModBlocks.java`](../../../src/main/java/com/phian404/survivalpoints/init/ModBlocks.java) — регистрация блоков, предметов блоков и блок-сущностей
+- [`SurvivalPointsMod.java`](../../../src/main/java/com/phian404/survivalpoints/SurvivalPointsMod.java) — вызов регистрации блоков
 
 ---
 
@@ -91,17 +91,19 @@ src/main/resources/assets/survivalpoints/
 ### 3.1 Радио вышка (якорь)
 
 **Блок:**
-- `CampRadioBlock extends Block`
-- `BlockState` — `powered` (день/ночь), `active` (работает)
-- `onPlace` — создать лагерь, если рядом нет
-- `onRemove` — разрушить лагерь, если это якорь
+- `CampRadioBlock extends BaseEntityBlock` — ✅ реализовано
+- `BlockState` — только `powered` (день/ночь) — ✅ реализовано; `active` **не существует**
+- `onPlace` — создать лагерь, если рядом нет — ⬜ не реализовано
+- `onRemove` — разрушить лагерь, если это якорь — ⬜ не реализовано
 
 **BE:**
-- `CampRadioBlockEntity extends BlockEntity`
-- Хранит: `campId`, `charge` (редстоун/ресурс)
-- `tick()` — раз в 24000 тиков (день) → призыв выжившего
-- `isNight()` — выключено
-- `onRightClick` — открыть панель лагеря (статистика, состав, радио-объявление)
+- `CampRadioBlockEntity extends BlockEntity` — ✅ реализовано
+- Хранит: `campId`, `charge` (редстоун/ресурс) — ✅ реализовано
+- `tick()` — переключает `powered` по времени суток, уменьшает `charge` на 1 за тик — ✅ реализовано
+- Призыв выжившего раз в 24000 тиков (`CAMP_RADIO_CALL_INTERVAL`) — ⬜ не реализовано:
+  константа есть в `CampTuning`, вызова в BE нет
+- `onRightClick` — открыть панель лагеря (статистика, состав, радио-объявление) — ⬜ не реализовано;
+  сейчас ПКМ выводит в чат название привязанного лагеря
 
 **Логика:**
 - Лагерь существует, пока стоит вышка
@@ -111,9 +113,11 @@ src/main/resources/assets/survivalpoints/
 ### 3.2 Забор
 
 **Блок:**
-- `CampFenceBlock extends WallBlock` (или `IronFenceBlock`)
+- `CampFenceBlock extends WallBlock` (либо `IronBarsBlock`)
 - Ванильная текстура + тонировка
 - Разрушаемость: 3–5 ударов
+
+> Класса `IronFenceBlock` в Minecraft 1.20.1 нет; ближайшие ванильные варианты — `WallBlock` и `IronBarsBlock`.
 
 ### 3.3 Ворота
 
@@ -213,12 +217,15 @@ F F F F F F F
 
 ## 4. Проверка готовности
 
-- ✅ Лагерь создаётся командой `/sp_camp generate`
-- ✅ Лагерь виден в мире как укреплённая стоянка (забор, ворота, вышки, склад)
-- ✅ Радио вышка — якорь лагеря
-- ✅ Ночью ворота закрываются, радио выключается
-- ✅ Склад хранит ресурсы
-- ✅ Лагерь переживает перезапуск мира
+Фактическое состояние на момент сверки:
+
+- ⬜ Лагерь создаётся командой `/sp_camp generate` — команды нет, есть `/sp_camp create` без генерации блоков
+- ⬜ Лагерь виден в мире как укреплённая стоянка (забор, ворота, вышки, склад) — блоков нет
+- ⚠️ Радио вышка: [`CampRadioBlock`](../../../src/main/java/com/phian404/survivalpoints/camp/block/CampRadioBlock.java) и [`CampRadioBlockEntity`](../../../src/main/java/com/phian404/survivalpoints/camp/blockentity/CampRadioBlockEntity.java) реализованы и зарегистрированы, но **якорь не автоматический**: создание и распад лагеря от установки/разрушения вышки не реализованы
+- ⬜ Генерация лагеря: [`CampBlueprintParser`](../../../src/main/java/com/phian404/survivalpoints/camp/CampBlueprintParser.java) разбирает сетку, но [`CampGenerator.generate(...)`](../../../src/main/java/com/phian404/survivalpoints/camp/CampGenerator.java) — пустой каркас без постановки блоков и нигде не вызывается
+- ⬜ Ночью ворота закрываются, радио выключается — ворот нет; радио переключает `POWERED` по времени суток
+- ⬜ Склад хранит ресурсы — блока склада нет
+- ✅ Лагерь переживает перезапуск мира (данные в `CampSavedData`)
 
 ---
 

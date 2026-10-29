@@ -1,6 +1,22 @@
-# GUARDIAN_REWORK_PLAN — реворк стража (обновлено: R0.4 завершён)
+# GUARDIAN_REWORK_PLAN — реворк стража
 
-Статус: **план, ждёт утверждения владельца.** Кода не трогаем до согласования.
+Статус: **план, частично выполнен.** Сверено с рабочим деревом; шаги ниже отмечены по факту кода,
+а не по намерению.
+
+| Шаг | Статус | Подтверждение в коде |
+|---|---|---|
+| Этап 0 — рубеж в сущности | ✅ выполнен | `standoffReached`/`standoffAnchor` — поля сущности, сохраняются в NBT |
+| R0.0 — `requiresUpdateEveryTick` у боевых голов | ⚠️ частично | переопределён у [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:108) и [`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:120); у `GuardianRangedAttackGoal` и `GuardianRetreatGoal` — **нет** |
+| R0.1 — удалить автомат состояний | ⬜ не начат | `GuardianState`, `DATA_AI_STATE`, `CombatState`, `updateAIState()` присутствуют и используются |
+| R0.2 — движение на ванили | ⚠️ частично | `GuardianMoveControl.strafeWithSpeed` есть и применяется; `moveDirectly`/`setDeltaMovement` остались под флагом `CUSTOM_MOVE` |
+| R0.3 — ближний бой на ванильном `MeleeAttackGoal` | ✅ выполнен | [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:31) наследует ванильный гол; кастомная анимация взмаха удалена |
+| R0.4 — еда: уступка угрозе + watchdog | ⬜ не начат | `canUse()` требует `getTarget() == null`, проверки «рядом нет монстров» нет; watchdog-таймаута нет |
+| R0.5 — порядок голов, `WaterAvoidingRandomStrollGoal` | ⬜ не начат | используется `RandomStrollGoal` |
+| R0.6 — замеры и приёмка | ⬜ не начат | — |
+
+> **Открытый вопрос:** R0.1 предлагает удалить `GuardianState`, а
+> [`DESIGN_CAMP_SYSTEM.md`](../Camp/DESIGN_CAMP_SYSTEM.md) §5.1 — расширить его лагерными состояниями.
+> Решение не принято; до него код не трогаем.
 
 Задача (от владельца, 6 пунктов):
 1. Страж стоит с хлебом и терпит урон, оружие не применяет.
@@ -41,10 +57,10 @@
 
 ### Пункт 1 — «стоит с хлебом и терпит урон»
 
-Причина — **не одна, а три сцепленные** (см. [`BaseGuardianEntity.java`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java) и [`GuardianEatBreadGoal.java`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java)):
+Причина — **не одна, а три сцепленные** (см. [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java) и [`GuardianEatBreadGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java)):
 
 **1.1. Автомат состояний имеет приоритет над боевыми голами.**
-[`updateAIState()`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:376) начинается с раннего выхода:
+[`updateAIState()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:404) начинается с раннего выхода:
 
 ```java
 if (this.isEating()) {
@@ -53,7 +69,7 @@ if (this.isEating()) {
 }
 ```
 
-а [`syncEquipmentToState()`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:427) — тоже с ранним выходом:
+а [`syncEquipmentToState()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:427) — тоже с ранним выходом:
 
 ```java
 if (this.isEating()) {
@@ -67,9 +83,9 @@ if (this.isEating()) {
 - оружие не синхронизируется ⇒ **хлеб в руке**.
 
 **1.2. Гол еды уступает только цели, а цель появляется не сразу.**
-[`GuardianEatBreadGoal.canUse()`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:36) требует `getTarget() == null` **и** `!isEating()` **и** ХП < 70%. Цель ставится:
-- мгновенно — в [`ModEntityEvents.onLivingHurt()`](src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java:88), но **только если** `event.getSource().getEntity() instanceof LivingEntity`. От падения, огня, лавы, кактуса, удушья, звезды голода, взрыва TNT — **источника-существа нет ⇒ цель не ставится**;
-- с задержкой — [`GuardianTargetGoal`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianTargetGoal.java:54) сканирует **раз в 20 тиков** и **только `instanceof Monster`**.
+[`GuardianEatBreadGoal.canUse()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:36) требует `getTarget() == null` **и** `!isEating()` **и** ХП < 70%. Цель ставится:
+- мгновенно — в [`ModEntityEvents.onLivingHurt()`](../../../src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java:88), но **только если** `event.getSource().getEntity() instanceof LivingEntity`. От падения, огня, лавы, кактуса, удушья, звезды голода, взрыва TNT — **источника-существа нет ⇒ цель не ставится**;
+- с задержкой — [`GuardianTargetGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianTargetGoal.java:54) сканирует **раз в 20 тиков** и **только `instanceof Monster`**.
 
 Пока цель не появилась — страж ест (1–2 с), стоит как вкопанный и получает урон. Это и есть наблюдаемое поведение.
 
@@ -95,7 +111,7 @@ if (this.isEating()) {
 ### Пункт 2 — зависание в воздухе
 
 **2.1. Мы каждый тик перезаписываем горизонтальную скорость.**
-[`moveDirectly()`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:968) в конце:
+[`moveDirectly()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1078) в конце:
 
 ```java
 this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
@@ -112,11 +128,13 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 ### Пункт 3 — ближний бой
 
-Наш [`GuardianMeleeAttackGoal`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java) — самописный: свой windup, своя анимация через `DATA_SWING_START`, свой расчёт дистанции, свой подход. Ванильный `MeleeAttackGoal` (F5) уже делает всё, что нужно, **включая дефолтную анимацию удара** (`mob.swing(MAIN_HAND)` ⇒ `LivingEntity.swingAnimation` ⇒ `HumanoidModel.setupAttackAnimation`).
+**Историческое описание (до R0.3).** Раньше [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java) был самописным: свой windup, своя анимация через `DATA_SWING_START`, свой расчёт дистанции, свой подход. Ванильный `MeleeAttackGoal` (F5) делает всё то же, **включая дефолтную анимацию удара** (`mob.swing(MAIN_HAND)` ⇒ `LivingEntity.swingAnimation` ⇒ `HumanoidModel.setupAttackAnimation`).
 
-**Цена текущего подхода:** мы дублируем `HumanoidModel.setupAttackAnimation` своей фазой (`GuardianModel.setupAnim` руками перезаписывает `rightArm.xRot/yRot/zRot`), плюс тащим `DATA_SWING_START`, `getSyncedSwingStart()`, `startMeleeSwing()`, `swingStartLocal`, `lastSwingStart`, `MELEE_SWING_ANIM_TICKS`, `MELEE_SWING_STRIKE_PHASE`, `MELEE_SWING_RETURN_TICKS`, `MELEE_WINDUP_TICKS`. Это ~150 строк ради «своего» взмаха, который всё равно выглядит хуже ванильного.
+**Текущее состояние.** R0.3 выполнен: гол наследует ванильный `MeleeAttackGoal`, `DATA_SWING_START` в проекте отсутствует, анимацию рисует ванильная `setupAttackAnimation`.
 
-**⇒ Заменяем на подкласс ванильного `MeleeAttackGoal`** — это ровно то «не изобретать колесо», о котором просил владелец.
+**Историческая цена подхода (до R0.3):** дублирование `HumanoidModel.setupAttackAnimation` своей фазой (`GuardianModel.setupAnim` руками перезаписывал `rightArm.xRot/yRot/zRot`), плюс `DATA_SWING_START`, `getSyncedSwingStart()`, `startMeleeSwing()`, `swingStartLocal`, `lastSwingStart`, `MELEE_SWING_ANIM_TICKS`, `MELEE_SWING_STRIKE_PHASE`, `MELEE_SWING_RETURN_TICKS`, `MELEE_WINDUP_TICKS` — около 150 строк ради «своего» взмаха, который выглядел хуже ванильного. Всё перечисленное удалено.
+
+**⇒ Заменено подклассом ванильного `MeleeAttackGoal`** — это ровно то «не изобретать колесо», о котором просил владелец.
 
 ### Пункт 4 — конфликты приоритетов
 
@@ -145,9 +163,9 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 | `MELEE_WINDUP_TICKS`, `MELEE_SWING_RETURN_TICKS`, `MELEE_SWING_ANIM_TICKS`, `MELEE_SWING_STRIKE_PHASE`, `MOVE_ACCELERATION`, `MOVE_TURN_SPEED_DEG` | `GuardianTuning.java` | Становятся не нужны |
 | Флаг `eating` + `isEating()`/`setEating()` | `BaseGuardianEntity.java` | Заменяется на «гол еды активен» + watchdog (R0.4) |
 
-**Не трогаем (осознанно):** заряд/выстрел ([`updateRangedCombat()`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:652)) — это наша фишка, и она **вне** голов, поэтому работает при любом состоянии; синхронизацию головы (`DATA_HEAD_PITCH`/`DATA_HEAD_YAW`); систему лагерей; логику прыжка (F6).
+**Не трогаем (осознанно):** заряд/выстрел ([`updateRangedCombat()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:652)) — это наша фишка, и она **вне** голов, поэтому работает при любом состоянии; синхронизацию головы (`DATA_HEAD_PITCH`/`DATA_HEAD_YAW`); систему лагерей; логику прыжка (F6).
 
-**Оптимизация, которую стоит сделать отдельно:** [`GuardianTargetGoal.findNearestMonster()`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianTargetGoal.java:54) вызывает `getEntitiesOfClass` — это перебор всех сущностей уровня. При 9 стражах и ~180 сущностях это ~9 полных переборов в секунду. Оптимизация: (а) сканировать только при отсутствии цели (уже так), (б) интервал 20 → 40 тиков, (в) переиспользовать кэш уровня по образцу [`ModEntityEvents.getGuardians()`](src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java:50).
+**Оптимизация, которую стоит сделать отдельно:** [`GuardianTargetGoal.findNearestMonster()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianTargetGoal.java:54) вызывает `getEntitiesOfClass` — это перебор всех сущностей уровня. При 9 стражах и ~180 сущностях это ~9 полных переборов в секунду. Оптимизация: (а) сканировать только при отсутствии цели (уже так), (б) интервал 20 → 40 тиков, (в) переиспользовать кэш уровня по образцу [`ModEntityEvents.getGuardians()`](../../../src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java:50).
 
 ### Пункт 6 — что берём из ваниллы (список «кирпичиков»)
 
@@ -171,7 +189,7 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 ### R0.0 — Подготовка: бэкап, диагностика, флаги (делается ПЕРВЫМ)
 
-**Файлы:** [`GuardianFeatureFlags.java`](src/main/java/com/phian404/survivalpoints/init/GuardianFeatureFlags.java) (новый), [`GuardianTrace.java`](src/main/java/com/phian404/survivalpoints/init/GuardianTrace.java) (новый), [`GuardDebugCommand.java`](src/main/java/com/phian404/survivalpoints/init/GuardDebugCommand.java), [`BaseGuardianEntity.java`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java)
+**Файлы:** [`GuardianFeatureFlags.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianFeatureFlags.java) (новый), [`GuardianTrace.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTrace.java) (новый), [`GuardDebugCommand.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardDebugCommand.java), [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java)
 
 **Бэкап (уже сделано):** тег `pre-rework-guardian` + ветка `backup/pre-rework-guardian` на коммите `fdb8acb`. Откат реворка = `git checkout backup/pre-rework-guardian -- src/`.
 
@@ -195,7 +213,6 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 | Флаг | Что отключает | Зачем |
 |------|---------------|-------|
 | `CUSTOM_MOVE` | самописную физику (`moveDirectly` и т.п.) | A/B-сравнение «своё vs ванильное» в R0.2 |
-| `CUSTOM_SWING` | кастомную анимацию взмаха | показать дефолтную ванильную в R0.3 |
 | `EAT_BREAD` | еду | снять «статую с хлебом» из уравнения в R0.4 |
 | `STANDOFF` | удержание рубежа и отступление | изолировать ближний бой в R0.3 |
 | `RALLY` | сбор союзников | не мешает замерам боя |
@@ -209,7 +226,7 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 ### R0.1 — Голы как источник истины (убиваем автомат состояний)
 
-**Файлы:** [`BaseGuardianEntity.java`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianTuning.java`](src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java), [`GuardDebugCommand.java`](src/main/java/com/phian404/survivalpoints/init/GuardDebugCommand.java)
+**Файлы:** [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianTuning.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java), [`GuardDebugCommand.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardDebugCommand.java)
 
 - Убрать `updateAIState()`, `GuardianState`/`DATA_AI_STATE`/`CombatState`/`getCombatState()`.
 - Каждый боевой гол в `canUse()`/`canContinueToUse()` проверяет **живую цель и дистанцию сам**; активный гол определяет оружие.
@@ -223,7 +240,7 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 ### R0.2 — Движение на ванили (убиваем самописную физику)
 
-**Файлы:** [`BaseGuardianEntity.java`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianRangedAttackGoal.java`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRangedAttackGoal.java), [`GuardianRetreatGoal.java`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java), [`GuardianMeleeAttackGoal.java`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java)
+**Файлы:** [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianRangedAttackGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRangedAttackGoal.java), [`GuardianRetreatGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java), [`GuardianMeleeAttackGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java)
 
 - Удалить `moveDirectly()`, `moveAlongPath()`, `stopHorizontalMovement()` и поля `moveYaw`/`moveSpeed`/`moveYawValid`.
 - **Отход** (лицом к врагу) → `strafeWithSpeed(-1, 0, RETREAT_SPEED)`: тело смотрит на врага, шаг делается назад относительно курса тела (F7/F11).
@@ -253,7 +270,7 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 ### R0.3 — Ближний бой на ванильном `MeleeAttackGoal` + дефолтная анимация
 
-**Файлы:** [`GuardianMeleeAttackGoal.java`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java), [`ModEntityRenderers.java`](src/main/java/com/phian404/survivalpoints/client/ModEntityRenderers.java), [`BaseGuardianEntity.java`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianTuning.java`](src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java)
+**Файлы:** [`GuardianMeleeAttackGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java), [`ModEntityRenderers.java`](../../../src/main/java/com/phian404/survivalpoints/client/ModEntityRenderers.java), [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianTuning.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java)
 
 - `GuardianMeleeAttackGoal extends MeleeAttackGoal`:
   - `super(guardian, MELEE_SPEED, true)`;
@@ -269,7 +286,7 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 ### R0.4 — Еда: уступка угрозе + watchdog
 
-**Файлы:** [`GuardianEatBreadGoal.java`](src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java), [`BaseGuardianEntity.java`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`ModEntityEvents.java`](src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java)
+**Файлы:** [`GuardianEatBreadGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java), [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`ModEntityEvents.java`](../../../src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java)
 
 - `canUse()`: нет цели **И** рядом нет монстров (переиспользовать ту же выборку, что и `GuardianTargetGoal`, без второго полного перебора).
 - `canContinueToUse()`: прервать еду, если страж получил урон (`damageStunTicks > 0`) или появилась цель.
@@ -281,7 +298,7 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 ### R0.5 — Порядок, флаги, приоритеты + диагностика
 
-**Файлы:** [`BaseGuardianEntity.java`](src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java) (метод `registerGoals()`), [`GuardianTuning.java`](src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java), [`GuardDebugCommand.java`](src/main/java/com/phian404/survivalpoints/init/GuardDebugCommand.java)
+**Файлы:** [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java) (метод `registerGoals()`), [`GuardianTuning.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java), [`GuardDebugCommand.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardDebugCommand.java)
 
 - Зафиксировать порядок регистрации и **прокомментировать** (К1): паника → ближний бой → дальний бой → сбор → еда → прогулка → взгляд.
 - Ровно один боевой гол с флагом `MOVE` (К2); остальные — без флагов или только `LOOK`.
@@ -292,7 +309,7 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 - `/sp_perf on` + бой на 3+ стражах ⇒ убедиться, что TPS 20.0 и наш код < 2 мс/с.
 - Пройти чек-лист владельца (ниже).
-- Обновить [`TESTING.md`](TESTING.md) и [`AI_CONTEXT.md`](src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md).
+- Обновить [`TESTING.md`](../Testing/TESTING.md) и [`AI_CONTEXT.md`](../../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md).
 
 ---
 
@@ -327,6 +344,6 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 |--------|---------|
 | Бэкап перед реворком | Сделано: тег `pre-rework-guardian` + ветка `backup/pre-rework-guardian` на `fdb8acb`. Откат: `git checkout backup/pre-rework-guardian -- src/` |
 | Диагностика | Команды `/sp_guard detail`, `/sp_trace`, `/sp_hang` + расширенный `/sp_guard`. Всё дублируется в `run/logs/latest.log` с префиксом `[SP]` — выводы делаю по логу, а не по пересказу |
-| Временное отключение механик | Флаги `CUSTOM_MOVE`, `CUSTOM_SWING`, `EAT_BREAD`, `STANDOFF`, `RALLY`, `LOOK_PLAYER`, `PANIC`, `RANGED` + команда `/sp_flag` |
+| Временное отключение механик | Флаги `CUSTOM_MOVE`, `EAT_BREAD`, `STANDOFF`, `RALLY`, `LOOK_PLAYER`, `PANIC`, `RANGED` + команда `/sp_flag`. Флага `CUSTOM_SWING` нет: кастомная анимация взмаха удалена вместе с R0.3 |
 | `Attributes.MOVEMENT_SPEED` | **0.30** (решение делегировано владельцем). Множители скоростей — из таблицы в R0.2, текущие ощущения скорости сохраняются |
 | Логика прыжка | Не трогаем (F6) — остаётся ванильная |
