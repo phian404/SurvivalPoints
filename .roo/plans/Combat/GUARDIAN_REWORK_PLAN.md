@@ -7,16 +7,21 @@
 |---|---|---|
 | Этап 0 — рубеж в сущности | ✅ выполнен | `standoffReached`/`standoffAnchor` — поля сущности, сохраняются в NBT |
 | R0.0 — `requiresUpdateEveryTick` у боевых голов | ⚠️ частично | переопределён у [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:108) и [`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:120); у `GuardianRangedAttackGoal` и `GuardianRetreatGoal` — **нет** |
-| R0.1 — удалить автомат состояний | ⬜ не начат | `GuardianState`, `DATA_AI_STATE`, `CombatState`, `updateAIState()` присутствуют и используются |
+| R0.1 — удалить автомат состояний | ⬜ не начат, **разблокирован** | `GuardianState`, `DATA_AI_STATE`, `CombatState`, `updateAIState()` присутствуют и используются. Развилка решена владельцем (вариант A) — [`GUARDIAN_STATE_DECISION.md`](GUARDIAN_STATE_DECISION.md) |
 | R0.2 — движение на ванили | ⚠️ частично | `GuardianMoveControl.strafeWithSpeed` есть и применяется; `moveDirectly`/`setDeltaMovement` остались под флагом `CUSTOM_MOVE` |
 | R0.3 — ближний бой на ванильном `MeleeAttackGoal` | ✅ выполнен | [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:31) наследует ванильный гол; кастомная анимация взмаха удалена |
 | R0.4 — еда: уступка угрозе + watchdog | ⚠️ частично | Сделано: флаг `eating` не сериализуется; watchdog-пульс (`EAT_PULSE_TIMEOUT_TICKS`) в [`tickCountdowns()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:648); `canContinueToUse()` рвёт еду по цели **и** по `damageStunTicks > 0` ([`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:106)). Осталось: `canUse()` проверяет только `getTarget() == null` (скана «монстр рядом» нет); ранний выход `syncEquipmentToState()` по `isEating()` сохранён — оба пункта ждут R0.1 (см. R0.4) |
 | R0.5 — порядок голов, `WaterAvoidingRandomStrollGoal` | ⬜ не начат | используется `RandomStrollGoal` |
 | R0.6 — замеры и приёмка | ⬜ не начат | — |
 
-> **Открытый вопрос:** R0.1 предлагает удалить `GuardianState`, а
-> [`DESIGN_CAMP_SYSTEM.md`](../Camp/DESIGN_CAMP_SYSTEM.md) §5.1 — расширить его лагерными состояниями.
-> Решение не принято; до него код не трогаем.
+> **Открытый вопрос — РЕШЁН владельцем (вариант A), см. [`GUARDIAN_STATE_DECISION.md`](GUARDIAN_STATE_DECISION.md).**
+> R0.1 предлагал удалить `GuardianState`, а [`DESIGN_CAMP_SYSTEM.md`](../Camp/DESIGN_CAMP_SYSTEM.md) §5.1 —
+> расширить его лагерными состояниями. Принято: **боевой автомат удаляется**, боевое поведение — прерогатива
+> голов (`GoalSelector`), лагерное состояние — данные лагеря (`CampRecord`/`CampPost`/`CampId`/`CampPostId`)
+> плюс отдельные лагерные голы; `GuardianState` лагерными состояниями **не расширяем**. `DATA_AI_STATE`
+> остаётся только серверным диагностическим кэшем для `/sp_guard`; клиент его не читает. Решения автомата
+> (гистерезис `MELEE↔RANGED`, `PANIC`, крипер, сброс рубежа) переходят в голы. R0.1 разблокирован —
+> реализация по шагам §7 [`GUARDIAN_STATE_DECISION.md`](GUARDIAN_STATE_DECISION.md).
 
 Задача (от владельца, 6 пунктов):
 1. Страж стоит с хлебом и терпит урон, оружие не применяет.
@@ -257,15 +262,20 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 ### R0.1 — Голы как источник истины (убиваем автомат состояний)
 
-**Файлы:** [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianTuning.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java), [`GuardDebugCommand.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardDebugCommand.java)
+> **Разблокирован.** Развилка `GuardianState` решена в пользу стороны A —
+> см. [`GUARDIAN_STATE_DECISION.md`](GUARDIAN_STATE_DECISION.md) (полная спецификация,
+> риски R1–R12 и порядок шагов). Ниже — сжатая выжимка.
 
-- Убрать `updateAIState()`, `GuardianState`/`DATA_AI_STATE`/`CombatState`/`getCombatState()`.
+**Файлы:** [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianTuning.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java), [`GuardDebugCommand.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardDebugCommand.java), [`ModEntityRenderers.java`](../../../src/main/java/com/phian404/survivalpoints/client/ModEntityRenderers.java)
+
+- Убрать `updateAIState()`, `GuardianState`/`CombatState`/`getCombatState()`/`setAIState()`/`isPanicking()`.
+  `DATA_AI_STATE` **остаётся только серверным диагностическим кэшем** для `/sp_guard` (логика его не читает).
 - Каждый боевой гол в `canUse()`/`canContinueToUse()` проверяет **живую цель и дистанцию сам**; активный гол определяет оружие.
-- `syncEquipmentToState()` → «экипировка по активному боевому голу»: `Melee` → меч, `Ranged`/`Panic` → арбалет.
-- Для диагностики оставить лёгкий `DATA_AI_STATE`, который пишет **из активного гола** (только для `/sp_guard` и рендера позы арбалета).
-- Зарегистрировать цели **в порядке важности** и зафиксировать это комментарием (К1).
+- `syncEquipmentToState()` → «экипировка по активному боевому голу»: меч → меч, иначе арбалет (сохранить ранний выход по `isEating()`, R5).
+- Решения автомата переходят в голы: гистерезис `MELEE↔RANGED`, приоритет `PANIC` (производный предикат), исключение для крипера, сброс рубежа (R3/R4).
+- Зарегистрировать цели **в порядке важности** и зафиксировать это комментарием (К1); ровно один боевой гол с флагом `MOVE` (К2).
 
-**Риск:** рендер арбалета сейчас смотрит на `getCombatState()` ⇒ надо перевести на «есть активный боевой гол / предмет в руке».
+**Рендер (решено):** клиент `GuardianState` **не читает**. Поза арбалета — из `MAINHAND is CROSSBOW` + `isCharging()` + `!isEating()`; тело/голова — новый синхро-флаг `DATA_FACING_TARGET` (сервер из `shouldFaceTarget()`); `isAggressive()` — только «меч vs арбалет». Подробно — [`GUARDIAN_STATE_DECISION.md`](GUARDIAN_STATE_DECISION.md) §3.3.
 
 **Проверка владельца:** страж в покое стоит/гуляет; при появлении зомби — достаёт арбалет и стреляет; при подходе вплотную — достаёт меч; в п��нике — снова арбалет.
 

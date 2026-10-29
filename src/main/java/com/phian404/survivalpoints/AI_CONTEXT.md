@@ -202,7 +202,7 @@ com.phian404.survivalpoints
 - ✅ R0.3 — ближний бой на ванильном `MeleeAttackGoal`;
 - ✅ R0.4 — еда: флаг `eating` не сериализуется, сторож состояния (`eatPulse`), прерывание еды по цели и урону;
 - ⚠️ R0.0 и R0.2 — частично (`requiresUpdateEveryTick` не у всех голов; самописная физика под флагом `CUSTOM_MOVE`);
-- ⬜ R0.1 — не начат: `GuardianState`/`updateAIState()` живы. Шаг **заблокирован** открытым вопросом: R0.1 предлагает удалить `GuardianState`, а [`DESIGN_CAMP_SYSTEM.md`](../../../../../../.roo/plans/Camp/DESIGN_CAMP_SYSTEM.md) §5.1 хочет расширять его лагерными состояниями. Решение не принято — **до него код не трогать**.
+- ⬜ R0.1 — **разблокирован, не начат**: развилка `GuardianState` решена владельцем (вариант A) — [`GUARDIAN_STATE_DECISION.md`](../../../../../../.roo/plans/Combat/GUARDIAN_STATE_DECISION.md). Боевой автомат `GuardianState`/`updateAIState()` удаляется; боевое поведение — прерогатива голов (`GoalSelector`); лагерные состояния волны 3 — данные лагеря (`CampRecord`/`CampPost`) + отдельные голы, `GuardianState` ими **не расширяем**; `DATA_AI_STATE` остаётся только серверным диагностическим кэшем для `/sp_guard` (клиент его не читает; рендер позы арбалета — по предмету в руке + `isCharging()`, ориентация тела/головы — по синхро-флагу `DATA_FACING_TARGET`).
 
 **Волна 2 «лагерь как место» не начата:** `CampGenerator` — пустая заглушка, блоки лагеря отсутствуют. Разбивка — [`WAVE2_PLAN.md`](../../../../../../.roo/plans/Camp/WAVE2_PLAN.md).
 

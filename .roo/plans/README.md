@@ -17,6 +17,7 @@
 | Радио-вышка (блок, BE, якорь) | `Camp/RADIO_TOWER_DETAIL.md` |
 | План волны 2: блоки и генерация | `Camp/WAVE2_PLAN.md` |
 | Реворк ИИ стража | `Combat/GUARDIAN_REWORK_PLAN.md` |
+| Решение по `GuardianState` (боевой автомат vs лагерь, утверждено) | `Combat/GUARDIAN_STATE_DECISION.md` |
 | Правка UV сундука и брони | `Combat/chest-uv-fix-plan.md` |
 | Имена NPC | `Entities/npc-names-plan.md` |
 | Вкладка креатива и яйца призыва | `Items/CREATIVE_TAB_PLAN.md` |
@@ -44,6 +45,7 @@
 │   └── CAMP_IDEAS.md
 ├── Combat/                       — бой и боевые механики
 │   ├── GUARDIAN_REWORK_PLAN.md
+│   ├── GUARDIAN_STATE_DECISION.md — решение развилки `GuardianState` (разблокирует R0.1)
 │   └── chest-uv-fix-plan.md
 ├── Items/                        — предметы и инвентарь
 │   └── CREATIVE_TAB_PLAN.md

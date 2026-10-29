@@ -126,10 +126,14 @@ graph TB
 
 Текущий автомат ([`BaseGuardianEntity`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:155)) имеет `IDLE / RANGED / MELEE / PANIC`.
 
-> **Статус решения: открыт.** Расширять `GuardianState` лагерными состояниями или реализовывать
-> их отдельными целями — не утверждено. В [`GUARDIAN_REWORK_PLAN.md`](../Combat/GUARDIAN_REWORK_PLAN.md) R0.1
-> предлагает обратное — убрать автомат состояний. До решения владельца таблица ниже описывает
-> **требуемое поведение**, а не конкретный способ реализации.
+> **Статус решения: УТВЕРЖДЕНО владельцем (вариант A).** См.
+> [`GUARDIAN_STATE_DECISION.md`](../Combat/GUARDIAN_STATE_DECISION.md). Принято: боевой автомат
+> `GuardianState` **удаляется** (боевое поведение — прерогатива голов `GoalSelector`), а лагерные
+> состояния ниже реализуются **отдельными голы** (`GuardianPostGoal`, `GuardianPatrolGoal`,
+> `GuardianFarmGoal`, `GuardianAlertGoal`, `GuardianDefendGoal` — см. §14). `GuardianState` лагерными
+> состояниями **не расширяем**; ночь/тревога/привязка живут в данных лагеря
+> (`CampRecord.mode`, `CampPost`, `CampId`/`CampPostId`). Таблица ниже описывает **требуемое
+> поведение** и источник данных для каждого состояния.
 
 Для лагеря требуются состояния:
 
