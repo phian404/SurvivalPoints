@@ -89,7 +89,28 @@ public final class GuardianSnapshot {
                 .append(" §7bodyYaw=").append(fmt(guard.yBodyRot, 1))
                 .append(" §7pitch=").append(fmt(guard.getXRot(), 1))
                 .append(" §7wantYaw=").append(fmt(guard.getDesiredYaw(), 1))
-                .append(" §7aimErr=").append(fmt(guard.getBodyYawError(target), 1));
+                .append(" §7aimErr=").append(fmt(guard.getBodyYawError(target), 1))
+                .append(" §7bodyFaces=").append(guard.isBodyFacesTarget());
+
+        // Замер M2/M3: вход движения и флаг прыжка. Без них нельзя отличить
+        // «страж сам идёт» от «стража двигает кто-то извне» (отброс, вода,
+        // залипший jumping).
+        sb.append("\n   §7op: §fзаказ=").append(guard.getMoveControlOperationBeforeTick())
+                .append(" §7после=").append(guard.getMoveControlOperationAfterTick());
+
+        sb.append("\n   §7input: §fzza=").append(fmt(guard.zza, 2))
+                .append(" §7xxa=").append(fmt(guard.xxa, 2))
+                .append(" §7jumping=").append(guard.isJumpFlagSet())
+                .append(" §7jumpSrc=").append(guard.getJumpSource().isEmpty()
+                        ? "-" : guard.getJumpSource())
+                .append(" §7jumps=").append(guard.getJumpCount());
+
+        // Замер M1: «невидимый полублок». Если onGround=true, а под ногами
+        // воздух — это ровно тот симптом, который описал владелец.
+        sb.append("\n   §7ground: §fblockBelow=").append(guard.getBlockBelowName())
+                .append(" §7above=").append(fmt(guard.getHeightAboveBlock(), 3))
+                .append(" §7ySpan=").append(fmt(guard.getAirborneYSpan(), 3))
+                .append(" §7floatHang=").append(guard.getFloatHangCount());
 
         sb.append("\n   §7charge=").append(guard.getCrossbowChargeTime())
                 .append(" §7shotDelay=").append(guard.getShotDelay())
@@ -144,4 +165,5 @@ public final class GuardianSnapshot {
         }
         return String.format(Locale.ROOT, "%." + decimals + "f", value);
     }
+
 }

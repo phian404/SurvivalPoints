@@ -83,6 +83,20 @@ public class GuardianRangedAttackGoal extends Goal {
         this.guardian.standStill();
     }
 
+    /**
+     * Гол должен тикать каждый тик (20 Гц), а не через тик (10 Гц).
+     *
+     * <p>Ванильный {@code Mob.serverAiStep()} тикает голы полностью только на
+     * чётных тиках, а на нечётных — только те, у которых
+     * {@code requiresUpdateEveryTick() == true}. Без этого сближение, отход и
+     * смена режима внутри гола обновлялись бы вдвое реже: движение шло рывками,
+     * а реакция на приблизившегося врага запаздывала до 2 тиков.
+     */
+    @Override
+    public boolean requiresUpdateEveryTick() {
+        return true;
+    }
+
     @Override
     public void tick() {
         if (this.target == null) {

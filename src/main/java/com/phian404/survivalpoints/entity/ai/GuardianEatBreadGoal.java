@@ -115,6 +115,16 @@ public class GuardianEatBreadGoal extends Goal {
         this.guardian.setEating(false);
         // Возвращаем правильное оружие (меч или арбалет) по текущему состоянию ИИ.
         this.guardian.syncEquipmentToState();
+
+        // Досрочное прерывание (появилась цель или получен урон) тоже ставит
+        // кулдаун. Раньше кулдаун выставлялся ТОЛЬКО при полном доедании, поэтому
+        // прерванная еда позволяла начать заново немедленно — в логе видно цикл
+        // «начал есть (59) → закончил есть → начал есть (57) → …» без пауз,
+        // и страж не брался за оружие.
+        if (this.eatTimer < this.duration) {
+            this.guardian.setBreadCooldown(GuardianTuning.BREAD_INTERRUPT_COOLDOWN);
+            GuardianTrace.event(this.guardian, " еда прервана — кулдаун");
+        }
         GuardianTrace.event(this.guardian, " закончил есть хлеб");
     }
 

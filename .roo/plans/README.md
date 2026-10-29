@@ -17,6 +17,7 @@
 | Радио-вышка (блок, BE, якорь) | `Camp/RADIO_TOWER_DETAIL.md` |
 | План волны 2: блоки и генерация | `Camp/WAVE2_PLAN.md` |
 | Реворк ИИ стража | `Combat/GUARDIAN_REWORK_PLAN.md` |
+| Дефекты движения стража: тряска в углу, «зависание» в ближнем бою | **`Combat/guardian-movement-defects-plan.md`** (актуальный разбор — §7–§9) |
 | Решение по `GuardianState` (боевой автомат vs лагерь, утверждено) | `Combat/GUARDIAN_STATE_DECISION.md` |
 | Правка UV сундука и брони | `Combat/chest-uv-fix-plan.md` |
 | Имена NPC | `Entities/npc-names-plan.md` |
@@ -46,6 +47,7 @@
 ├── Combat/                       — бой и боевые механики
 │   ├── GUARDIAN_REWORK_PLAN.md
 │   ├── GUARDIAN_STATE_DECISION.md — решение развилки `GuardianState` (разблокирует R0.1)
+│   ├── guardian-movement-defects-plan.md — дефекты движения стража (диагностика + правки)
 │   └── chest-uv-fix-plan.md
 ├── Items/                        — предметы и инвентарь
 │   └── CREATIVE_TAB_PLAN.md

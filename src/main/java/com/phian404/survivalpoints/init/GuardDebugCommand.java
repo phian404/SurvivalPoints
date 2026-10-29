@@ -47,6 +47,54 @@ public class GuardDebugCommand {
                 .then(Commands.argument("radius", IntegerArgumentType.integer(1, 128))
                         .executes(ctx -> report(ctx, IntegerArgumentType.getInteger(ctx, "radius"))))
                 .executes(ctx -> report(ctx, DEFAULT_RADIUS)));
+
+        // Снимок по требованию: пишет в лог полный след всех стражей рядом.
+        //
+        // Зачем отдельная команда: три прогона дали три разные картины дефекта,
+        // и по усреднённой статистике причину выделить не удалось. Снимок
+        // фиксирует ровно тот момент, когда владелец видит зависание.
+        //
+        //   /sp_snap              — все стражи в радиусе 32
+        //   /sp_snap <радиус>     — свой радиус
+        //   /sp_snap <радиус> <комментарий> — с пометкой в логе
+        dispatcher.register(Commands.literal("sp_snap")
+                .requires(source -> source.hasPermission(0))
+                .executes(ctx -> snapshot(ctx, SNAP_RADIUS, ""))
+                .then(Commands.argument("radius", IntegerArgumentType.integer(1, 128))
+                        .executes(ctx -> snapshot(ctx, IntegerArgumentType.getInteger(ctx, "radius"), ""))
+                        .then(Commands.argument("note", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                                .executes(ctx -> snapshot(ctx,
+                                        IntegerArgumentType.getInteger(ctx, "radius"),
+                                        com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "note"))))));
+    }
+
+    /** Радиус по умолчанию для {@code /sp_snap} — чуть шире, чем у отчёта. */
+    private static final int SNAP_RADIUS = 32;
+
+    /**
+     * Снимок по требованию: полный след движения каждого стража рядом.
+     *
+     * <p>Пишет в лог сервера (не только в чат) — чтобы по нему можно было
+     * разбирать, а не пересказывать по памяти.
+     */
+    private static int snapshot(CommandContext<CommandSourceStack> ctx, int radius, String note) {
+        CommandSourceStack source = ctx.getSource();
+        List<BaseGuardianEntity> guards = findGuardians(source, radius);
+
+        if (guards.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("§7[SP] Стражей в радиусе " + radius + " не найдено")
+                    .withStyle(ChatFormatting.GRAY), false);
+            return 0;
+        }
+
+        String reason = note.isEmpty() ? "вручную" : note;
+        for (BaseGuardianEntity guard : guards) {
+            guard.dumpSnapshot(reason);
+        }
+
+        source.sendSuccess(() -> Component.literal("§7[SP] Снимок записан в лог: стражей "
+                + guards.size() + " (радиус " + radius + ")").withStyle(ChatFormatting.GRAY), false);
+        return guards.size();
     }
 
     /**
@@ -190,6 +238,17 @@ public class GuardDebugCommand {
                 .append(" §7onGround=").append(guard.onGround())
                 .append(" §7hColl=").append(guard.horizontalCollision)
                 .append(" §7water=").append(guard.isInWater());
+
+        // Что реально делает ванильный MoveControl и прыгает ли страж.
+        // op=JUMPING в углу объясняет «зависание»: операция снимается только
+        // по onGround(), а вход движения при этом пишется от нашего гола.
+        sb.append("\n   §7op=").append(guard.getMoveControlOperation())
+                .append(" §7strafe=").append(guard.isStrafeStepActive())
+                .append(" §7vy=").append(String.format("%.3f", guard.getDeltaMovement().y))
+                .append(" §7airborne=").append(guard.getAirborneTicks())
+                .append(" §7bounce=").append(guard.getBounceCount())
+                .append(" §7sink=").append(guard.getSinkingTicks())
+                .append(" §7stun=").append(guard.getDamageStunTicks());
 
         // Навигация: есть ли маршрут и куда он ведёт
         boolean navDone = guard.getNavigation().isDone();

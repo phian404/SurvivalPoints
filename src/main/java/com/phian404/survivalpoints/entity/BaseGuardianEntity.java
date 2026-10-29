@@ -29,6 +29,7 @@ import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.control.MoveControl;
+import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
@@ -231,6 +232,162 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     /** Отчёт о зависании уже отправлен — чтобы не спамить. */
     private boolean hangReported = false;
 
+    // ==================== Диагностика подскоков и погружения ====================
+    // Поля нужны детектору GuardianHangDetector: он ловит НЕ «вишу и не падаю»
+    // (старый симптом), а два наблюдаемых в игре случая:
+    //   1) серия коротких подскоков в углу — airborne → grounded → airborne;
+    //   2) погружение в воде — isInWater() и вертикальная скорость вниз.
+
+    /** Был ли страж в воздухе в прошлом тике (для распознавания приземления). */
+    private boolean wasAirborne = false;
+
+    /**
+     * Операция MoveControl в момент отрыва от земли.
+     *
+     * <p>Нужна для диагностики подскоков: к моменту приземления операция уже
+     * {@code WAIT} (ваниль снимает {@code JUMPING} по {@code onGround()}), поэтому
+     * по отчёту нельзя понять, что именно спровоцировало прыжок. Запоминаем
+     * состояние на отрыве.
+     */
+    private String takeoffOperation = "";
+
+    /** Тик последнего приземления после полёта (для окна серии подскоков). */
+    private int lastLandingTick = -1000;
+
+    /** Сколько подскоков в текущей серии. */
+    private int bounceCount = 0;
+
+    /** Серия подскоков уже отчиталась — не спамим лог. */
+    private boolean bounceReported = false;
+
+    /** Сколько тиков страж непрерывно погружается в воду. */
+    private int sinkingTicks = 0;
+
+    /** Погружение уже отчиталось — не спамим лог. */
+    private boolean sinkingReported = false;
+
+    // ==================== Диагностика «невидимого полублока» ====================
+    // Владелец описал дефект как «встаёт на невидимый полублок, затем отвисает
+    // и падает». Дословно это значит: onGround() переключается, а высота y при
+    // этом НЕ меняется — то есть настоящего полёта не было.
+    //
+    // Прежний детектор подскоков такое не видел: он считал приземления после
+    // реального полёта, а здесь полёта нет вовсе.
+
+    /** Значение onGround в прошлом тике — чтобы заметить переключение. */
+    private boolean prevGroundedDiag = true;
+
+    /** y в момент последнего переключения onGround. */
+    private double lastGroundToggleY = 0.0D;
+
+    /** Тик последнего переключения onGround. */
+    private int lastGroundToggleTick = -1000;
+
+    /** Сколько переключений onGround в текущей серии. */
+    private int floatHangCount = 0;
+
+    /**
+     * Максимальное отклонение по высоте за текущую «воздушную» фазу.
+     *
+     * <p>Ключевой замер: прыжок даёт подъём ~0.42 блока, а «невидимый
+     * полублок» — почти ноль. Поэтому настоящий полёт и зависание различаются
+     * именно этой величиной, а не фактом переключения onGround.
+     */
+    private double airborneYSpan = 0.0D;
+
+    /** Серия «невидимого полублока» уже отчиталась. */
+    private boolean floatHangReported = false;
+
+    // ==================== Диагностика отбрасывания (D1) ====================
+    //
+    // Разбор следа движения показал настоящую причину «зависания в воздухе»:
+    //   - страж поднялся с -62.00 до -61.04, то есть ПОЧТИ НА БЛОК (0.96);
+    //   - дуга ровная, симметричная: 0.275 → 0.191 → 0.109 → 0.028 → -0.050 …
+    //   - флаг jumping всё это время false.
+    // Это не прыжок (прыжок даёт подъём 0.42 и начинается с jumping=true),
+    // а отбрасывание от удара: ванильный knockback даёт vy ≈ 0.4, что и
+    // поднимает моба почти на блок.
+    //
+    // Наблюдаемая «полусекундная задержка» — это время полёта такой дуги.
+    // Отдельно ловим аномалию: если vy у вершины замер на > KNOCKBACK_HANG_TICKS
+    // тиков, значит вертикаль кто-то гасит.
+
+    /** Тиков подряд у вершины дуги (|vy| мала, но страж в воздухе и высоко). */
+    private int knockbackHangTicks = 0;
+
+    /** Максимальная высота текущей воздушной фазы (для отличия от шага). */
+    private double airPhaseMaxY = 0.0D;
+
+    /** Высота, с которой началась текущая воздушная фаза. */
+    private double airPhaseStartY = 0.0D;
+
+    /** Фаза «отбрасывание» уже отчиталась — не спамим лог. */
+    private boolean knockbackReported = false;
+
+    // След последних тиков движения (замер M1).
+    //
+    // Хранится ПРИМИТИВАМИ, а не строками: снимок берётся каждый тик у каждого
+    // стража, и строковая сборка на каждый тик — это постоянный мусор для GC.
+    // По логу нагрузки (D4) наш код и без того выходил за бюджет, поэтому
+    // диагностика не должна добавлять аллокаций в горячий путь. Строка
+    // собирается один раз — только в момент отчёта.
+
+    private final double[] trailY = new double[GuardianTuning.MOTION_TRAIL_TICKS];
+    private final double[] trailVy = new double[GuardianTuning.MOTION_TRAIL_TICKS];
+    private final float[] trailZza = new float[GuardianTuning.MOTION_TRAIL_TICKS];
+    private final float[] trailXxa = new float[GuardianTuning.MOTION_TRAIL_TICKS];
+    private final boolean[] trailGrounded = new boolean[GuardianTuning.MOTION_TRAIL_TICKS];
+    private final boolean[] trailJumping = new boolean[GuardianTuning.MOTION_TRAIL_TICKS];
+    private final int[] trailOp = new int[GuardianTuning.MOTION_TRAIL_TICKS];
+    /**
+     * Тики «ступора после урона» в этом сэмпле — замер M8.
+     *
+     * <p>След показал подъём почти на блок с баллистической дугой, но флаг
+     * {@code jumping} при этом всегда {@code false}. Значит это не прыжок, а
+     * отбрасывание от удара: ванильный {@code knockback} даёт начальную
+     * вертикальную скорость 0.4, что как раз поднимает на ~1 блок.
+     * Столбец {@code stun} подтверждает или опровергает это числами.
+     */
+    private final int[] trailStun = new int[GuardianTuning.MOTION_TRAIL_TICKS];
+
+    /** Горизонтальное столкновение в этом сэмпле. */
+    private final boolean[] trailHcoll = new boolean[GuardianTuning.MOTION_TRAIL_TICKS];
+
+    /** Куда писать следующий снимок. */
+    private int trailHead = 0;
+
+    /** Сколько снимков накоплено (до {@link GuardianTuning#MOTION_TRAIL_TICKS}). */
+    private int trailSize = 0;
+
+    // ==================== Диагностика источника прыжка ====================
+
+    /**
+     * Кто последний выставил {@code jumping = true} (класс.метод из стека).
+     *
+     * <p>Нужно для разбора «отрыва при op=WAIT»: MoveControl в WAIT прыжок не
+     * заказывает, значит флаг выставил кто-то другой — подозреваемый
+     * {@code FloatGoal}.
+     */
+    private String jumpSource = "";
+
+    /** Сколько раз за жизнь страж отрывался от земли. */
+    private int jumpCount = 0;
+
+    /** Тик последнего отрыва. */
+    private int lastJumpTick = -1000;
+
+    /** Сколько тиков подряд {@code jumping} остаётся true. */
+    private int jumpingStreak = 0;
+
+    /** Серия «jumping не снимается» уже отчиталась. */
+    private boolean jumpingStreakReported = false;
+
+    /** Тик последней записи «сброс навигации» — ограничитель частоты. */
+    private int lastNavResetLogTick = -1000;
+
+    /** Ограничитель частоты записи источника прыжка. */
+    private int jumpSourceCooldown = 0;
+
     /**
      * Идёт ли сейчас отступление.
      *
@@ -372,6 +529,18 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     @Override
     protected void registerGoals() {
         super.registerGoals();
+
+        // ВАНИЛЬНОЕ ПЛАВАНИЕ — первый по важности (FloatGoal).
+        //
+        // Без него страж тонет: по логу видно `sink=10, vy=-0.005, state=IDLE,
+        // goal=- , onGround=true` — он лежит на дне, никакой гол движения не
+        // работает, поэтому всплытие не запускается. Ванильный FloatGoal берёт
+        // флаг JUMP и на 80 % тиков зовёт getJumpControl().jump(); это ровно то,
+        // что делают все ванильные мобы (зомби, скелеты).
+        //
+        // Регистрируем ПЕРВЫМ (priority 0 по флагу JUMP): флаг JUMP больше никто
+        // не объявляет, поэтому конфликтов с боевыми голами нет.
+        this.goalSelector.addGoal(0, new FloatGoal(this));
 
         // ПОРЯДОК РЕГИСТРАЦИИ — ЭТО ПРИОРИТЕТ (К1): обход идёт по порядку
         // регистрации, а не по числам priority (числа сравниваются только при
@@ -600,6 +769,11 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         this.updateRangedCombat();
         this.updateChargingFlag();
 
+        // Замер M1: снимок тика в кольцевой след. Копится всегда, но никуда
+        // не пишется, пока не сработает детектор — так диагностика не заливает
+        // лог и не создаёт мусор для GC (см. D4 — нагрузка и без того высокая).
+        this.recordMotionSample();
+
         // Детектор «зависания в воздухе»: ловим редкий случай, когда страж
         // остаётся висеть после отбрасывания.
         GuardianHangDetector.check(this);
@@ -611,6 +785,83 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         if (!this.isCombatGoalActive()) {
             this.setXRot(0.0F);
         }
+    }
+
+    /**
+     * Снимок тика для замера M1 (без аллокаций и без записи в лог).
+     *
+     * <p>Пишет в кольцевой след всё, чего не хватало прежним отчётам:
+     * высоту, вертикальную скорость, вход движения, флаг прыжка и операцию
+     * {@code MoveControl}. Строка собирается только когда детектор решит
+     * отчитаться.
+     */
+    private void recordMotionSample() {
+        this.pushMotionTrail(this.onGround(), this.getY(), this.getDeltaMovement().y,
+                this.zza, this.xxa, this.jumping,
+                this.guardianMoveControl.getOperationOrdinal(),
+                this.damageStunTicks, this.horizontalCollision);
+    }
+
+    /**
+     * Перехват заказа прыжка — замер M2.
+     *
+     * <p>Разбор дефекта D1 упёрся в вопрос: при {@code opОтрыва=WAIT} отрыв от
+     * земли даёт не {@code MoveControl} (в состоянии {@code WAIT} он прыжок не
+     * заказывает). Значит флаг выставляет кто-то ещё — подозреваемый
+     * {@code FloatGoal}. Чтобы не гадать, запоминаем стек в момент установки
+     * флага и пишем событие.
+     *
+     * <p>Поведение не меняется: вызов уходит в {@code super} как обычно.
+     */
+    @Override
+    public void setJumping(boolean jumping) {
+        boolean wasJumping = this.jumping;
+        super.setJumping(jumping);
+
+        if (!jumping || wasJumping || this.level().isClientSide) {
+            return;
+        }
+
+        // Определение источника — снятие стека, операция дорогая. Делаем её не
+        // чаще JUMP_SOURCE_LOG_COOLDOWN тиков: важен сам факт «кто заказывает»,
+        // а не каждый тик.
+        if (this.jumpSourceCooldown > 0) {
+            return;
+        }
+        this.jumpSourceCooldown = GuardianTuning.JUMP_SOURCE_LOG_COOLDOWN;
+        this.jumpSource = resolveJumpSource();
+        GuardianTrace.event(this, "прыжок заказан: " + this.jumpSource
+                + " | op=" + this.guardianMoveControl.getOperationName()
+                + " | grounded=" + this.onGround()
+                + " | water=" + this.isInWater());
+    }
+
+    /**
+     * Определяет, кто вызвал {@link #setJumping(boolean)}.
+     *
+     * <p>Идём по стеку вверх и берём первый кадр, который не относится к
+     * самому перехвату. Так в логе появляется либо ванильный {@code FloatGoal},
+     * либо {@code MoveControl}, либо наш собственный код.
+     */
+    private String resolveJumpSource() {
+        StackTraceElement[] frames = Thread.currentThread().getStackTrace();
+        for (StackTraceElement frame : frames) {
+            String cls = frame.getClassName();
+            // Пропускаем сам перехват и цепочку вызова внутри иерархии сущностей:
+            // ближайший «содержательный» кадр — это тот, кто РЕАЛЬНО заказал
+            // прыжок (FloatGoal, MoveControl.JumpControl, наш гол и т.п.).
+            if (cls.equals(BaseGuardianEntity.class.getName())
+                    || cls.equals(Thread.class.getName())
+                    || cls.equals("net.minecraft.world.entity.Entity")
+                    || cls.equals("net.minecraft.world.entity.LivingEntity")
+                    || cls.equals("net.minecraft.world.entity.Mob")
+                    || cls.equals("net.minecraft.world.entity.PathfinderMob")) {
+                continue;
+            }
+            String simple = cls.substring(cls.lastIndexOf('.') + 1);
+            return simple + "." + frame.getMethodName();
+        }
+        return "неизвестно";
     }
 
     /**
@@ -714,6 +965,7 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         if (this.swingSoundCooldown > 0) this.swingSoundCooldown--;
         if (this.breadCooldown > 0) this.breadCooldown--;
         if (this.damageStunTicks > 0) this.damageStunTicks--;
+        if (this.jumpSourceCooldown > 0) this.jumpSourceCooldown--;
 
         // Сторож флага еды: гол еды обязан каждый тик продлевать пульс
         // (pulseEating). Если подтверждения нет — флаг гаснет сам. Срабатывает,
@@ -873,6 +1125,13 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     public int getUnreachableTargetCount() {
         return this.unreachableTargets.size();
     }
+
+    /**
+     * Смена цели — новый бой, значит и обход препятствия начинается заново.
+     *
+     * <p>Без сброса страж мог бы унаследовать «упор» от прошлой цели и сразу
+     * пойти по подобранному ранее углу, хотя перед ним уже другое окружение.
+     */
 
     private void updateChargingFlag() {
         ItemStack weapon = this.getMainHandItem();
@@ -1260,6 +1519,51 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     }
 
     /**
+     * Текущая операция MoveControl — только для диагностики.
+     *
+     * <p>Показывает, что реально делает ваниль в этот тик: {@code STRAFE} (наш
+     * шаг), {@code MOVE_TO} (маршрут), {@code JUMPING} (прыжок),
+     * {@code WAIT} (стоит). По {@code JUMPING} видно, прыгает ли страж в углу.
+     */
+    public String getMoveControlOperation() {
+        return this.guardianMoveControl.getOperationName();
+    }
+
+    /**
+     * Операция, которую заказал гол в этом тике (до ванильного тика).
+     *
+     * <p>Это правильный ответ на вопрос «что страж хотел делать». Прежний
+     * {@link #getMoveControlOperation()} читал операцию ПОСЛЕ тика, а ванильный
+     * {@code MoveControl} сбрасывает её в {@code WAIT} прямо внутри своего
+     * тика — поэтому в логах почти всегда был {@code WAIT}, и вывод
+     * «гол ничего не заказывал» был ошибочным.
+     */
+    public String getMoveControlOperationBeforeTick() {
+        return this.guardianMoveControl.getOperationBeforeTickName();
+    }
+
+    /** Операция, оставшаяся после ванильного тика (для сравнения с заказом). */
+    public String getMoveControlOperationAfterTick() {
+        return this.guardianMoveControl.getOperationAfterTickName();
+    }
+
+    /** Задан ли наш шаг (strafe) прямо сейчас — для диагностики. */
+    public boolean isStrafeStepActive() {
+        return this.guardianMoveControl.isOurStepActive();
+    }
+
+    /**
+     * Держится ли тело развёрнутым к цели прямо сейчас — для замера M3.
+     *
+     * <p>Если {@code true} во время движения по маршруту, значит курс тела
+     * перезаписывается на цель после {@code MoveControl}, и шаг считается не
+     * по узлам пути, а «в сторону врага». Это и есть проверяемая гипотеза C1.
+     */
+    public boolean isBodyFacesTarget() {
+        return this.bodyFacesTarget;
+    }
+
+    /**
      * Идти к точке по маршруту.
      *
      * <p>Тело ведёт маршрут (ванильная навигация обходит стены, ищет выход из
@@ -1437,10 +1741,51 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         }
     }
 
-    /** Сбрасывает привязку к навигационной цели — следующий вызов построит путь заново. */
+    /**
+     * Сбрасывает привязку к навигационной цели — следующий вызов построит путь заново.
+     *
+     * <p>Замер M4: пишем, КТО сбрасывает маршрут. Дефект D2 выглядит как
+     * «маршрут есть ({@code navDone=false}), но страж стоит». Один из
+     * кандидатов — голы удержания, которые зовут {@code standStill()} каждый
+     * тик, а тот сбрасывает навигацию. Без записи источника это не проверить.
+     *
+     * <p>Запись ограничена по частоте: информативен факт «кто сбрасывает»,
+     * а не количество сбросов в секунду.
+     */
     public void resetNavigationTarget() {
         this.navRetargetTimer = 0;
         this.getNavigation().stop();
+
+        if (this.level().isClientSide || !GuardianTrace.isEnabled()) {
+            return;
+        }
+        if (this.tickCount - this.lastNavResetLogTick < GuardianTuning.NAV_RESET_LOG_COOLDOWN) {
+            return;
+        }
+        this.lastNavResetLogTick = this.tickCount;
+        GuardianTrace.event(this, "сброс маршрута: " + resolveNavResetCaller()
+                + " | op=" + this.guardianMoveControl.getOperationName()
+                + " | strafe=" + this.guardianMoveControl.isOurStepActive());
+    }
+
+    /**
+     * Кто вызвал {@link #resetNavigationTarget()} — по стеку.
+     *
+     * <p>Возвращает ближайший кадр вне этого класса: по нему видно, какой гол
+     * или какое состояние сбрасывает маршрут.
+     */
+    private String resolveNavResetCaller() {
+        StackTraceElement[] frames = Thread.currentThread().getStackTrace();
+        String self = BaseGuardianEntity.class.getName();
+        for (StackTraceElement frame : frames) {
+            String cls = frame.getClassName();
+            if (cls.equals(self) || cls.equals(Thread.class.getName())) {
+                continue;
+            }
+            String simple = cls.substring(cls.lastIndexOf('.') + 1);
+            return simple + "." + frame.getMethodName();
+        }
+        return "неизвестно";
     }
 
     /**
@@ -1589,6 +1934,65 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         this.airborneTicks = ticks;
     }
 
+    // ==================== Доступ для GuardianHangDetector ====================
+
+    /** Операция MoveControl в момент отрыва от земли — для диагностики подскоков. */
+    public String getTakeoffOperation() {
+        return this.takeoffOperation;
+    }
+
+    public void setTakeoffOperation(String operation) {
+        this.takeoffOperation = operation;
+    }
+
+    public boolean isWasAirborne() {
+        return this.wasAirborne;
+    }
+
+    public void setWasAirborne(boolean value) {
+        this.wasAirborne = value;
+    }
+
+    public int getLastLandingTick() {
+        return this.lastLandingTick;
+    }
+
+    public void setLastLandingTick(int tick) {
+        this.lastLandingTick = tick;
+    }
+
+    public int getBounceCount() {
+        return this.bounceCount;
+    }
+
+    public void setBounceCount(int count) {
+        this.bounceCount = count;
+    }
+
+    public boolean isBounceReported() {
+        return this.bounceReported;
+    }
+
+    public void setBounceReported(boolean reported) {
+        this.bounceReported = reported;
+    }
+
+    public int getSinkingTicks() {
+        return this.sinkingTicks;
+    }
+
+    public void setSinkingTicks(int ticks) {
+        this.sinkingTicks = ticks;
+    }
+
+    public boolean isSinkingReported() {
+        return this.sinkingReported;
+    }
+
+    public void setSinkingReported(boolean reported) {
+        this.sinkingReported = reported;
+    }
+
     /** Отчёт о зависании уже был отправлен. */
     public boolean isHangReported() {
         return this.hangReported;
@@ -1596,6 +2000,457 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
 
     public void setHangReported(boolean reported) {
         this.hangReported = reported;
+    }
+
+    // ==================== Доступ для замеров M1–M5 ====================
+    // Ниже — только диагностика. Поведение стражa эти методы не меняют:
+    // ни один из них не вызывается из игровой логики, кроме самого детектора.
+
+    /** Значение onGround в прошлом тике (для поиска переключений). */
+    public boolean isPrevGroundedDiag() {
+        return this.prevGroundedDiag;
+    }
+
+    public void setPrevGroundedDiag(boolean value) {
+        this.prevGroundedDiag = value;
+    }
+
+    /** y в момент последнего переключения onGround. */
+    public double getLastGroundToggleY() {
+        return this.lastGroundToggleY;
+    }
+
+    public void setLastGroundToggleY(double value) {
+        this.lastGroundToggleY = value;
+    }
+
+    /** Тик последнего переключения onGround. */
+    public int getLastGroundToggleTick() {
+        return this.lastGroundToggleTick;
+    }
+
+    public void setLastGroundToggleTick(int tick) {
+        this.lastGroundToggleTick = tick;
+    }
+
+    /** Сколько переключений onGround в текущей серии. */
+    public int getFloatHangCount() {
+        return this.floatHangCount;
+    }
+
+    public void setFloatHangCount(int count) {
+        this.floatHangCount = count;
+    }
+
+    /** Наибольшее отклонение по высоте за текущую воздушную фазу. */
+    public double getAirborneYSpan() {
+        return this.airborneYSpan;
+    }
+
+    public void setAirborneYSpan(double value) {
+        this.airborneYSpan = value;
+    }
+
+    /** Серия «невидимого полублока» уже отчиталась. */
+    public boolean isFloatHangReported() {
+        return this.floatHangReported;
+    }
+
+    public void setFloatHangReported(boolean reported) {
+        this.floatHangReported = reported;
+    }
+
+    /**
+     * Снимок тика для замера M1 — БЕЗ аллокаций.
+     *
+     * <p>Копится каждый тик, но никуда не пишется, пока не сработает детектор.
+     * Так сделано специально: диагностика не должна стоить памяти в горячем
+     * пути, иначе она сама станет источником лагов.
+     *
+     * @param grounded  {@code onGround()} в этот тик
+     * @param y         высота стражa
+     * @param vy        вертикальная скорость
+     * @param zza       вход «вперёд/назад» ({@code MoveControl} пишет его)
+     * @param xxa       вход «влево/вправо»
+     * @param jumping   флаг прыжка
+     * @param opOrdinal порядковый номер операции {@code MoveControl}
+     */
+    public void pushMotionTrail(boolean grounded, double y, double vy,
+                                float zza, float xxa, boolean jumping, int opOrdinal,
+                                int stunTicks, boolean horizontalCollision) {
+        this.trailY[this.trailHead] = y;
+        this.trailVy[this.trailHead] = vy;
+        this.trailZza[this.trailHead] = zza;
+        this.trailXxa[this.trailHead] = xxa;
+        this.trailGrounded[this.trailHead] = grounded;
+        this.trailJumping[this.trailHead] = jumping;
+        this.trailOp[this.trailHead] = opOrdinal;
+        this.trailStun[this.trailHead] = stunTicks;
+        this.trailHcoll[this.trailHead] = horizontalCollision;
+        this.trailHead = (this.trailHead + 1) % GuardianTuning.MOTION_TRAIL_TICKS;
+        if (this.trailSize < GuardianTuning.MOTION_TRAIL_TICKS) {
+            this.trailSize++;
+        }
+    }
+
+    /** Есть ли накопленный след движения. */
+    public boolean hasMotionTrail() {
+        return this.trailSize > 0;
+    }
+
+    /**
+     * След движения одной строкой — от самого старого снимка к самому свежему.
+     *
+     * <p>Формат: {@code y/vy/g/j/zza/xxa/op}. Строка собирается только в момент
+     * отчёта, поэтому её стоимость не важна.
+     */
+    public String describeMotionTrail() {
+        if (this.trailSize == 0) {
+            return "-";
+        }
+        StringBuilder sb = new StringBuilder();
+        int start = (this.trailHead - this.trailSize + GuardianTuning.MOTION_TRAIL_TICKS)
+                % GuardianTuning.MOTION_TRAIL_TICKS;
+        for (int i = 0; i < this.trailSize; i++) {
+            int idx = (start + i) % GuardianTuning.MOTION_TRAIL_TICKS;
+            if (i > 0) {
+                sb.append(" ; ");
+            }
+            sb.append(GuardianSnapshot.fmt(this.trailY[idx], 2))
+                    .append('/').append(GuardianSnapshot.fmt(this.trailVy[idx], 3))
+                    .append('/').append(this.trailGrounded[idx] ? "G" : "a")
+                    .append('/').append(this.trailJumping[idx] ? "J" : "-")
+                    .append('/').append(GuardianSnapshot.fmt(this.trailZza[idx], 2))
+                    .append('/').append(GuardianSnapshot.fmt(this.trailXxa[idx], 2))
+                    .append('/').append(GuardianMoveControl.operationName(this.trailOp[idx]))
+                    // Замер M8: ступор после урона и упор в стену.
+                    .append("/stun=").append(this.trailStun[idx])
+                    .append("/hColl=").append(this.trailHcoll[idx] ? "1" : "0");
+        }
+        return sb.toString();
+    }
+
+    /** Очистить след движения после отчёта. */
+    public void clearMotionTrail() {
+        this.trailSize = 0;
+        this.trailHead = 0;
+    }
+
+    /**
+     * Снимок по требованию — то, что видно в момент «зависания».
+     *
+     * <p>Зачем отдельная команда: три прогона дали три разные картины дефекта,
+     * и по усреднённой статистике причину выделить не удалось. Здесь мы
+     * фиксируем ровно тот момент, когда владелец видит зависание, и получаем
+     * полный след движения вместо догадок.
+     *
+     * <p>Пишет одну запись в лог — независимо от флага трассировки, потому что
+     * это действие пользователя, а не фоновый шум.
+     */
+    public void dumpSnapshot(String reason) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("СНИМОК g").append(this.getId())
+                .append(" | причина=").append(reason)
+                .append(" | state=").append(this.getAIState())
+                .append(" | goals=").append(this.getActiveGoalNames())
+                .append("\n    поз: x=").append(GuardianSnapshot.fmt(this.getX(), 3))
+                .append(" y=").append(GuardianSnapshot.fmt(this.getY(), 3))
+                .append(" z=").append(GuardianSnapshot.fmt(this.getZ(), 3))
+                .append(" | onGround=").append(this.onGround())
+                .append(" | надБлоком=").append(GuardianSnapshot.fmt(this.getHeightAboveBlock(), 3))
+                .append(" | блокПод=").append(this.getBlockBelowName())
+                .append("\n    скорость: dx=").append(GuardianSnapshot.fmt(this.getDeltaMovement().x, 3))
+                .append(" dy=").append(GuardianSnapshot.fmt(this.getDeltaMovement().y, 3))
+                .append(" dz=").append(GuardianSnapshot.fmt(this.getDeltaMovement().z, 3))
+                .append(" | вода=").append(this.isInWater())
+                .append(" | лава=").append(this.isInLava())
+                .append(" | лиана=").append(this.onClimbable())
+                .append(" | hColl=").append(this.horizontalCollision)
+                .append(" | vColl=").append(this.verticalCollision)
+                .append("\n    вход: zza=").append(GuardianSnapshot.fmt(this.zza, 3))
+                .append(" xxa=").append(GuardianSnapshot.fmt(this.xxa, 3))
+                .append(" | jumping=").append(this.jumping)
+                .append(" | источникПрыжка=").append(this.jumpSource.isEmpty() ? "-" : this.jumpSource)
+                .append(" | прыжков=").append(this.jumpCount)
+                .append("\n    MoveControl: заказ=").append(this.getMoveControlOperationBeforeTick())
+                .append(" после=").append(this.getMoveControlOperationAfterTick())
+                .append(" | strafe=").append(this.isStrafeStepActive())
+                .append(" | keepYaw=").append(this.guardianMoveControl.isKeepYawOn())
+                .append("\n    навигация: done=").append(this.getNavigation().isDone())
+                .append(" stuck=").append(this.getNavigation().isStuck())
+                .append(" | конец=").append(this.describePathEnd())
+                .append(" | порогНав=").append(GuardianSnapshot.fmt(
+                        this.getNavigation().getMaxDistanceToWaypoint(), 2))
+                // Замер M8: что РЕАЛЬНО вернул pathfinder (а не что мы с ним сделали).
+                .append("\n    M8-path: ").append(this.describePathStatus())
+                .append("\n    M8-types: ").append(this.describePathTypes())
+                .append("\n    M8-hit: ").append(this.describePostHitDisplacement())
+                .append("\n    M8-atk: ").append(this.describeAttackCounters())
+                .append("\n    бой: stun=").append(this.damageStunTicks)
+                .append(" | еда=").append(this.eating)
+                .append(" | заряд=").append(this.crossbowChargeTime)
+                .append(" | агрессия=").append(this.isAggressive())
+                .append(" | паника=").append(this.isPanicking())
+                .append(" | цель=").append(GuardianSnapshot.targetName(this))
+                .append("\n    курс: yaw=").append(GuardianSnapshot.fmt(this.getYRot(), 1))
+                .append(" bodyYaw=").append(GuardianSnapshot.fmt(this.yBodyRot, 1))
+                .append(" headYaw=").append(GuardianSnapshot.fmt(this.yHeadRot, 1))
+                .append(" wantYaw=").append(GuardianSnapshot.fmt(this.getDesiredYaw(), 1))
+                .append("\n    след(тик y/vy/g/j/zza/xxa/op/stun/hColl): ")
+                .append(this.describeMotionTrail());
+
+        GuardianTrace.always(sb.toString());
+    }
+
+    /** Кто последний выставил {@code jumping = true}. */
+    public String getJumpSource() {
+        return this.jumpSource;
+    }
+
+    public void setJumpSource(String source) {
+        this.jumpSource = source;
+    }
+
+    /** Сколько раз страж отрывался от земли. */
+    public int getJumpCount() {
+        return this.jumpCount;
+    }
+
+    public void setJumpCount(int count) {
+        this.jumpCount = count;
+    }
+
+    /** Тик последнего отрыва от земли. */
+    public int getLastJumpTick() {
+        return this.lastJumpTick;
+    }
+
+    public void setLastJumpTick(int tick) {
+        this.lastJumpTick = tick;
+    }
+
+    /** Сколько тиков подряд {@code jumping} остаётся true. */
+    public int getJumpingStreak() {
+        return this.jumpingStreak;
+    }
+
+    public void setJumpingStreak(int ticks) {
+        this.jumpingStreak = ticks;
+    }
+
+    /** Серия «jumping не снимается» уже отчиталась. */
+    public boolean isJumpingStreakReported() {
+        return this.jumpingStreakReported;
+    }
+
+    public void setJumpingStreakReported(boolean reported) {
+        this.jumpingStreakReported = reported;
+    }
+
+    /** Значение флага {@code jumping} — только для диагностики. */
+    public boolean isJumpFlagSet() {
+        return this.jumping;
+    }
+
+    // ==================== Доступ для детектора ОТБРОС (M8) ====================
+
+    /** Тиков подряд у вершины дуги отбрасывания. */
+    public int getKnockbackHangTicks() {
+        return this.knockbackHangTicks;
+    }
+
+    public void setKnockbackHangTicks(int ticks) {
+        this.knockbackHangTicks = ticks;
+    }
+
+    /** Высота, с которой началась текущая воздушная фаза. */
+    public double getAirPhaseStartY() {
+        return this.airPhaseStartY;
+    }
+
+    public void setAirPhaseStartY(double y) {
+        this.airPhaseStartY = y;
+    }
+
+    /** Максимальная высота текущей воздушной фазы. */
+    public double getAirPhaseMaxY() {
+        return this.airPhaseMaxY;
+    }
+
+    public void setAirPhaseMaxY(double y) {
+        this.airPhaseMaxY = y;
+    }
+
+    /** Фаза «отбрасывание» уже отчиталась. */
+    public boolean isKnockbackReported() {
+        return this.knockbackReported;
+    }
+
+    public void setKnockbackReported(boolean reported) {
+        this.knockbackReported = reported;
+    }
+
+    /**
+     * Блок под ногами стражa в виде {@code minecraft:id[y=..]}.
+     *
+     * <p>Нужен замеру M1: если {@code onGround() == true}, а под ногами воздух —
+     * это и есть «невидимый полублок» из описания владельца.
+     */
+    public String getBlockBelowName() {
+        net.minecraft.core.BlockPos below =
+                net.minecraft.core.BlockPos.containing(this.getX(), this.getY() - 0.2D, this.getZ());
+        return this.level().getBlockState(below).getBlock()
+                .builtInRegistryHolder().key().location().toString();
+    }
+
+    /** Высота над блоком под ногами (дробная часть координаты y). */
+    public double getHeightAboveBlock() {
+        return this.getY() - Math.floor(this.getY());
+    }
+
+    /**
+     * Конечный узел текущего маршрута — замер M7.
+     *
+     * <p>Нужен, чтобы проверить найденную причину D2: навигация ведёт стража не
+     * к самой цели, а к последнему узлу пути, и этот узел может стоять дальше
+     * радиуса удара. Тогда страж «дошёл» (маршрут завершён), но бить не может —
+     * и стоит, пока цель не сдвинется.
+     *
+     * <p>Формат: {@code x/z} и расстояние до конечного узла, либо {@code -}.
+     */
+    public String describePathEnd() {
+        net.minecraft.world.level.pathfinder.Path path = this.getNavigation().getPath();
+        if (path == null) {
+            return "-";
+        }
+        net.minecraft.world.level.pathfinder.Node end = path.getEndNode();
+        if (end == null) {
+            return "-";
+        }
+        double dx = end.x + 0.5D - this.getX();
+        double dz = end.z + 0.5D - this.getZ();
+        double dist = Math.sqrt(dx * dx + dz * dz);
+        return GuardianSnapshot.fmt(end.x + 0.5D, 1) + "/" + GuardianSnapshot.fmt(end.z + 0.5D, 1)
+                + "@" + GuardianSnapshot.fmt(dist, 2)
+                + "(узлов=" + path.getNodeCount()
+                + ",пройдено=" + path.getNextNodeIndex() + ")";
+    }
+
+    /** Достигнут ли последний узел маршрута (маршрут построен, но исчерпан). */
+    public boolean isPathExhausted() {
+        net.minecraft.world.level.pathfinder.Path path = this.getNavigation().getPath();
+        return path != null && path.getNextNodeIndex() >= path.getNodeCount() - 1;
+    }
+
+    // ==================== Замер M8: сырое состояние пути ====================
+    //
+    // Зачем. Разбор «зависания у стены» дважды упёрся в догадки: сначала
+    // решили, что путь выбраковывается нашим isUsablePath(), но удаление
+    // проверки ничего не изменило. Значит вопрос не в том, ЧТО МЫ делаем с
+    // путём, а в том, ЧТО ВОЗВРАЩАЕТ pathfinder. Эти три метода печатают
+    // ровно это и ничего не меняют в поведении.
+
+    /**
+     * Сырое состояние текущего маршрута: достижимость, остаток, узлы.
+     *
+     * <p>{@code canReach} — ключевое поле: {@code true} при неполном пути
+     * означало бы, что pathfinder считает цель достигнутой, хотя моб до неё
+     * не дойдёт. Это ровно тот случай, который давал «стоит с
+     * {@code navDone=true}».
+     */
+    public String describePathStatus() {
+        net.minecraft.world.level.pathfinder.Path path = this.getNavigation().getPath();
+        if (path == null) {
+            return "path=null";
+        }
+        net.minecraft.world.level.pathfinder.Node end = path.getEndNode();
+        // Только ASCII: консоль Windows ломает кириллицу, а разбирать числа надо.
+        return "canReach=" + path.canReach()
+                + " distToTarget=" + GuardianSnapshot.fmt(path.getDistToTarget(), 2)
+                + " nodes=" + path.getNodeCount()
+                + " nextIdx=" + path.getNextNodeIndex()
+                + " targetBlk=" + path.getTarget().toShortString()
+                + " endNode=" + (end == null ? "-" : end.x + "/" + end.y + "/" + end.z);
+    }
+
+    /**
+     * Тип проходимости блоков вокруг стража и у цели (замер M8).
+     *
+     * <p>Проверяемая версия: если блок, в котором стоит страж, помечен не как
+     * {@code WALKABLE}, {@code WalkNodeEvaluator} может не отдать соседей —
+     * тогда путь вырождается в ОДИН узел независимо от нашего кода. Именно
+     * это объясняло бы, почему удаление нашего обхода ничего не изменило.
+     */
+    public String describePathTypes() {
+        net.minecraft.world.level.pathfinder.NodeEvaluator evaluator =
+                this.getNavigation().getNodeEvaluator();
+        if (evaluator == null) {
+            return "no-nodeEvaluator";
+        }
+        net.minecraft.core.BlockPos feet =
+                net.minecraft.core.BlockPos.containing(this.getX(), this.getY(), this.getZ());
+        net.minecraft.core.BlockPos below = feet.below();
+        String inFeet = String.valueOf(evaluator.getBlockPathType(
+                this.level(), feet.getX(), feet.getY(), feet.getZ()));
+        String underFeet = String.valueOf(evaluator.getBlockPathType(
+                this.level(), below.getX(), below.getY(), below.getZ()));
+
+        String atTarget = "-";
+        LivingEntity target = this.getTarget();
+        if (target != null) {
+            net.minecraft.core.BlockPos tp = target.blockPosition();
+            atTarget = String.valueOf(evaluator.getBlockPathType(
+                    this.level(), tp.getX(), tp.getY(), tp.getZ()));
+        }
+        return "inFeet=" + inFeet + " underFeet=" + underFeet + " atTarget=" + atTarget;
+    }
+
+    /** Тик последнего полученного урона — для замера сдвига после удара. */
+    private int lastHurtTick = -1;
+    private double lastHurtX = 0.0D;
+    private double lastHurtZ = 0.0D;
+
+    /**
+     * Насколько страж сместился по горизонтали с момента последнего урона.
+     *
+     * <p>Отвечает на вопрос, который не решается снимком: после удара у стены
+     * он реально пытается сдвинуться (пусть и незначительно) или полностью
+     * зафиксирован. В снимке видно только текущую позицию.
+     */
+    public String describePostHitDisplacement() {
+        if (this.lastHurtTick < 0) {
+            return "-";
+        }
+        double dx = this.getX() - this.lastHurtX;
+        double dz = this.getZ() - this.lastHurtZ;
+        double moved = Math.sqrt(dx * dx + dz * dz);
+        return "moved=" + GuardianSnapshot.fmt(moved, 3) + " ticks=" + (this.tickCount - this.lastHurtTick);
+    }
+
+    // Счётчики боя. Работают ВСЕГДА, в отличие от трассировки (/sp_trace),
+    // которую легко забыть включить — именно на этом был потерян прогон:
+    // «0 событий удар мечом» означало лишь «трассировка выключена».
+    // По ним видно в любом /sp_snap, бьёт страж или только стоит.
+    private int meleeSwingCount = 0;
+    private int meleeHitCount = 0;
+
+    /** Строка для снимка: сколько раз махнул и сколько раз попал. */
+    public String describeAttackCounters() {
+        return "swings=" + this.meleeSwingCount + " hits=" + this.meleeHitCount;
+    }
+
+    /** Учесть взмах мечом (вызывается из {@link #swing}). */
+    private void countSwing() {
+        if (this.meleeSwingCount < Integer.MAX_VALUE) {
+            this.meleeSwingCount++;
+        }
+    }
+
+    /** Учесть попадание (вызывается из {@link #doHurtTarget}). */
+    private void countHit() {
+        if (this.meleeHitCount < Integer.MAX_VALUE) {
+            this.meleeHitCount++;
+        }
     }
 
     /** Идёт ли сейчас отступление от врага. */
@@ -1640,6 +2495,7 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         super.swing(hand);
         if (hand == net.minecraft.world.InteractionHand.MAIN_HAND
                 && this.isMeleeActive()) {
+            this.countSwing();
             this.playSwordSwingSound();
         }
     }
@@ -1654,6 +2510,11 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     @Override
     public boolean doHurtTarget(Entity entityIn) {
         boolean flag = super.doHurtTarget(entityIn);
+        if (this.isMeleeActive()) {
+            // Считаем ПОПЫТКУ, а не только успех: если урон не прошёл
+            // (неуязвимость, щит, имунность), flag = false, но удар был.
+            this.countHit();
+        }
         if (flag && this.isMeleeActive()) {
             this.playSound(SoundEvents.PLAYER_ATTACK_KNOCKBACK, 1.0F, 1.0F);
             GuardianTrace.event(this, "удар мечом");
@@ -1674,6 +2535,12 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         boolean hurt = super.hurt(source, amount);
         if (hurt) {
             this.damageStunTicks = 3;
+            // Замер M8: запоминаем точку удара, чтобы потом посчитать, сдвинулся
+            // ли страж вообще. Снимок показывает только текущую позицию и на
+            // вопрос «он пытался выйти или зафиксирован» не отвечает.
+            this.lastHurtTick = this.tickCount;
+            this.lastHurtX = this.getX();
+            this.lastHurtZ = this.getZ();
             // Сводка по нагрузке сервера в момент удара (если включён /sp_perf on).
             if (!this.level().isClientSide && this.level() instanceof ServerLevel serverLevel) {
                 PerfDiagnostics.onGuardianHurt(serverLevel, this, source, amount);

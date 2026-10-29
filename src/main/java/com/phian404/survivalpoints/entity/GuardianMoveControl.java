@@ -36,6 +36,23 @@ public class GuardianMoveControl extends MoveControl {
     /** Держать ли курс тела (в бою — да, при движении по маршруту — нет). */
     private boolean keepYaw = true;
 
+    /**
+     * Операция {@code MoveControl} ДО ванильного {@link #tick()} — то есть
+     * то, что заказал гол в этом тике.
+     *
+     * <p>Зачем отдельное поле: ванильный {@code MoveControl.tick()} в ветках
+     * {@code STRAFE} и {@code MOVE_TO} первым делом ставит
+     * {@code operation = WAIT} — то есть к моменту, когда мы читаем операцию
+     * снаружи, она уже сброшена. Именно поэтому в прошлых отчётах
+     * {@code op} почти всегда был {@code WAIT}, и вывод «никто не звал
+     * strafe/moveTo» был ошибочным: {@code WAIT} означал лишь «тик уже
+     * отработал».
+     */
+    private Operation operationBeforeTick = Operation.WAIT;
+
+    /** Операция после ванильного {@code tick()} — для сравнения. */
+    private Operation operationAfterTick = Operation.WAIT;
+
     public GuardianMoveControl(BaseGuardianEntity guardian) {
         super(guardian);
     }
@@ -69,11 +86,89 @@ public class GuardianMoveControl extends MoveControl {
         this.keepYaw = keep;
     }
 
+    /**
+     * Текущая операция MoveControl — только для диагностики.
+     *
+     * <p>Поле {@code operation} объявлено {@code protected} в ванильном
+     * {@link MoveControl}, поэтому из подкласса доступно. По нему видно, что
+     * реально делает ваниль: {@code STRAFE} (наш шаг), {@code MOVE_TO} (маршрут),
+     * {@code JUMPING} (прыжок — подозреваемый в «подскоках в углу»),
+     * {@code WAIT} (стоит).
+     */
+    public String getOperationName() {
+        return this.operation.name();
+    }
+
+    /**
+     * Порядковый номер операции — для компактного следа движения.
+     *
+     * <p>След пишется каждый тик, поэтому хранит операцию числом: строковое
+     * имя создавало бы мусор для GC в горячем пути.
+     */
+    public int getOperationOrdinal() {
+        return this.operationBeforeTick.ordinal();
+    }
+
+    /**
+     * Имя операции, которую заказал гол в этом тике (до ванильного тика).
+     *
+     * <p>Это и есть ответ на вопрос «что хотел делать страж»: {@code STRAFE}
+     * (наш шаг), {@code MOVE_TO} (маршрут), {@code JUMPING} (прыжок),
+     * {@code WAIT} (гол ничего не заказывал).
+     */
+    public String getOperationBeforeTickName() {
+        return this.operationBeforeTick.name();
+    }
+
+    /** Имя операции, оставшейся после ванильного тика (обычно {@code WAIT}). */
+    public String getOperationAfterTickName() {
+        return this.operationAfterTick.name();
+    }
+
+    /**
+     * Имя операции по порядковому номеру — расшифровка следа при отчёте.
+     *
+     * <p>Живёт здесь, а не в снимке, потому что тип {@code Operation} —
+     * вложенный и {@code protected}: снаружи пакета он не виден.
+     */
+    public static String operationName(int ordinal) {
+        Operation[] values = Operation.values();
+        if (ordinal < 0 || ordinal >= values.length) {
+            return "?";
+        }
+        return values[ordinal].name();
+    }
+
+    /** Задан ли наш шаг прямо сейчас (диагностика). */
+    public boolean isOurStepActive() {
+        return this.ourActive;
+    }
+
+    /** Держится ли курс тела принудительно — для снимка по требованию. */
+    public boolean isKeepYawOn() {
+        return this.keepYaw;
+    }
+
     @Override
     public void tick() {
+        // Операция ДО ванильного тика = заказ гола в этом тике.
+        // Ванильный tick() в ветках STRAFE и MOVE_TO сразу ставит WAIT,
+        // поэтому снаружи (после тика) операция уже сброшена.
+        this.operationBeforeTick = this.operation;
+
         float savedYaw = this.mob.getYRot();
         super.tick();
-        if (this.keepYaw) {
+        this.operationAfterTick = this.operation;
+
+        // Курс восстанавливаем ТОЛЬКО когда активен наш шаг (strafe).
+        //
+        // Раньше условие было просто `keepYaw`, а флаг по умолчанию true и
+        // выставляется в true из standStill(). При движении по маршруту
+        // (MOVE_TO: меч-гол, сближение, прогулка) это давало баг: MoveControl
+        // уже повернул моба к следующему узлу, но мы откатывали курс назад, а
+        // travel() → moveRelative() считает направление по ТЕКУЩЕМУ yRot. Итог:
+        // моб едет в направлении старого курса, «не поворачивая» и «застревая».
+        if (this.keepYaw && this.ourActive) {
             this.mob.setYRot(savedYaw);
         }
         if (this.ourActive) {
@@ -82,5 +177,6 @@ public class GuardianMoveControl extends MoveControl {
             this.mob.setZza(this.ourForwards);
             this.mob.setXxa(this.ourRight);
         }
+
     }
 }

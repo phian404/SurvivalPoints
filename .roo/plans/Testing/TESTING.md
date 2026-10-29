@@ -155,18 +155,20 @@
 Флага `CUSTOM_SWING` в [`GuardianFeatureFlags`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianFeatureFlags.java)
 нет: кастомная анимация взмаха удалена вместе с заменой ближнего боя на ванильный.
 
-**Статус R0.0 (сверено с кодом, повторно):** `requiresUpdateEveryTick()` переопределён у
-[`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:117) и
-[`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:129); у
-[`GuardianRangedAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRangedAttackGoal.java:1) и
-[`GuardianRetreatGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java:1) переопределения **нет**.
-**Это 2 из 4 — задача открыта.** Проверки R1–R2 относятся именно к этим двум голам.
+**Статус R0.0 (сверено с кодом):** ✅ **выполнен.** `requiresUpdateEveryTick()` переопределён у всех четырёх:
+[`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:117),
+[`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:129),
+[`GuardianRangedAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRangedAttackGoal.java:99),
+[`GuardianRetreatGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java:88).
+Проверки R1–R2 относятся к стрельбе и отходу.
 
-**Статус R0.2 (сверено с кодом, повторно):** **не выполнен.** Флаг `CUSTOM_MOVE`
-[включён по умолчанию](../../../src/main/java/com/phian404/survivalpoints/init/GuardianFeatureFlags.java:77)
-(`DISABLED` пуст), поэтому [`moveDirectly()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1309)
-активна и перезаписывает `setDeltaMovement`. Проверка R5 («нет зависания») остаётся
-ключевой: пока флаг включён, причина не устранена.
+**Статус R0.2 (сверено с кодом):** ⏸ **откачен** по решению владельца. Самописная физика
+([`moveDirectly()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1309)) **на месте**, флаг
+`CUSTOM_MOVE` включён. Попытка удалить её дала регрессии: тряска в углу, подскок ~0.5 с после
+удара, утопление, резкий отход. Разбор — [`guardian-r0-0-r0-2-r0-5-plan.md`](../Combat/guardian-r0-0-r0-2-r0-5-plan.md) §7.3–§7.4.
+**R0.2 требует отдельной проработки с замерами.**
+
+**Статус R0.5:** ⏸ **откачен** вместе с R0.2 (`RandomStrollGoal` на месте, флаги без изменений).
 
 ### 5.2 Что проверяем в R0.0
 
