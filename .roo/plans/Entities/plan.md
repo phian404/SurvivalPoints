@@ -34,7 +34,7 @@
    - Синхронизировать индекс скина через entity data; сохранять его в NBT, не выбирать заново при загрузке.
    - Общий renderer выбирает текстуру по индексу и обслуживает обе entity type.
    - Критерий готовности: клиенты видят одинаковый вариант; каждый вариант допустим; после перезахода скин остаётся тем же.
-   - Готовые скины для будущего набора — в [`ReadyToUseSkins/`](../../../ReadyToUseSkins/) (14 обычных NPC + 4 лидера, 64×64; визуально не проверены). Лор лидеров — [`SurvivalPoints_Leaders.md`](../../../ReadyToUseSkins/SurvivalPoints_Leaders.md).
+   - Готовые скины для будущего набора — в [`assets-source/ReadyToUseSkins/`](../../../assets-source/ReadyToUseSkins/) (14 обычных NPC + 4 лидера, 64×64; визуально не проверены). Лор лидеров — [`SurvivalPoints_Leaders.md`](../../../assets-source/ReadyToUseSkins/SurvivalPoints_Leaders.md).
 
 5. **Единый сервис создания и назначения ролей**
    - Создать серверный `RoleAssignmentService`/фабрику, принимающий исходного NPC, целевую роль и необязательный контекст лагеря.

@@ -11,7 +11,7 @@
 - NPC and camp simulation target model: `.roo/plans/Entities/NPC_CAMP_SIMULATION_DESIGN.md`.
 - Task plans: `.roo/plans/` (topic subfolders: `Camp/`, `Entities/`, `Combat/`, `Items/`, `Roadmap/`, `Architecture/`, `Testing/`).
 - Documentation entry point: `.roo/plans/README.md` (pick the single document matching the task type; do not read all files in a row).
-- Ready-to-use NPC skins: `ReadyToUseSkins/` (14 regular NPC skins in `BasicNPCs/`, 4 leader skins in `Leaders/`, leader lore in `ReadyToUseSkins/SurvivalPoints_Leaders.md`).
+- Source assets (not loaded by the game): `assets-source/ReadyToUseSkins/` (14 regular NPC skins in `BasicNPCs/`, 4 leader skins in `Leaders/`, leader lore in `SurvivalPoints_Leaders.md`). Runtime copies live in `src/main/resources/assets/survivalpoints/textures/entity/skin/`.
 
 Before planning or implementing a task, check the relevant project documentation and existing plans. Do not assume a planned feature is already implemented; verify the source code.
 

@@ -185,11 +185,11 @@ com.phian404.survivalpoints
 
 ### Готовые материалы NPC (скины)
 
-В корне проекта лежит папка [`ReadyToUseSkins/`](../../../../../../ReadyToUseSkins/) с готовыми скинами NPC (64×64, стандартный формат скина Minecraft):
+Для исходных материалов в корне проекта создана папка [`assets-source/`](../../../../../../assets-source/); в ней лежит [`assets-source/ReadyToUseSkins/`](../../../../../../assets-source/ReadyToUseSkins/) с готовыми скинами NPC (64×64, стандартный формат скина Minecraft). Эти файлы не загружаются игрой напрямую — рабочие копии лежат в `src/main/resources`:
 
 - `BasicNPCs/` — **14 скинов** обычных NPC (Carpenter, Cook, Farm×2, Farmer, Guard, Hunter, Mechanic×2, Medic, Ranger, Scavenger, Settler, Trader);
 - `Leaders/` — **4 скина** лидеров (Martha Hill, Sam Walker, Mike Carter, Cole Reed);
-- [`SurvivalPoints_Leaders.md`](../../../../../../ReadyToUseSkins/SurvivalPoints_Leaders.md) — черновой лор-документ с характеристиками лидеров.
+- [`SurvivalPoints_Leaders.md`](../../../../../../assets-source/ReadyToUseSkins/SurvivalPoints_Leaders.md) — черновой лор-документ с характеристиками лидеров.
 
 **Визуальная проверка скинов в игре ещё не выполнена** — подтверждены только размеры 64×64 и то, что файлы на месте. Скины **скопированы** в `src/main/resources/assets/survivalpoints/textures/entity/skin/` (14 PNG) и **используются** в коде: таблица `SurvivorSkin.VARIANTS` сопоставляет индекс скина с текстурой, полом и типом тела, а рендерер получает текстуру через `SurvivorSkin.textureFor(entity.getSkinIndex())`.
 
@@ -256,7 +256,7 @@ com.phian404.survivalpoints
 - [`TESTING.md`](../../../../../../.roo/plans/Testing/TESTING.md) — проверки и критерии приёмки.
 - [`CREATIVE_TAB_PLAN.md`](../../../../../../.roo/plans/Items/CREATIVE_TAB_PLAN.md) — вкладка креатива и яйца призыва.
 - [`CAMP_IDEAS.md`](../../../../../../.roo/plans/Camp/CAMP_IDEAS.md) — банк идей по лагерям; не является утверждённым планом реализации.
-- [`SurvivalPoints_Leaders.md`](../../../../../../ReadyToUseSkins/SurvivalPoints_Leaders.md) — черновой лор лидеров фракций (Martha Hill, Sam Walker, Mike Carter, Cole Reed); скины — в [`ReadyToUseSkins/`](../../../../../../ReadyToUseSkins/).
+- [`SurvivalPoints_Leaders.md`](../../../../../../assets-source/ReadyToUseSkins/SurvivalPoints_Leaders.md) — черновой лор лидеров фракций (Martha Hill, Sam Walker, Mike Carter, Cole Reed); скины — в [`assets-source/ReadyToUseSkins/`](../../../../../../assets-source/ReadyToUseSkins/).
 
 Если документы противоречат друг другу, не выбирать вариант молча. Указать противоречие и попросить владельца определить приоритетный источник. Не считать идею утверждённым решением, пока владелец явно её не подтвердил.
 
