@@ -197,12 +197,15 @@ com.phian404.survivalpoints
 
 ### Текущий приоритет
 
-**Документационная реорганизация завершена.** Реворк стража завершён **частично** — состояние шагов сверять с [`GUARDIAN_REWORK_PLAN.md`](../../../../../../.roo/plans/Combat/GUARDIAN_REWORK_PLAN.md):
+**Документационная реорганизация завершена.** Реворк стража завершён **частично** — состояние шагов сверять с [`GUARDIAN_REWORK_PLAN.md`](../../../../../../.roo/plans/Combat/GUARDIAN_REWORK_PLAN.md). Статусы сверены с кодом:
 
+- ✅ R0.1 — голы как источник истины, боевой автомат удалён. Развилка `GuardianState` решена владельцем (вариант A) — [`GUARDIAN_STATE_DECISION.md`](../../../../../../.roo/plans/Combat/GUARDIAN_STATE_DECISION.md): боевое поведение — прерогатива голов (`GoalSelector`); `GuardianState`/`DATA_AI_STATE` — только диагностический кэш для `/sp_guard`; лагерные состояния волны 3 — данные лагеря (`CampRecord`/`CampPost`) + отдельные голы, `GuardianState` ими **не расширяем**; рендер позы арбалета — по предмету в руке, ориентация тела/головы — по синхро-флагу `DATA_FACING_TARGET`;
 - ✅ R0.3 — ближний бой на ванильном `MeleeAttackGoal`;
 - ✅ R0.4 — еда: флаг `eating` не сериализуется, сторож состояния (`eatPulse`), прерывание еды по цели и урону;
-- ⚠️ R0.0 и R0.2 — частично (`requiresUpdateEveryTick` не у всех голов; самописная физика под флагом `CUSTOM_MOVE`);
-- ⬜ R0.1 — **разблокирован, не начат**: развилка `GuardianState` решена владельцем (вариант A) — [`GUARDIAN_STATE_DECISION.md`](../../../../../../.roo/plans/Combat/GUARDIAN_STATE_DECISION.md). Боевой автомат `GuardianState`/`updateAIState()` удаляется; боевое поведение — прерогатива голов (`GoalSelector`); лагерные состояния волны 3 — данные лагеря (`CampRecord`/`CampPost`) + отдельные голы, `GuardianState` ими **не расширяем**; `DATA_AI_STATE` остаётся только серверным диагностическим кэшем для `/sp_guard` (клиент его не читает; рендер позы арбалета — по предмету в руке + `isCharging()`, ориентация тела/головы — по синхро-флагу `DATA_FACING_TARGET`).
+- ✅ Пункт 7 — недостижимая цель: сброс по `noLineOfSightTicks`, память `unreachableTargets`, снятие метки, когда враг снова досягаем; зов на помощь требует видимости угрозы;
+- ⚠️ **R0.0 — 2 из 4**: `requiresUpdateEveryTick()` есть у меч-гола и гола еды, **нет** у `GuardianRangedAttackGoal` и `GuardianRetreatGoal` ⇒ стрельба и отход тикают на 10 Гц вместо 20;
+- ❌ **R0.2 — не выполнен**: [флаг `CUSTOM_MOVE` включён по умолчанию](../../../../../../src/main/java/com/phian404/survivalpoints/init/GuardianFeatureFlags.java:77), поэтому самописная [`moveDirectly()`](../../../../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1309) активна и перезаписывает `setDeltaMovement` — риск «зависания в воздухе» не устранён. Мёртвый код: `moveAlongPath()`, `stopHorizontalMovement()`;
+- ⚠️ **R0.5 — 1 из 3**: порядок регистрации голов закомментирован; `RandomStrollGoal` не заменён на `WaterAvoidingRandomStrollGoal`; флаг `MOVE` по-прежнему у четырёх голов (К2).
 
 **Волна 2 «лагерь как место» не начата:** `CampGenerator` — пустая заглушка, блоки лагеря отсутствуют. Разбивка — [`WAVE2_PLAN.md`](../../../../../../.roo/plans/Camp/WAVE2_PLAN.md).
 

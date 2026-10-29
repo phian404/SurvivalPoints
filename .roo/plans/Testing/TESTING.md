@@ -155,10 +155,18 @@
 Флага `CUSTOM_SWING` в [`GuardianFeatureFlags`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianFeatureFlags.java)
 нет: кастомная анимация взмаха удалена вместе с заменой ближнего боя на ванильный.
 
-**Статус R0.0 (сверено с кодом):** `requiresUpdateEveryTick()` переопределён у
-`GuardianMeleeAttackGoal` и `GuardianEatBreadGoal`; у `GuardianRangedAttackGoal` и
-`GuardianRetreatGoal` переопределения **нет**. Проверки R1–R2 относятся к этим двум голам
-и остаются в силе как открытая задача.
+**Статус R0.0 (сверено с кодом, повторно):** `requiresUpdateEveryTick()` переопределён у
+[`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:117) и
+[`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:129); у
+[`GuardianRangedAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRangedAttackGoal.java:1) и
+[`GuardianRetreatGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java:1) переопределения **нет**.
+**Это 2 из 4 — задача открыта.** Проверки R1–R2 относятся именно к этим двум голам.
+
+**Статус R0.2 (сверено с кодом, повторно):** **не выполнен.** Флаг `CUSTOM_MOVE`
+[включён по умолчанию](../../../src/main/java/com/phian404/survivalpoints/init/GuardianFeatureFlags.java:77)
+(`DISABLED` пуст), поэтому [`moveDirectly()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1309)
+активна и перезаписывает `setDeltaMovement`. Проверка R5 («нет зависания») остаётся
+ключевой: пока флаг включён, причина не устранена.
 
 ### 5.2 Что проверяем в R0.0
 
