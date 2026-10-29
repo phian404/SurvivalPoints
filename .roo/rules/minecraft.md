@@ -4,16 +4,27 @@
 
 - Project: SurvivalPoints (Forge 1.20.1, Java 17).
 - Key File: `SurvivalPointsMod.java` (Main class / Registration).
-- Project vision: `../../PROJECT_VISION.md`.
-- Current project context: `../../AI_CONTEXT.md`.
-- Project roadmap: `../../ROADMAP.md`.
-- Task plans: `../plans/`.
+- Project vision: `.roo/plans/Architecture/PROJECT_VISION.md`.
+- Current project context: `src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md`.
+- Project roadmap: `.roo/plans/Roadmap/ROADMAP.md` (canonical wave order and priorities).
+- NPC architecture (canonical, implemented): `.roo/plans/Entities/plan.md`.
+- NPC and camp simulation target model: `.roo/plans/Entities/NPC_CAMP_SIMULATION_DESIGN.md`.
+- Task plans: `.roo/plans/` (тематические подпапки: `Camp/`, `Entities/`, `Combat/`, `Items/`, `Roadmap/`, `Architecture/`, `Testing/`).
+- Documentation entry point: `.roo/plans/README.md` (выбирай один нужный документ по типу задачи; не читай все файлы подряд).
+- Ready-to-use NPC skins: `ReadyToUseSkins/` (14 скинов обычных NPC в `BasicNPCs/`, 4 скина лидеров в `Leaders/`, лор лидеров — `ReadyToUseSkins/SurvivalPoints_Leaders.md`).
 
 Before planning or implementing a task, check the relevant project documentation and existing plans. Do not assume a planned feature is already implemented; verify the source code.
 
-## Strict API Rules
+## Response Style
 
 1. Be concise. No apologies.
-2. **MCP Usage:** Before implementing or recommending an unfamiliar Minecraft/Forge API, verify it using the `minecraft-modding` MCP server (`inspect-minecraft` or `analyze-symbol`) when available. Never guess API signatures.
-3. **Version Lock:** Use only APIs compatible with Minecraft Forge 1.20.1. Never use methods or classes introduced in Minecraft 1.21+.
-4. If the required MCP tools are unavailable, state the limitation instead of pretending verification succeeded.
+
+## API Version Lock
+
+1. Use only APIs compatible with Minecraft Forge 1.20.1. Never use methods or classes introduced in Minecraft 1.21+.
+
+## Verification Policy
+
+1. **Vanilla Minecraft API:** before implementing or recommending an unfamiliar vanilla API, verify it using the `minecraft-modding` MCP server (`inspect-minecraft` or `analyze-symbol`) when available.
+2. **Forge API:** the `minecraft-modding` MCP server does not index Forge classes. Verify Forge signatures against the Forge sources in the Gradle cache instead.
+3. Never guess API signatures. If neither source can be checked, state the limitation explicitly instead of pretending verification succeeded.

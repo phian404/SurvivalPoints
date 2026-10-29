@@ -2,11 +2,13 @@
 
 > Краткий рабочий контекст для AI-помощника и разработчика. Здесь находятся технические ограничения, архитектурные ориентиры, правила работы и зафиксированное состояние проекта.
 >
-> **Концепция и цели:** [`PROJECT_VISION.md`](../../PROJECT_VISION.md)  
-> **Общий план:** [`ROADMAP.md`](../../ROADMAP.md)  
-> **Техническое ТЗ лагерей:** [`DESIGN_CAMP_SYSTEM.md`](../../DESIGN_CAMP_SYSTEM.md)  
-> **Репутация, торговля и социальные механики:** [`DESIGN_CAMP_SOCIAL.md`](../../DESIGN_CAMP_SOCIAL.md)  
-> **Проверки и приёмка:** [`TESTING.md`](../../TESTING.md)
+> **Концепция и цели:** [`PROJECT_VISION.md`](../../../../../../.roo/plans/Architecture/PROJECT_VISION.md)
+> **Общий план:** [`ROADMAP.md`](../../../../../../.roo/plans/Roadmap/ROADMAP.md)
+> **Архитектура NPC (канон):** [`plan.md`](../../../../../../.roo/plans/Entities/plan.md)
+> **Техническое ТЗ лагерей:** [`DESIGN_CAMP_SYSTEM.md`](../../../../../../.roo/plans/Camp/DESIGN_CAMP_SYSTEM.md)
+> **Репутация, торговля и социальные механики:** [`DESIGN_CAMP_SOCIAL.md`](../../../../../../.roo/plans/Camp/DESIGN_CAMP_SOCIAL.md)
+> **Модель NPC, навыки и симуляция:** [`NPC_CAMP_SIMULATION_DESIGN.md`](../../../../../../.roo/plans/Entities/NPC_CAMP_SIMULATION_DESIGN.md)
+> **Проверки и приёмка:** [`TESTING.md`](../../../../../../.roo/plans/Testing/TESTING.md)
 
 ---
 
@@ -77,24 +79,40 @@ gradlew.bat runClient
 ```text
 com.phian404.survivalpoints
 ├── SurvivalPointsMod.java       — точка входа мода
+├── ModConstants.java            — общие константы
+├── ModModelLayers.java          — слои моделей
 ├── entity/
-│   ├── BaseGuardianEntity.java  — базовая сущность стража
-│   └── ai/                      — цели ИИ стража
-├── camp/                        — данные и менеджер лагерей
+│   ├── BaseSurvivorEntity.java  — общая база NPC: identityId, роль, скин, camp/post
+│   ├── BaseSurvivorNpcEntity.java — мирный NPC (CIVILIAN)
+│   ├── BaseGuardianEntity.java  — страж (GUARDIAN)
+│   ├── GuardianMoveControl.java — управление движением стража
+│   ├── ai/                      — цели ИИ стража
+│   └── role/
+│       ├── SurvivorRole.java    — enum CIVILIAN / GUARDIAN
+│       └── RoleAssignmentService.java — создание и смена роли
+├── camp/                        — данные, генерация и блоки лагеря
 │   ├── CampTuning.java          — параметры и ограничения лагерей
 │   ├── CampRecord.java          — состояние отдельного лагеря
 │   ├── CampPost.java            — данные поста
 │   ├── CampRelation.java        — отношения между лагерями
 │   ├── CampSavedData.java       — сохранённые данные измерения
-│   └── CampManager.java         — создание, поиск и тик лагерей
+│   ├── CampManager.java         — создание, поиск и тик лагерей
+│   ├── CampBlueprintParser.java — разбор ASCII-блюпринтов
+│   ├── CampGenerator.java       — размещение блоков лагеря
+│   ├── block/CampRadioBlock.java
+│   └── blockentity/CampRadioBlockEntity.java
 ├── client/
-│   ├── ModEntityRenderers.java  — рендерер и модель стража
+│   ├── ModEntityRenderers.java  — рендерер NPC и стража, выбор скина
+│   ├── SurvivorBodyModel.java   — геометрия тела с выступом торса, слой брони
 │   └── CustomWeaponLayer.java   — слой отображения оружия
 └── init/
     ├── GuardianTuning.java      — настройки поведения стража
-    ├── ModEntities.java         — регистрация типов сущностей
+    ├── GuardianFeatureFlags.java — флаги механик стража
+    ├── ModEntities.java         — типы сущностей и яйца призыва
+    ├── ModBlocks.java           — блоки, предметы блоков, блок-сущности
+    ├── ModCreativeTabs.java     — творческая вкладка
     ├── ModEntityEvents.java     — серверные события
-    ├── ModEventBusEvents.java  — модовые события
+    ├── ModEventBusEvents.java   — модовые события (атрибуты)
     ├── GuardDebugCommand.java   — команда /sp_guard
     └── CampDebugCommand.java    — команда /sp_camp
 ```
@@ -120,7 +138,7 @@ com.phian404.survivalpoints
 - диагностика поведения и производительности;
 - система занятого рубежа, сохраняемая в NBT.
 
-Подробная история прежних исправлений не должна превращать каждый новый запрос в повод для нового рефакторинга. Перед изменением ИИ сначала сверить фактический код, текущую задачу и [`GUARDIAN_REWORK_PLAN.md`](../../GUARDIAN_REWORK_PLAN.md).
+Подробная история прежних исправлений не должна превращать каждый новый запрос в повод для нового рефакторинга. Перед изменением ИИ сначала сверить фактический код, текущую задачу и [`GUARDIAN_REWORK_PLAN.md`](../../../../../../.roo/plans/Combat/GUARDIAN_REWORK_PLAN.md).
 
 ### Система лагерей
 
@@ -134,11 +152,52 @@ com.phian404.survivalpoints
 - `CampManager`;
 - диагностическая команда `/sp_camp`.
 
-На момент последнего описания посты виртуальные; физические блоки и размещение лагеря относятся к последующим этапам. Перед продолжением сверить код и актуальные планы — статус этапов мог измениться.
+Посты пока виртуальные. Физическая часть начата: реализованы
+`CampRadioBlock` + `CampRadioBlockEntity` (якорь лагеря, зарегистрированы в `ModBlocks`),
+а также `CampBlueprintParser` и `CampGenerator`. Остальные блоки лагеря
+(забор, ворота, вышка, склад, ловушки) отсутствуют. Перед продолжением сверить код
+и [`WAVE2_PLAN.md`](../../../../../../.roo/plans/Camp/WAVE2_PLAN.md).
+
+### NPC и роли
+
+Реализована общая база NPC (см. [`plan.md`](../../../../../../.roo/plans/Entities/plan.md)):
+
+- `BaseSurvivorEntity` — identity UUID, роль, индекс скина, пол, рост, необязательные camp/post UUID, NBT;
+- `BaseSurvivorNpcEntity` — мирный NPC, назначение роли стражa кликом арбалетом;
+- `BaseGuardianEntity` — страж, полный боевой AI;
+- `SurvivorRole` (`CIVILIAN`/`GUARDIAN`), `RoleAssignmentService` — единая точка смены роли;
+- два `EntityType` и два яйца призыва, общий рендерер с выбором текстуры по индексу скина;
+- имя NPC — постоянное: `ensureName()` назначает его один раз из `SurvivorNames` по полу и хранит в ванильном `CustomName`; см. [`npc-names-plan.md`](../../../../../../.roo/plans/Entities/npc-names-plan.md).
+
+### Геометрия торса и броня (этап 3 — реализовано)
+
+- [`SurvivorBodyModel`](../../../../../../src/main/java/com/phian404/survivalpoints/client/SurvivorBodyModel.java) — базовая модель обоих NPC. Меш строится из `PlayerModel.createMesh(CubeDeformation.NONE, slim)`, поэтому SLIM/WIDE-разница рук сохранена.
+- К телу добавлены четыре child-сегмента `chest_seg0..3` (`body`): два слева, два справа, встык по центру, и два капа нижней грани `chest_under0..1`. Параметры формы (`width`, `height`, `depth`, `offsetY`, `offsetZ`, `offsetXL`, `offsetXR`, `tiltL`, `tiltR`) — константы в [`SurvivorChestTuning`](../../../../../../src/main/java/com/phian404/survivalpoints/client/SurvivorChestTuning.java); команда `/spdebug chest` удалена, значения не меняются в рантайме.
+- UV: `texOffs` сдвигается на `width` за сегмент (`u = 20 + i*width - depth`), поэтому грани `NORTH` четырёх кубов образуют непрерывную развёртку передней грани `body` (`u 20..28`) — стыки невидимы, цвет совпадает с торсом на любом скине. Верхняя грань `DOWN` отключена: её UV попадает в строку воротника и давал горизонтальные полосы. Нижняя грань рисуется капами `chest_under0..1` со своим `texOffs` (слоты `u 20..24`/`24..28`, `v 24..27` при `depth=3.0`). `texScale` для гашения полос в 1.20.1 не годится — перегрузка `addBox` с `texScale` не принимает фильтр граней, а сам масштаб участвует в делении внутри `ModelPart.Polygon`. PNG не правятся.
+- Модель строится один раз при регистрации рендерера; пересборка по `revision()` удалена вместе с командой.
+- Выступ виден только при `SurvivorGender.FEMALE` и скрывается, когда в `EquipmentSlot.CHEST` лежит `ArmorItem`.
+- Броня отображается через ванильный `HumanoidArmorLayer` (`PLAYER_INNER_ARMOR`/`PLAYER_OUTER_ARMOR` + `context.getModelManager()`), добавленный в оба рендерера **до** `CustomWeaponLayer`. Один слой покрывает оба пола: ваниль использует один `LayerDefinition` для SLIM и WIDE брони.
+- Слои моделей — `ModModelLayers.SURVIVOR_BODY` / `SURVIVOR_BODY_SLIM`, регистрируются в `EntityRenderersEvent.RegisterLayerDefinitions`.
+
+Модель понятий (тип сущности, профессия, навыки, назначение, лидерство) описана в
+[`NPC_CAMP_SIMULATION_DESIGN.md`](../../../../../../.roo/plans/Entities/NPC_CAMP_SIMULATION_DESIGN.md) §1.1.
+Профессии и лидерство пока **не реализованы** в коде.
+
+### Готовые материалы NPC (скины)
+
+В корне проекта лежит папка [`ReadyToUseSkins/`](../../../../../../ReadyToUseSkins/) с готовыми скинами NPC (64×64, стандартный формат скина Minecraft):
+
+- `BasicNPCs/` — **14 скинов** обычных NPC (Carpenter, Cook, Farm×2, Farmer, Guard, Hunter, Mechanic×2, Medic, Ranger, Scavenger, Settler, Trader);
+- `Leaders/` — **4 скина** лидеров (Martha Hill, Sam Walker, Mike Carter, Cole Reed);
+- [`SurvivalPoints_Leaders.md`](../../../../../../ReadyToUseSkins/SurvivalPoints_Leaders.md) — черновой лор-документ с характеристиками лидеров.
+
+**Визуальная проверка скинов ещё не выполнена** — подтверждены только размеры 64×64, содержимое не проверялось. Скины **не скопированы** в `src/main/resources` и в коде не используются (рендерер пока берёт ванильные текстуры игрока).
+
+**Известное расхождение:** файл `Leader_Martha_Hil_female_0.png` назван с усечением (`Hil` вместо `Hill`) — персонаж в лоре называется Martha Hill. Файл не переименовывается; при будущей интеграции использовать корректное имя персонажа.
 
 ### Текущий приоритет
 
-**Выполнять текущую задачу владельца — работу над тетивой.** Не переключаться самовольно на лагеря, фракции, аддоны или новый реворк стража. Не начинать крупный рефакторинг и не расширять объём задачи без явного согласования с владельцем.
+**Текущая задача владельца — документационная реорганизация.** Реворк стража завершён, тетива починена. Не переключаться самовольно на лагеря, фракции, аддоны или новый реворк стража. Не начинать крупный рефакторинг и не расширять объём задачи без явного согласования с владельцем.
 
 Документы с будущими идеями описывают направление проекта, но сами по себе не являются разрешением начинать реализацию. Если задача или приоритет неясны, задать один короткий уточняющий вопрос.
 
@@ -151,7 +210,7 @@ com.phian404.survivalpoints
 - `/sp_camp` — диагностика системы лагерей.
 - `/sp_perf` и связанные режимы — диагностика производительности, если они присутствуют в текущей версии исходников.
 - Основной лог клиента: `run/logs/latest.log`.
-- Формат и обязательные проверки этапов описаны в [`TESTING.md`](../../TESTING.md).
+- Формат и обязательные проверки этапов описаны в [`TESTING.md`](../../../../../../.roo/plans/Testing/TESTING.md).
 
 Команды и состав диагностики могут измениться; сверять их с исходниками перед использованием.
 
@@ -183,13 +242,21 @@ com.phian404.survivalpoints
 
 ## 7. Документы проекта
 
-- [`PROJECT_VISION.md`](../../PROJECT_VISION.md) — общая концепция и долгосрочные цели.
-- [`ROADMAP.md`](../../ROADMAP.md) — порядок этапов, приоритеты, зависимости и риски.
-- [`DESIGN_CAMP_SYSTEM.md`](../../DESIGN_CAMP_SYSTEM.md) — техническое устройство лагерей.
-- [`DESIGN_CAMP_SOCIAL.md`](../../DESIGN_CAMP_SOCIAL.md) — репутация, торговля, глава, задания и социальные механики.
-- [`GUARDIAN_REWORK_PLAN.md`](../../GUARDIAN_REWORK_PLAN.md) — план реворка ИИ стража.
-- [`TESTING.md`](../../TESTING.md) — проверки и критерии приёмки.
-- `CAMP_IDEAS.md` — банк идей по лагерям; не является утверждённым планом реализации.
+Все проектные документы находятся в `.roo/plans/`.
+
+- [`PROJECT_VISION.md`](../../../../../../.roo/plans/Architecture/PROJECT_VISION.md) — общая концепция и долгосрочные цели.
+- [`ROADMAP.md`](../../../../../../.roo/plans/Roadmap/ROADMAP.md) — **канон** порядка волн и приоритетов.
+- [`plan.md`](../../../../../../.roo/plans/Entities/plan.md) — **канон** архитектуры NPC и смены роли.
+- [`DESIGN_CAMP_SYSTEM.md`](../../../../../../.roo/plans/Camp/DESIGN_CAMP_SYSTEM.md) — техническое устройство лагерей.
+- [`DESIGN_CAMP_SOCIAL.md`](../../../../../../.roo/plans/Camp/DESIGN_CAMP_SOCIAL.md) — репутация, торговля, глава, задания и социальные механики.
+- [`NPC_CAMP_SIMULATION_DESIGN.md`](../../../../../../.roo/plans/Entities/NPC_CAMP_SIMULATION_DESIGN.md) — модель NPC, навыки 0–10, симуляция лагерей.
+- [`RADIO_TOWER_DETAIL.md`](../../../../../../.roo/plans/Camp/RADIO_TOWER_DETAIL.md) — детали радио-вышки.
+- [`WAVE2_PLAN.md`](../../../../../../.roo/plans/Camp/WAVE2_PLAN.md) — план волны 2.
+- [`GUARDIAN_REWORK_PLAN.md`](../../../../../../.roo/plans/Combat/GUARDIAN_REWORK_PLAN.md) — план реворка ИИ стража.
+- [`TESTING.md`](../../../../../../.roo/plans/Testing/TESTING.md) — проверки и критерии приёмки.
+- [`CREATIVE_TAB_PLAN.md`](../../../../../../.roo/plans/Items/CREATIVE_TAB_PLAN.md) — вкладка креатива и яйца призыва.
+- [`CAMP_IDEAS.md`](../../../../../../.roo/plans/Camp/CAMP_IDEAS.md) — банк идей по лагерям; не является утверждённым планом реализации.
+- [`SurvivalPoints_Leaders.md`](../../../../../../ReadyToUseSkins/SurvivalPoints_Leaders.md) — черновой лор лидеров фракций (Martha Hill, Sam Walker, Mike Carter, Cole Reed); скины — в [`ReadyToUseSkins/`](../../../../../../ReadyToUseSkins/).
 
 Если документы противоречат друг другу, не выбирать вариант молча. Указать противоречие и попросить владельца определить приоритетный источник. Не считать идею утверждённым решением, пока владелец явно её не подтвердил.
 

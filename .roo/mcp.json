@@ -1,0 +1,60 @@
+{
+	"mcpServers": {
+		"minecraft-modding": {
+			"type": "stdio",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npx",
+				"-y",
+				"@adhisang/minecraft-modding-mcp"
+			],
+			"alwaysAllow": [
+				"batch-class-members",
+				"get-class-members",
+				"search-class-source",
+				"check-symbol-exists",
+				"inspect-minecraft",
+				"get-class-source",
+				"analyze-symbol",
+				"batch-symbol-exists",
+				"analyze-mod"
+			],
+			"disabledTools": [
+				"compare-minecraft",
+				"validate-project",
+				"verify-mixin-target",
+				"batch-class-source",
+				"batch-mappings",
+				"resolve-artifact",
+				"find-class",
+				"get-artifact-file",
+				"list-artifact-files",
+				"trace-symbol-lifecycle",
+				"diff-class-signatures",
+				"resolve-method-mapping-exact",
+				"get-class-api-matrix",
+				"resolve-workspace-symbol",
+				"nbt-to-json",
+				"nbt-apply-json-patch",
+				"json-to-nbt",
+				"index-artifact",
+				"get-runtime-metrics",
+				"validate-mixin",
+				"validate-access-widener",
+				"validate-access-transformer",
+				"analyze-mod-jar",
+				"get-registry-data",
+				"compare-versions",
+				"remap-mod-jar",
+				"list-versions",
+				"manage-cache",
+				"find-mapping",
+				"decompile-mod-jar",
+				"get-mod-class-source",
+				"search-mod-source"
+			],
+			"disabled": false
+		}
+	}
+}
