@@ -218,6 +218,22 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
     private int breadCooldown = 0;
     private boolean eating = false;
 
+    /**
+     * Сколько тиков осталось «пульсу» еды.
+     *
+     * <p>Флаг {@code eating} верен, только пока активен гол еды. Гол каждый
+     * свой тик продлевает пульс ({@link #pulseEating()}). Если подтверждения
+     * нет дольше {@link GuardianTuning#EAT_PULSE_TIMEOUT_TICKS} тиков — флаг
+     * гаснет сам, и страж возвращается к оружию.
+     *
+     * <p>Без этого флаг залипал навсегда: {@code GuardianEatBreadGoal.canUse()}
+     * требует {@code !isEating()}, значит гол больше не запускался, а
+     * {@code stop()} — единственное место сброса — уже не вызывался.
+     * Именно это наблюдалось как «страж застыл с хлебом в руках и не
+     * реагирует на врагов».
+     */
+    private int eatPulse = 0;
+
     // ==================== Статистика стрельбы (диагностика) ====================
 
     /** Сколько стрел выстрелено. */
@@ -636,6 +652,20 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         if (this.swingSoundCooldown > 0) this.swingSoundCooldown--;
         if (this.breadCooldown > 0) this.breadCooldown--;
         if (this.damageStunTicks > 0) this.damageStunTicks--;
+
+        // Сторож флага еды: гол еды обязан каждый тик продлевать пульс
+        // (pulseEating). Если подтверждения нет — флаг гаснет сам. Срабатывает,
+        // когда гол был оборван без stop(): выгрузка чанка, выход игрока из
+        // мира, перезагрузка. Экипировку поправит общий syncEquipmentToState()
+        // ниже в tick() — состояние к этому моменту уже пересчитано.
+        if (this.eating) {
+            if (this.eatPulse > 0) {
+                this.eatPulse--;
+            } else {
+                this.setEating(false);
+                GuardianTrace.event(this, "watchdog: флаг еды снят (гол еды не подтверждает)");
+            }
+        }
 
 
         if (this.rallyTimer > 0) {
@@ -1378,6 +1408,20 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
 
     public void setEating(boolean eating) {
         this.eating = eating;
+        this.eatPulse = eating ? GuardianTuning.EAT_PULSE_TIMEOUT_TICKS : 0;
+    }
+
+    /**
+     * Продлить «пульс» еды на этот тик.
+     *
+     * <p>Вызывается голом еды каждый его тик. Пока гол тикает — флаг еды
+     * живёт; как только тики прекратились (гол остановлен, сущность выгружена
+     * или мир перезагружен), пульс истекает и состояние еды снимает сторож в
+     * {@link #tickCountdowns()}.
+     */
+    public void pulseEating() {
+        this.eating = true;
+        this.eatPulse = GuardianTuning.EAT_PULSE_TIMEOUT_TICKS;
     }
 
     public int getBreadCooldown() {
@@ -1445,7 +1489,10 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         tag.putInt("CrossbowCharge", this.crossbowChargeTime);
         tag.putInt("HelpScreamCooldown", this.helpScreamCooldown);
         tag.putInt("BreadCooldown", this.breadCooldown);
-        tag.putBoolean("Eating", this.eating);
+        // «Еда» намеренно НЕ сохраняется: состояние голов не сериализуется,
+        // поэтому после загрузки активного гола еды нет. Восстановленный флаг
+        // означал бы «навсегда застыл с хлебом». Гол запустится заново сам,
+        // если здоровье всё ещё ниже порога.
         tag.putInt("RallyTimer", this.rallyTimer);
         tag.putBoolean("Standoff", this.standoffReached);
         if (this.standoffAnchor != null) {
@@ -1473,7 +1520,6 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         this.crossbowChargeTime = tag.getInt("CrossbowCharge");
         this.helpScreamCooldown = tag.getInt("HelpScreamCooldown");
         this.breadCooldown = tag.getInt("BreadCooldown");
-        this.eating = tag.getBoolean("Eating");
         this.rallyTimer = tag.getInt("RallyTimer");
         this.standoffReached = tag.getBoolean("Standoff");
         if (tag.getBoolean("HasStandoffAnchor")) {

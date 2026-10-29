@@ -10,7 +10,7 @@
 | R0.1 — удалить автомат состояний | ⬜ не начат | `GuardianState`, `DATA_AI_STATE`, `CombatState`, `updateAIState()` присутствуют и используются |
 | R0.2 — движение на ванили | ⚠️ частично | `GuardianMoveControl.strafeWithSpeed` есть и применяется; `moveDirectly`/`setDeltaMovement` остались под флагом `CUSTOM_MOVE` |
 | R0.3 — ближний бой на ванильном `MeleeAttackGoal` | ✅ выполнен | [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:31) наследует ванильный гол; кастомная анимация взмаха удалена |
-| R0.4 — еда: уступка угрозе + watchdog | ⬜ не начат | `canUse()` требует `getTarget() == null`, проверки «рядом нет монстров» нет; watchdog-таймаута нет |
+| R0.4 — еда: уступка угрозе + watchdog | ⚠️ частично | Сделано: флаг `eating` не сериализуется; watchdog-пульс (`EAT_PULSE_TIMEOUT_TICKS`) в [`tickCountdowns()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:648); `canContinueToUse()` рвёт еду по цели **и** по `damageStunTicks > 0` ([`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:106)). Осталось: `canUse()` проверяет только `getTarget() == null` (скана «монстр рядом» нет); ранний выход `syncEquipmentToState()` по `isEating()` сохранён — оба пункта ждут R0.1 (см. R0.4) |
 | R0.5 — порядок голов, `WaterAvoidingRandomStrollGoal` | ⬜ не начат | используется `RandomStrollGoal` |
 | R0.6 — замеры и приёмка | ⬜ не начат | — |
 
@@ -89,8 +89,39 @@ if (this.isEating()) {
 
 Пока цель не появилась — страж ест (1–2 с), стоит как вкопанный и получает урон. Это и есть наблюдаемое поведение.
 
-**1.3. Флаг `eating` не имеет watchdog'а (латентный баг).**
-`setEating(false)` вызывается **только** в `stop()` гола. По F4 `stop()` вызывается, только если гол `isRunning`. Если сущность перестала тикать между `start()` и cleanup-фазой (смерть/выгрузка/перезагрузка в момент еды), `isRunning` остаётся `true`, `eating` — `true`, а `GuardianEatBreadGoal.canUse()` требует `!isEating()` ⇒ **гол больше никогда не запустится ⇒ `stop()` больше никогда не вызовется ⇒ `eating` останется `true` навсегда**. Состояние навсегда `IDLE`, оружие навсегда не выдаётся, цель игнорируется. Это **ровно** «стоит с хлебом как вкопанный».
+**1.3. Флаг `eating` не имеет watchdog'а и переживает перезагрузку мира (латентный баг).**
+
+*Общий механизм.* `setEating(false)` вызывается **только** в `stop()` гола. По F4 `stop()` вызывается, только если гол `isRunning`. Если сущность перестала тикать между `start()` и cleanup-фазой, `stop()` не придёт, а `GuardianEatBreadGoal.canUse()` требует `!isEating()` ⇒ **гол больше никогда не запустится ⇒ `stop()` больше никогда не вызовется ⇒ `eating` останется `true` навсегда**. Состояние навсегда `IDLE`, оружие навсегда не выдаётся, цель игнорируется. Это **ровно** «стоит с хлебом как вкопанный».
+
+*Сценарий «вышел из мира во время еды» (подтверждён кодом; наблюдался владельцем).* Здесь работает второй слой — **сериализация**:
+
+1. `eating` — поле сущности; пишется в NBT в [`addAdditionalSaveData()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1448) (`tag.putBoolean("Eating", ...)`) и читается в [`readAdditionalSaveData()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1476).
+2. Таймеры гола `eatTimer`/`duration` живут **только в экземпляре гола** и **не сохраняются**. `GoalSelector` — не сериализуемое состояние: после загрузки голы пересоздаются «холодными».
+3. Выход из мира = выгрузка сущности: `stop()` гола **не вызывается** (гола никто не останавливал), значит `eating = true` уходит в сейв.
+4. При загрузке `eating = true` восстанавливается, но **активного гола еды нет** и `stop()` для него уже не случится. Watchdog'а нет ⇒ переходим в состояние «навсегда».
+
+*Итоговая цепочка отказа — почему внешне «застывает с хлебом и не реагирует на врагов»:*
+
+- [`GuardianEatBreadGoal.canUse()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:43) требует `!isEating()` ⇒ гол еды мёртв **навсегда**;
+- [`updateAIState()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:405) при `isEating()` каждый тик форсирует `GuardianState.IDLE`;
+- [`GuardianRangedAttackGoal.canUse()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRangedAttackGoal.java:51) и [`GuardianMeleeAttackGoal.canUse()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:49) требуют `RANGED`/`MELEE` ⇒ **в бой не вступают**;
+- [`syncEquipmentToState()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:461) выходит рано по `isEating()` ⇒ оружие не выдаётся, **в руке остаётся хлеб**;
+- [`GuardianModel.setupAnim()`](../../../src/main/java/com/phian404/survivalpoints/client/ModEntityRenderers.java:279) при `currentEating` ставит руки в нейтральную позу ⇒ хлеб визуально в руке;
+- `updateAIState()` из-за раннего выхода не доходит до `resetStandoff()` — рубеж/цель остаются в несогласованном состоянии.
+
+*Смежное.* [`onLivingHurt()`](../../../src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java:88) ставит цель только при источнике-существе; при прочих источниках урона еда не прерывается — см. 1.2.
+
+**Варианты фикса (код не трогаем до решения владельца)**
+
+| # | Вариант | Что делаем | Объём | Плюсы | Минусы |
+|---|---------|-----------|-------|-------|--------|
+| A | **Минимальный** | (1) не восстанавливать `eating` из NBT (или восстанавливать как «гол еды не активен»); (2) watchdog в [`BaseGuardianEntity.tick()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:483): если `isEating()`, но `GuardianEatBreadGoal` не в `goalSelector.getRunningGoals()` — `setEating(false)` + `syncEquipmentToState()`; (3) прерывать еду при уроне и при появлении цели | ~15–25 строк | Точечно закрывает и «вышел из мира», и «залипший флаг»; не затрагивает автомат состояний | Оставляет 1.1/1.2/1.4 (еда vs угроза, задержка в 1 тик) |
+| B | **В рамках R0.4** (штатный) | Всё из A + гол еды уступает угрозе: `canContinueToUse()` прерывается при `damageStunTicks > 0` или появлении цели; watchdog по таймауту `duration + 40` | ~40–60 строк | Лечит пункт 1 владельца целиком | Опирается на активный гол еды; зависит от F10 (`requiresUpdateEveryTick`) |
+| C | **Радикальный (R0.1)** | Убрать `GuardianState`/`DATA_AI_STATE`/`updateAIState()`; `eating` сделать **производным** от наличия активного гола еды (или убрать поле) | ~150–250 строк | Закрывает 1.1–1.4 и К3/К4 разом; убирает второй «мозг» | Конфликт с [`DESIGN_CAMP_SYSTEM.md`](../Camp/DESIGN_CAMP_SYSTEM.md) §5.1 (лагерные состояния); переписывает рендер позы арбалета и `/sp_guard` |
+
+Порядок: **A** (если владелец хочет снять симптом сейчас) → **B** в рамках R0.4 → решение по **C** после снятия открытого вопроса в шапке плана.
+
+**Проверка владельца (для A/B):** ранить стража, дать ему поесть, выйти из мира и вернуться — страж не должен стоять с хлебом: хлеб уходит, в руке арбалет, зомби рядом снова получает отпор.
 
 **1.4. Порядок вызовов добавляет задержку в 1 тик.**
 `updateAIState()` работает **после** `super.tick()` (то есть после тика голов). В тик, когда цель появилась, боевой гол ещё видит старое состояние `IDLE` и не стартует; состояние обновится только в следующем тике.
@@ -286,15 +317,24 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 ### R0.4 — Еда: уступка угрозе + watchdog
 
-**Файлы:** [`GuardianEatBreadGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java), [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`ModEntityEvents.java`](../../../src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java)
+**Файлы:** [`GuardianEatBreadGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java), [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianTuning.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java)
 
-- `canUse()`: нет цели **И** рядом нет монстров (переиспользовать ту же выборку, что и `GuardianTargetGoal`, без второго полного перебора).
-- `canContinueToUse()`: прервать еду, если страж получил урон (`damageStunTicks > 0`) или появилась цель.
-- **Watchdog**: `eating` гасится по таймауту (например, `duration + 40` тиков) — «залипший» флаг больше невозможен.
-- `onLivingHurt`: при уроне — сразу `setTarget(attacker)` (уже есть) **и** прервать еду.
-- `syncEquipmentToState()` больше не имеет раннего выхода по `isEating()` — оружие определяется активным боевым голом.
+**Сделано (эта сессия).** Владелец выбрал вариант B с обязательной NBT-строкой (см. 1.3). Реализовано ровно то, что снимает наблюдаемый баг «застыл с хлебом после перезахода»:
+
+1. **Флаг `eating` не сериализуется.** `tag.putBoolean("Eating", ...)` удалён из [`addAdditionalSaveData()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1494), чтение `Eating` — из [`readAdditionalSaveData()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1521). Причина: состояние голов не сериализуется, поэтому восстановленный флаг означал «активного гола нет, а `stop()` уже не придёт».
+2. **Watchdog-пульс.** Новое поле `eatPulse` + [`pulseEating()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1433), константа [`GuardianTuning.EAT_PULSE_TIMEOUT_TICKS`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java:37). Гол еды продлевает пульс каждый свой тик; в [`tickCountdowns()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:648) пульс убывает, и при нуле флаг гаснет с записью в `GuardianTrace`. Пока гол тикает — поведение не меняется; если тики оборвались без `stop()` — «залипший» флаг невозможен.
+3. **Прерывание еды угрозой.** [`canContinueToUse()`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:106) рвёт еду при появлении цели **и** при `getDamageStunTicks() > 0`. Счётчик урона выставляется в `hurt()` независимо от источника, поэтому огонь, падение и лава тоже прерывают еду — раньше это не покрывалось (см. 1.2).
+
+**Осознанно отложено до R0.1:**
+
+- `canUse()` всё ещё требует только `getTarget() == null`. Проверка «рядом нет монстров» требует переиспользования выборки `GuardianTargetGoal` — это часть К4 (устранение второго «мозга»), а не точечная правка еды.
+- Ранний выход `syncEquipmentToState()` по `isEating()` **сохранён намеренно**: сейчас `eating` достижим только при активном голе еды, а во время еды оружие трогать нельзя (иначе хлеб в руке подменялся бы арбалетом на середине анимации). Уйдёт вместе с полем `eating`, когда активный гол станет источником истины.
+- `onLivingHurt` не менялся: `setTarget(attacker)` уже есть, а прерывание еды теперь обеспечивает пункт 3 — дублировать не нужно.
+
+Строка в шапке плана помечена ⚠️ именно из-за двух отложенных пунктов.
 
 **Проверка владельца:** раненый страж **не сидит с хлебом под дождём ударов** — сразу встаёт в строй; в спокойе доедает хлеб и возвращается к арбалету.
+**Отдельная проверка регрессии:** ранить стража в тишине, дать поесть, **выйти из мира и вернуться** — страж стоит с арбалетом, а не с хлебом, и снова реагирует на зомби.
 
 ### R0.5 — Порядок, флаги, приоритеты + диагностика
 

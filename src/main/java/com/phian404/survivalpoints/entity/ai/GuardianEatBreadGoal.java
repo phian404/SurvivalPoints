@@ -58,6 +58,10 @@ public class GuardianEatBreadGoal extends Goal {
 
     @Override
     public void tick() {
+        // Продлеваем «пульс» еды: пока гол тикает, флаг еды в сущности живёт.
+        // Если тики оборвались без stop() (выгрузка, перезагрузка мира),
+        // сторож в сущности снимет флаг сам.
+        this.guardian.pulseEating();
         this.eatTimer++;
 
         // Каждые 4 тика — звук и частицы. Swing не вызываем: он запускает
@@ -97,7 +101,13 @@ public class GuardianEatBreadGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        return this.eatTimer < this.duration && this.guardian.getTarget() == null;
+        // Еду прерывают появившаяся цель и любой полученный урон:
+        // getDamageStunTicks() выставляется в hurt() и не зависит от того,
+        // было ли у источника урона существо (огонь, падение, лава — тоже).
+        // Страж не доедает хлеб под ударами, а сразу берёт оружие.
+        return this.eatTimer < this.duration
+                && this.guardian.getTarget() == null
+                && this.guardian.getDamageStunTicks() <= 0;
     }
 
     @Override
