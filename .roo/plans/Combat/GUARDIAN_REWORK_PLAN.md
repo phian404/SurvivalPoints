@@ -1,17 +1,17 @@
 # GUARDIAN_REWORK_PLAN — реворк стража
 
-Статус: **план, частично выполнен.** Сверено с рабочим деревом; шаги ниже отмечены по факту кода,
-а не по намерению.
+Статус: **план, закрыт по всем шагам.** Сверено с рабочим деревом; шаги ниже отмечены по факту кода,
+а не по намерению. Шаги R0.2 и R0.5 **отменены** решением владельца (обоснование — в таблице ниже).
 
 | Шаг | Статус | Подтверждение в коде |
 |---|---|---|
 | Этап 0 — рубеж в сущности | ✅ выполнен | `standoffReached`/`standoffAnchor` — поля сущности, сохраняются в NBT |
-| R0.0 — `requiresUpdateEveryTick` у боевых голов | ✅ **выполнен** | Переопределён у всех четырёх: [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:117), [`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:129), [`GuardianRangedAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRangedAttackGoal.java:99), [`GuardianRetreatGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java:88) ⇒ стрельба и отход обновляются на 20 Гц. **Это единственный шаг, оставленный в коде после отката R0.2/R0.5** |
+| R0.0 — `requiresUpdateEveryTick` у боевых голов | ✅ **выполнен** | Переопределён у всех четырёх: [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:117), [`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:129), [`GuardianRangedAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRangedAttackGoal.java:99), [`GuardianRetreatGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java:88) ⇒ стрельба и отход обновляются на 20 Гц. **Единственный шаг из R0.0/R0.2/R0.5, оставленный в коде** |
 | R0.1 — удалить автомат состояний | ✅ выполнен | `CombatState`/`getCombatState()`/`updateAIState()`/`setAIState()` удалены; `isPanicking()` — вычисляемый предикат; боевые голы гейтятся живой целью и `isMeleeActive()`/`isCombatGoalActive()`; `GuardianState`/`DATA_AI_STATE` оставлены как диагностический кэш (`updateStateCache()`); рендер переведён на `DATA_FACING_TARGET` + предмет в руке. См. [`GUARDIAN_STATE_DECISION.md`](GUARDIAN_STATE_DECISION.md) |
-| R0.2 — движение на ванили | ❌ **не выполнен** (сверено) | `GuardianMoveControl.strafeWithSpeed` есть и применяется в отходе, но [флаг `CUSTOM_MOVE` **включён по умолчанию**](../../../src/main/java/com/phian404/survivalpoints/init/GuardianFeatureFlags.java:77) (`DISABLED` пуст) ⇒ самописная физика [`moveDirectly()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1309) активна и **перезаписывает `setDeltaMovement`** — риск «зависания в воздухе» не устранён. Мёртвый код: `moveAlongPath()` и `stopHorizontalMovement()` не вызываются нигде |
+| R0.2 — движение на ванили | ⛔ **отменён владельцем** | Шаг закрыт **без выполнения**. Попытка удалить самописную физику дала регрессии (тряска в углу, подскок после удара, утопление, резкий отход), черновик откачен в `stash` и удалён. Главный повод для шага — «зависание в воздухе» — оказался **не дефектом мода**: разбор в [`guardian-movement-defects-plan.md`](guardian-movement-defects-plan.md) показал ванильный `knockback` в замкнутом объёме (подъём 0.96 блока, ~0.5 с). Самописная физика [`moveDirectly()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1613) остаётся штатной, флаг `CUSTOM_MOVE` — включён |
 | R0.3 — ближний бой на ванильном `MeleeAttackGoal` | ✅ выполнен | [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:31) наследует ванильный гол; кастомная анимация взмаха удалена |
 | R0.4 — еда: уступка угрозе + watchdog | ⚠️ частично | Сделано: флаг `eating` не сериализуется; watchdog-пульс (`EAT_PULSE_TIMEOUT_TICKS`) в [`tickCountdowns()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:648); `canContinueToUse()` рвёт еду по цели **и** по `damageStunTicks > 0` ([`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:106)). Осталось: `canUse()` проверяет только `getTarget() == null` (скана «монстр рядом» нет); ранний выход `syncEquipmentToState()` по `isEating()` сохранён — оба пункта ждут R0.1 (см. R0.4) |
-| R0.5 — порядок голов, флаги, `WaterAvoidingRandomStrollGoal` | ⚠️ частично (1 из 3) | Сверено: порядок регистрации закомментирован (сделан в R0.1, [`registerGoals()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:376)); `RandomStrollGoal` заменён **не был** ([`:386`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:386)); флаг `MOVE` по-прежнему у **4** голов (К2): melee, ranged, retreat, eat |
+| R0.5 — порядок голов, флаги, `WaterAvoidingRandomStrollGoal` | ⛔ **отменён владельцем** | Выполнена только первая часть (порядок регистрации закомментирован в R0.1, [`registerGoals()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:376)); `RandomStrollGoal` и контракт флагов `MOVE` **оставлены как есть**. Причина отмены: архитектурный вопрос К2 не решён — механическое снятие флагов меняет вытеснение голов, а наблюдаемых дефектов это не устраняет |
 | R0.6 — замеры и приёмка | ⬜ не начат | — |
 
 > **Открытый вопрос — РЕШЁН владельцем (вариант A), см. [`GUARDIAN_STATE_DECISION.md`](GUARDIAN_STATE_DECISION.md).**
@@ -161,6 +161,10 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 **2.3. Симптом.** Страж подпрыгивает на месте при перестроении пути, а наша перезапись скорости не даёт ему нормально двигаться/приземляться — визуально «висит в воздухе». Редкость объясняется тем, что нужно совпадение: удар + перестроение пути + блок под ногами.
 
 **2.4. Почему это надо чинить именно так.** Убирая ручную перезапись скорости (R0.2), мы возвращаем ванильную физику: отброс отрабатывает как положено, трение/инерция работают, а прыжок (F6) остаётся **ровно тем же** — владелец просил его не трогать, и мы его не трогаем.
+
+> ⚠️ **Раздел устарел.** Диагноз «зависание в воздухе» из-за перезаписи скорости **опровергнут**:
+> разбор в [`guardian-movement-defects-plan.md`](guardian-movement-defects-plan.md) §13 показал ванильный `knockback`
+> в замкнутом объёме. R0.2 закрыт без выполнения, самописная физика остаётся штатной.
 
 ### Пункт 7 — недостижимая цель (под землёй): «статуя» в панике с бесконечным зовом — ✅ ИСПРАВЛЕНО (A + C)
 
@@ -350,7 +354,7 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 | Флаг | Что отключает | Зачем |
 |------|---------------|-------|
-| `CUSTOM_MOVE` | самописную физику (`moveDirectly` и т.п.) | A/B-сравнение «своё vs ванильное» в R0.2 |
+| `CUSTOM_MOVE` | самописную физику (`moveDirectly` и т.п.) | A/B-сравнение «своё vs ванильное» (R0.2 закрыт — флаг остаётся диагностическим) |
 | `EAT_BREAD` | еду | снять «статую с хлебом» из уравнения в R0.4 |
 | `STANDOFF` | удержание рубежа и отступление | изолировать ближний бой в R0.3 |
 | `RALLY` | сбор союзников | не мешает замерам боя |
@@ -381,35 +385,43 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 
 **Проверка владельца:** страж в покое стоит/гуляет; при появлении зомби — достаёт арбалет и стреляет; при подходе вплотную — достаёт меч; в п��нике — снова арбалет.
 
-### R0.2 — Движение на ванили (убиваем самописную физику)
+### R0.2 — Движение на ванили — ⛔ ОТМЕНЁН
 
-**Файлы:** [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianRangedAttackGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRangedAttackGoal.java), [`GuardianRetreatGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java), [`GuardianMeleeAttackGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java)
+> **Шаг отменён владельцем, не выполняется.** Раздел оставлен как история решения: он объясняет,
+> почему самописная физика остаётся в коде. Пункт «убиваем самописную физику» снят с повестки.
+>
+> Причины отмены:
+> 1. Попытка реализации дала регрессии — тряска в углу, подскок ~0.5 с после удара, утопление, резкий отход.
+>    Плавность (сглаженный курс, разгон) и плавучесть — встроенная часть самописной физики, а не отдельные костыли.
+> 2. Главный повод для шага («зависание в воздухе») **не является дефектом мода**: разбор
+>    в [`guardian-movement-defects-plan.md`](guardian-movement-defects-plan.md) показал ванильный `knockback`
+>    в замкнутом объёме (подъём 0.96 блока, ~0.5 с).
+>
+> Что осталось в коде: [`moveDirectly()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:1613)
+> — штатный путь движения, флаг `CUSTOM_MOVE` включён, [`GuardianMoveControl.strafeWithSpeed()`](../../../src/main/java/com/phian404/survivalpoints/entity/GuardianMoveControl.java)
+> применяется только в отходе. `moveAlongPath()` и `stopHorizontalMovement()` не вызываются — это осознанно
+> оставленный код, удаление не планируется.
 
-- Удалить `moveDirectly()`, `moveAlongPath()`, `stopHorizontalMovement()` и поля `moveYaw`/`moveSpeed`/`moveYawValid`.
-- **Отход** (лицом к врагу) → `strafeWithSpeed(-1, 0, RETREAT_SPEED)`: тело смотрит на врага, шаг делается назад относительно курса тела (F7/F11).
-- **Подход** → `getNavigation().moveTo(x, y, z, speed)` + не переписывать скорость; тело ведёт маршрут, **голову** доворачиваем к врагу через `LookControl` (ванильный `clampHeadRotationToBody` — 75°).
-- **Стоять на месте** → ничего не вызываем: `MoveControl` в состоянии WAIT обнуляет `zza`, значит страж стоит (F12).
-- Снять/ослабить наш анонимный `MoveControl`, который сейчас «возвращает yaw»: с ванильным strafe-движением он не нужен и может конфликтовать (F7 + `MoveControl.tick()` доворачивает курс к пути на 90°/тик).
-- Отдельно решить: **кто владеет курсом тела** — путь (ваниль) или враг. Для стрелка-стража правильнее: тело к врагу, движение — strafe. Это и есть «vanilla way» у скелетов/криперов.
+**Исходные файлы шага (не изменяются):** [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java), [`GuardianRangedAttackGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRangedAttackGoal.java), [`GuardianRetreatGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianRetreatGoal.java), [`GuardianMeleeAttackGoal.java`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java)
 
-**Риск:** смена модели движения меняет ощущение скорости и «резкость» — вручную откаченные владельцем `MOVE_ACCELERATION = 0.04` и `ADVANCE_SPEED = 0.28` уходят вместе с самодельной системой, а ваниль использует атрибут `Attributes.MOVEMENT_SPEED` (надо выставить значение, иначе будет стандартное 0.23).
+**Планировавшиеся правки (сняты с выполнения, оставлены как история):**
 
-**Проверка владельца:** нет «пинг-понга»; отход плавный, страж лицом к врагу; нет зависаний в воздухе после удара; скорость выглядит естественно.
+- ~~Удалить `moveDirectly()`, `moveAlongPath()`, `stopHorizontalMovement()` и поля `moveYaw`/`moveSpeed`/`moveYawValid`.~~
+- ~~Отход → `strafeWithSpeed(-1, 0, RETREAT_SPEED)`: тело к врагу, шаг назад относительно курса тела (F7/F11).~~
+- ~~Подход → `getNavigation().moveTo(x, y, z, speed)` без перезаписи скорости.~~
+- ~~Стоять на месте → ничего не вызываем: `MoveControl` в состоянии WAIT обнуляет `zza` (F12).~~
+- ~~Снять/ослабить анонимный `MoveControl`, «возвращающий yaw» (F7 + `MoveControl.tick()` доворачивает курс к пути на 90°/тик).~~
+- ~~Решить, кто владеет курсом тела — путь или враг.~~
 
-**Уточнение R0.2 (по итогам разбора порядка тиков, F11–F14):**
+**Почему отменено (факт, а не предположение):** при попытке реализации владелец получил набор регрессий —
+вернулась тряска в углу, появился подскок ~0.5 с после удара, страж тонул, отход стал резким.
+Причина: плавность (`MOVE_TURN_SPEED_DEG`, `MOVE_ACCELERATION`) и плавучесть (водная ветка `moveDirectly()`)
+— встроенная часть самописной физики. Точечные заплатки через `MoveControl`/`setJumping` конфликтуют
+с ванильным `isWalkable` и `JumpControl`. Второй повод для шага — «зависание в воздухе» — разобран
+как ванильный `knockback` в замкнутом объёме, то есть **дефекта мода нет**.
 
-- **Свой `MoveControl`:** `GuardianMoveControl extends MoveControl` с методом `strafeWithSpeed(float forwards, float right, double blocksPerTick)` — вызывает `strafe(...)`, затем переопределяет `speedModifier` (protected), иначе скорость зафиксирована на 0.25 (F13). Туда же переносим «возврат курса» из текущего анонимного подкласса.
-- **Не перезаписывать `setDeltaMovement`** — трение, гравитация и отброс остаются ванильными (F14), значит «зависание в воздухе» исчезает по построению, а прыжок (F6) остаётся ровно тем же.
-- **Кто владеет курсом тела:** в бою — враг (тело к цели, движение — strafe); в переходе — маршрут. Это «vanilla way» у скелетов и криперов.
-
-| Действие | Вызов | Блок/тик | Множитель при `MOVEMENT_SPEED = 0.30` |
-|----------|-------|----------|-------------------------------------|
-| Стоять на месте | ничего | 0 | — |
-| Отступление | `strafe(-1, 0)` | 0.45 (`RETREAT_SPEED`) | 1.50 |
-| Сближение | `navigation.moveTo(..., m)` | 0.28 (`ADVANCE_SPEED`) | 0.93 |
-| Шаг в ближнем бою | `strafe(1, 0)` | 0.65 (`MELEE_SPEED`) | 2.17 |
-
-`Attributes.MOVEMENT_SPEED = 0.30` — чуть быстрее зомби (0.23), медленнее игрока. Множители считаются от него, поэтому текущие ощущения скорости (которые владелец уже откалибровал) сохраняются.
+**Осознанно оставлено как есть:** `moveAlongPath()` и `stopHorizontalMovement()` не вызываются,
+но удаление не планируется — это мёртвый код, а не риск.
 
 ### R0.3 — Ближний бой на ванильном `MeleeAttackGoal` + дефолтная анимация
 
@@ -448,14 +460,24 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 **Проверка владельца:** раненый страж **не сидит с хлебом под дождём ударов** — сразу встаёт в строй; в спокойе доедает хлеб и возвращается к арбалету.
 **Отдельная проверка регрессии:** ранить стража в тишине, дать поесть, **выйти из мира и вернуться** — страж стоит с арбалетом, а не с хлебом, и снова реагирует на зомби.
 
-### R0.5 — Порядок, флаги, приоритеты + диагностика
+### R0.5 — Порядок, флаги, приоритеты + диагностика — ⛔ ОТМЕНЁН
 
-**Файлы:** [`BaseGuardianEntity.java`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java) (метод `registerGoals()`), [`GuardianTuning.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardianTuning.java), [`GuardDebugCommand.java`](../../../src/main/java/com/phian404/survivalpoints/init/GuardDebugCommand.java)
+> **Шаг отменён владельцем.** Выполнена только первая часть — порядок регистрации голов зафиксирован
+> и прокомментирован ещё в R0.1 ([`registerGoals()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:376)).
+> Остальные пункты **не выполняются**.
 
-- Зафиксировать порядок регистрации и **прокомментировать** (К1): паника → ближний бой → дальний бой → сбор → еда → прогулка → взгляд.
-- Ровно один боевой гол с флагом `MOVE` (К2); остальные — без флагов или только `LOOK`.
-- `RandomStrollGoal` → `WaterAvoidingRandomStrollGoal` (К5).
-- Расширить `/sp_guard`: активные цели, активный гол, дистанция, `damageStunTicks`, `onGround`, `delta.y`, состояние навигации, флаги целей. Это нужно и для пункта 2 — чтобы поймать редкий случай, а не гадать.
+**Что было запланировано и снято:**
+
+- ~~Ровно один боевой гол с флагом `MOVE` (К2); остальные — без флагов или только `LOOK`.~~
+  Причина отмены: К2 — нерешённый архитектурный вопрос. Флаги `MOVE` определяют **вытеснение** голов
+  в `GoalSelector`; механическое снятие у трёх из четырёх меняет приоритеты и может дать новые дефекты.
+  Наблюдаемых проблем это не устраняет — менять «на всякий случай» запрещено правилами.
+- ~~`RandomStrollGoal` → `WaterAvoidingRandomStrollGoal` (К5).~~
+  Причина отмены: шаг был частью непроверенного пакета вместе с R0.2; отдельного дефекта не закрывает.
+- ~~Расширить `/sp_guard`.~~ Выполнено иначе и раньше: диагностика закрыта командой
+  [`/sp_snap`](../../../src/main/java/com/phian404/survivalpoints/init/GuardDebugCommand.java) (след движения 32 тика,
+  детекторы `ОТБРОС`/`ПОЛУБЛОК`/`ПРЫЖОК ЗАЛИП`/`ПОДСКОК`/`ТОНЕТ`, метрики `M8-*`) и уже существующими
+  `/sp_guard detail`, `/sp_trace`, `/sp_hang`.
 
 ### R0.6 — Замеры и приёмка
 
@@ -497,5 +519,5 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
 | Бэкап перед реворком | Сделано: тег `pre-rework-guardian` + ветка `backup/pre-rework-guardian` на `fdb8acb`. Откат: `git checkout backup/pre-rework-guardian -- src/` |
 | Диагностика | Команды `/sp_guard detail`, `/sp_trace`, `/sp_hang` + расширенный `/sp_guard`. Всё дублируется в `run/logs/latest.log` с префиксом `[SP]` — выводы делаю по логу, а не по пересказу |
 | Временное отключение механик | Флаги `CUSTOM_MOVE`, `EAT_BREAD`, `STANDOFF`, `RALLY`, `LOOK_PLAYER`, `PANIC`, `RANGED` + команда `/sp_flag`. Флага `CUSTOM_SWING` нет: кастомная анимация взмаха удалена вместе с R0.3 |
-| `Attributes.MOVEMENT_SPEED` | **0.30** (решение делегировано владельцем). Множители скоростей — из таблицы в R0.2, текущие ощущения скорости сохраняются |
+| `Attributes.MOVEMENT_SPEED` | **0.30** (решение делегировано владельцем). Множители скоростей — из таблицы в R0.2 (шаг закрыт, таблица осталась как справочная), текущие ощущения скорости сохраняются |
 | Логика прыжка | Не трогаем (F6) — остаётся ванильная |
