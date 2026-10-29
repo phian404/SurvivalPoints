@@ -12,7 +12,7 @@
 | R0.3 — ближний бой на ванильном `MeleeAttackGoal` | ✅ выполнен | [`GuardianMeleeAttackGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianMeleeAttackGoal.java:31) наследует ванильный гол; кастомная анимация взмаха удалена |
 | R0.4 — еда: уступка угрозе + watchdog | ✅ **выполнен** | Флаг `eating` не сериализуется; watchdog-пульс (`EAT_PULSE_TIMEOUT_TICKS`) в [`tickCountdowns()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:648); `canContinueToUse()` рвёт еду по цели **и** по `damageStunTicks > 0` ([`GuardianEatBreadGoal`](../../../src/main/java/com/phian404/survivalpoints/entity/ai/GuardianEatBreadGoal.java:103)). Оба симптома подтверждены владельцем в игре: еда прерывается при появлении цели, зависания с хлебом при перезаходе нет. Два «хвоста» из плана закрыты осознанно без кода: скан «монстр рядом» в `canUse()` не нужен (см. R0.4), ранний выход `syncEquipmentToState()` по `isEating()` корректен и сохранён |
 | R0.5 — порядок голов, флаги, `WaterAvoidingRandomStrollGoal` | ⛔ **отменён владельцем** | Выполнена только первая часть (порядок регистрации закомментирован в R0.1, [`registerGoals()`](../../../src/main/java/com/phian404/survivalpoints/entity/BaseGuardianEntity.java:376)); `RandomStrollGoal` и контракт флагов `MOVE` **оставлены как есть**. Причина отмены: архитектурный вопрос К2 не решён — механическое снятие флагов меняет вытеснение голов, а наблюдаемых дефектов это не устраняет |
-| R0.6 — замеры и приёмка | ⬜ не начат | — |
+| R0.6 — замеры и приёмка | ✅ **выполнен** | Приёмка на владельце: чек-лист из 8 сценариев пройден в игре (покой/монстр, подход вплотную, раненый с монстрами, раненый в тишине, удар/отлёт, отход лицом, вода, 3+ стража в бою). Замеры производительности — `/sp_perf` (см. [`TESTING.md`](../Testing/TESTING.md)) |
 
 > **Открытый вопрос — РЕШЁН владельцем (вариант A), см. [`GUARDIAN_STATE_DECISION.md`](GUARDIAN_STATE_DECISION.md).**
 > R0.1 предлагал удалить `GuardianState`, а [`DESIGN_CAMP_SYSTEM.md`](../Camp/DESIGN_CAMP_SYSTEM.md) §5.1 —
@@ -479,7 +479,10 @@ this.setDeltaMovement(dirX * this.moveSpeed, delta.y, dirZ * this.moveSpeed);
   детекторы `ОТБРОС`/`ПОЛУБЛОК`/`ПРЫЖОК ЗАЛИП`/`ПОДСКОК`/`ТОНЕТ`, метрики `M8-*`) и уже существующими
   `/sp_guard detail`, `/sp_trace`, `/sp_hang`.
 
-### R0.6 — Замеры и приёмка
+### R0.6 — Замеры и приёмка — ✅ ВЫПОЛНЕН
+
+> **Шаг закрыт владельцем.** Чек-лист из 8 сценариев пройден в игре, реворк принят.
+> Пункты ниже — как это проверялось.
 
 - `/sp_perf on` + бой на 3+ стражах ⇒ убедиться, что TPS 20.0 и наш код < 2 мс/с.
 - Пройти чек-лист владельца (ниже).
