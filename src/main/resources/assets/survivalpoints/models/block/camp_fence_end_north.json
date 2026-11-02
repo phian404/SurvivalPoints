@@ -1,0 +1,19 @@
+{
+  "ambientocclusion": false,
+  "textures": {
+    "particle": "survivalpoints:block/steel_fence_32",
+    "mesh": "survivalpoints:block/steel_fence_32"
+  },
+  "elements": [
+    {
+      "from": [7, 0, 0],
+      "to": [9, 16, 8],
+      "faces": {
+        "north": { "uv": [7, 0, 9, 32], "texture": "#mesh" },
+        "south": { "uv": [9, 0, 7, 32], "texture": "#mesh" },
+        "east": { "uv": [0, 0, 16, 32], "texture": "#mesh" },
+        "west": { "uv": [16, 0, 0, 32], "texture": "#mesh" }
+      }
+    }
+  ]
+}

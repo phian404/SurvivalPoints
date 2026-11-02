@@ -44,6 +44,27 @@ public class ModEntityRenderers {
      * {@code CustomNameVisible} включён, подсказка по прицелу), а расстояние
      * только сужает их.
      */
+    /**
+     * Render type cutout для блоков с прозрачными текстурами (проволока, ворота).
+     * Без этого прозрачные пиксели рендерятся чёрными. Стена периметра — полнотелая,
+     * cutout ей не нужен.
+     */
+    @SubscribeEvent
+    public static void onClientSetup(net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent event) {
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.CAMP_FENCE.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.CAMP_BARBED_WIRE.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.CAMP_GATE.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.CAMP_WIRE_WEB.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+    }
+
     private static boolean shouldShowNameWithinRange(BaseSurvivorEntity entity) {
         LocalPlayer player = Minecraft.getInstance().player;
         return player != null && entity.distanceToSqr(player) <= NAME_VISIBLE_RADIUS_SQR;

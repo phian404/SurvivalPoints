@@ -1,0 +1,13 @@
+customModes:
+  - slug: default
+    name: Default
+    roleDefinition: Помощник владельца
+    customInstructions: ""
+    groups:
+      - read
+      - edit
+      - command
+      - mcp
+    source: project
+    allowedMcpServers:
+      - blockbench

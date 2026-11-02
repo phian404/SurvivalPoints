@@ -1,0 +1,59 @@
+{
+  "ambientocclusion": false,
+  "textures": {
+    "particle": "survivalpoints:block/camp_barbed_wire",
+    "wire": "survivalpoints:block/camp_barbed_wire"
+  },
+  "elements": [
+    {
+      "from": [7.5, 0, 0],
+      "to": [8.5, 1, 8],
+      "faces": {
+        "north": {"uv": [0, 0, 1, 1], "texture": "#wire"},
+        "south": {"uv": [0, 0, 1, 1], "texture": "#wire"},
+        "east":  {"uv": [0, 0, 8, 1], "texture": "#wire"},
+        "west":  {"uv": [0, 0, 8, 1], "texture": "#wire"},
+        "up":    {"uv": [0, 0, 8, 1], "texture": "#wire"},
+        "down":  {"uv": [0, 0, 8, 1], "texture": "#wire"}
+      }
+    },
+    {
+      "from": [7.5, 7.5, 0],
+      "to": [8.5, 8.5, 8],
+      "faces": {
+        "north": {"uv": [0, 0, 1, 1], "texture": "#wire"},
+        "south": {"uv": [0, 0, 1, 1], "texture": "#wire"},
+        "east":  {"uv": [0, 0, 8, 1], "texture": "#wire"},
+        "west":  {"uv": [0, 0, 8, 1], "texture": "#wire"},
+        "up":    {"uv": [0, 0, 8, 1], "texture": "#wire"},
+        "down":  {"uv": [0, 0, 8, 1], "texture": "#wire"}
+      }
+    },
+    {
+      "from": [7.5, 0.5, 0],
+      "to": [8.5, 1.5, 11.314],
+      "rotation": {"origin": [8, 0.5, 0], "axis": "x", "angle": -45, "rescale": true},
+      "faces": {
+        "north": {"uv": [0, 0, 1, 1], "texture": "#wire"},
+        "south": {"uv": [0, 0, 1, 1], "texture": "#wire"},
+        "east":  {"uv": [0, 0, 16, 1], "texture": "#wire"},
+        "west":  {"uv": [0, 0, 16, 1], "texture": "#wire"},
+        "up":    {"uv": [0, 0, 16, 1], "texture": "#wire"},
+        "down":  {"uv": [0, 0, 16, 1], "texture": "#wire"}
+      }
+    },
+    {
+      "from": [7.5, 0.5, 0],
+      "to": [8.5, 1.5, 11.314],
+      "rotation": {"origin": [8, 0.5, 0], "axis": "x", "angle": 45, "rescale": true},
+      "faces": {
+        "north": {"uv": [0, 0, 1, 1], "texture": "#wire"},
+        "south": {"uv": [0, 0, 1, 1], "texture": "#wire"},
+        "east":  {"uv": [0, 0, 16, 1], "texture": "#wire"},
+        "west":  {"uv": [0, 0, 16, 1], "texture": "#wire"},
+        "up":    {"uv": [0, 0, 16, 1], "texture": "#wire"},
+        "down":  {"uv": [0, 0, 16, 1], "texture": "#wire"}
+      }
+    }
+  ]
+}

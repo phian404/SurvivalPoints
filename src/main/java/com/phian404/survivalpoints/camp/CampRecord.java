@@ -36,6 +36,10 @@ public class CampRecord {
     /** Якорь лагеря — радио вышка. Пока стоит, лагерь существует. */
     private BlockPos anchor;
 
+    /** Позиция ворот (нижняя половина). {@code null} — ворот ещё нет. */
+    @Nullable
+    private BlockPos gatePos;
+
     private final List<CampPost> posts = new ArrayList<>();
 
     /** Привязка стража к посту: id стража → id поста. */
@@ -131,6 +135,15 @@ public class CampRecord {
 
     public void setAnchor(BlockPos anchor) {
         this.anchor = anchor;
+    }
+
+    @Nullable
+    public BlockPos getGatePos() {
+        return this.gatePos;
+    }
+
+    public void setGatePos(BlockPos gatePos) {
+        this.gatePos = gatePos;
     }
 
     /** Содержит ли лагерь точку (с запасом на радиус тревоги). */
@@ -338,6 +351,9 @@ public class CampRecord {
         tag.putLong("Center", this.center.asLong());
         tag.putInt("Radius", this.radius);
         tag.putLong("Anchor", this.anchor.asLong());
+        if (this.gatePos != null) {
+            tag.putLong("GatePos", this.gatePos.asLong());
+        }
         if (this.owner != null) {
             tag.putUUID("Owner", this.owner);
         }
@@ -389,6 +405,7 @@ public class CampRecord {
 
         CampRecord record = new CampRecord(id, name, anchor, radius, owner);
         record.center = center;
+        record.gatePos = tag.contains("GatePos") ? BlockPos.of(tag.getLong("GatePos")) : null;
 
         ListTag postList = tag.getList("Posts", Tag.TAG_COMPOUND);
         for (int i = 0; i < postList.size(); i++) {

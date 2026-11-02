@@ -1,6 +1,11 @@
 {
   "itemGroup.survivalpoints": "SurvivalPoints",
   "block.survivalpoints.camp_radio": "Радио вышка лагеря",
+  "block.survivalpoints.camp_fence": "Забор лагеря",
+  "block.survivalpoints.camp_fence_post": "Столб периметра лагеря",
+  "block.survivalpoints.camp_barbed_wire": "Колючая проволока лагеря",
+  "block.survivalpoints.camp_wire_web": "Проволока-паутина (тест)",
+  "block.survivalpoints.camp_gate": "Ворота лагеря",
   "item.survivalpoints.base_guardian_spawn_egg": "Яйцо призыва стража",
   "item.survivalpoints.base_survivor_spawn_egg": "Яйцо призыва выжившего",
   "entity.survivalpoints.base_survivor": "Выживший"

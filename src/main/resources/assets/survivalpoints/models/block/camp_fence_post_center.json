@@ -1,0 +1,7 @@
+{
+  "parent": "survivalpoints:block/camp_fence_mesh_center",
+  "textures": {
+    "particle": "survivalpoints:block/block_steel",
+    "mesh": "survivalpoints:block/block_steel"
+  }
+}

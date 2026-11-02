@@ -1,0 +1,112 @@
+{
+	"mcpServers": {
+		"minecraft-modding": {
+			"type": "stdio",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npx",
+				"-y",
+				"@adhisang/minecraft-modding-mcp"
+			],
+			"alwaysAllow": [
+				"batch-class-members",
+				"get-class-members",
+				"search-class-source",
+				"check-symbol-exists",
+				"inspect-minecraft",
+				"get-class-source",
+				"analyze-symbol",
+				"analyze-mod",
+				"batch-symbol-exists"
+			],
+			"disabledTools": [
+				"compare-minecraft",
+				"validate-project",
+				"verify-mixin-target",
+				"batch-class-source",
+				"batch-mappings",
+				"resolve-artifact",
+				"find-class",
+				"get-artifact-file",
+				"list-artifact-files",
+				"trace-symbol-lifecycle",
+				"diff-class-signatures",
+				"resolve-method-mapping-exact",
+				"get-class-api-matrix",
+				"resolve-workspace-symbol",
+				"nbt-to-json",
+				"nbt-apply-json-patch",
+				"json-to-nbt",
+				"index-artifact",
+				"get-runtime-metrics",
+				"validate-mixin",
+				"validate-access-widener",
+				"validate-access-transformer",
+				"analyze-mod-jar",
+				"get-registry-data",
+				"compare-versions",
+				"remap-mod-jar",
+				"list-versions",
+				"manage-cache",
+				"find-mapping",
+				"decompile-mod-jar",
+				"get-mod-class-source",
+				"search-mod-source"
+			],
+			"disabled": false
+		},
+		"blockbench": {
+			"command": "C:/Program Files/nodejs/node.exe",
+			"args": [
+				"E:/Modding/MDK/SurvivalPoints/assets-source/AiModelling/blockbench-mcp/dist/index.js"
+			],
+			"env": {
+				"BLOCKBENCH_MCP_PORT": "8787"
+			},
+			"disabled": false,
+			"alwaysAllow": [
+				"add_groups",
+				"new_project",
+				"add_cubes",
+				"edit_element",
+				"apply_texture",
+				"screenshot_views",
+				"paint_faces",
+				"save_project",
+				"check_model",
+				"list_outliner",
+				"get_status",
+				"audit_complexity",
+				"export_model",
+				"request_review",
+				"wait_review",
+				"get_reference",
+				"execute_script",
+				"measure_model",
+				"get_guide",
+				"pack_uv",
+				"detail_cubes",
+				"check_sides",
+				"compare_reference",
+				"list_textures",
+				"get_rig",
+				"check_rig",
+				"get_texture",
+				"add_hollow_volume",
+				"which_side",
+				"create_texture",
+				"resize_texture",
+				"load_reference",
+				"paint_texture",
+				"list_references",
+				"load_project",
+				"add_group",
+				"add_cube",
+				"add_mesh",
+				"set_camera_angle",
+				"close_project"
+			]
+		}
+	}
+}

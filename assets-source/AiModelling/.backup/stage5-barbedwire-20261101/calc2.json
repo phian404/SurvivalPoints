@@ -1,0 +1,742 @@
+{
+ "strands": [
+  {
+   "name": "strand_lowA_0",
+   "parent": "wire_low_run",
+   "from": [
+    8.57,
+    0.72,
+    -0.18
+   ],
+   "to": [
+    9.13,
+    1.28,
+    1.18
+   ]
+  },
+  {
+   "name": "strand_lowB_0",
+   "parent": "wire_low_run",
+   "from": [
+    6.87,
+    0.72,
+    -0.18
+   ],
+   "to": [
+    7.43,
+    1.28,
+    1.18
+   ]
+  },
+  {
+   "name": "strand_lowA_1",
+   "parent": "wire_low_run",
+   "from": [
+    8.321,
+    1.321,
+    0.82
+   ],
+   "to": [
+    8.881,
+    1.881,
+    2.18
+   ]
+  },
+  {
+   "name": "strand_lowB_1",
+   "parent": "wire_low_run",
+   "from": [
+    7.119,
+    0.119,
+    0.82
+   ],
+   "to": [
+    7.679,
+    0.679,
+    2.18
+   ]
+  },
+  {
+   "name": "strand_lowA_2",
+   "parent": "wire_low_run",
+   "from": [
+    7.72,
+    1.57,
+    1.82
+   ],
+   "to": [
+    8.28,
+    2.13,
+    3.18
+   ]
+  },
+  {
+   "name": "strand_lowB_2",
+   "parent": "wire_low_run",
+   "from": [
+    7.72,
+    -0.13,
+    1.82
+   ],
+   "to": [
+    8.28,
+    0.43,
+    3.18
+   ]
+  },
+  {
+   "name": "strand_lowA_3",
+   "parent": "wire_low_run",
+   "from": [
+    7.119,
+    1.321,
+    2.82
+   ],
+   "to": [
+    7.679,
+    1.881,
+    4.18
+   ]
+  },
+  {
+   "name": "strand_lowB_3",
+   "parent": "wire_low_run",
+   "from": [
+    8.321,
+    0.119,
+    2.82
+   ],
+   "to": [
+    8.881,
+    0.679,
+    4.18
+   ]
+  },
+  {
+   "name": "strand_lowA_4",
+   "parent": "wire_low_run",
+   "from": [
+    6.87,
+    0.72,
+    3.82
+   ],
+   "to": [
+    7.43,
+    1.28,
+    5.18
+   ]
+  },
+  {
+   "name": "strand_lowB_4",
+   "parent": "wire_low_run",
+   "from": [
+    8.57,
+    0.72,
+    3.82
+   ],
+   "to": [
+    9.13,
+    1.28,
+    5.18
+   ]
+  },
+  {
+   "name": "strand_lowA_5",
+   "parent": "wire_low_run",
+   "from": [
+    7.119,
+    0.119,
+    4.82
+   ],
+   "to": [
+    7.679,
+    0.679,
+    6.18
+   ]
+  },
+  {
+   "name": "strand_lowB_5",
+   "parent": "wire_low_run",
+   "from": [
+    8.321,
+    1.321,
+    4.82
+   ],
+   "to": [
+    8.881,
+    1.881,
+    6.18
+   ]
+  },
+  {
+   "name": "strand_lowA_6",
+   "parent": "wire_low_run",
+   "from": [
+    7.72,
+    -0.13,
+    5.82
+   ],
+   "to": [
+    8.28,
+    0.43,
+    7.18
+   ]
+  },
+  {
+   "name": "strand_lowB_6",
+   "parent": "wire_low_run",
+   "from": [
+    7.72,
+    1.57,
+    5.82
+   ],
+   "to": [
+    8.28,
+    2.13,
+    7.18
+   ]
+  },
+  {
+   "name": "strand_lowA_7",
+   "parent": "wire_low_run",
+   "from": [
+    8.321,
+    0.119,
+    6.82
+   ],
+   "to": [
+    8.881,
+    0.679,
+    8.18
+   ]
+  },
+  {
+   "name": "strand_lowB_7",
+   "parent": "wire_low_run",
+   "from": [
+    7.119,
+    1.321,
+    6.82
+   ],
+   "to": [
+    7.679,
+    1.881,
+    8.18
+   ]
+  },
+  {
+   "name": "strand_highA_0",
+   "parent": "wire_high_run",
+   "from": [
+    8.57,
+    7.22,
+    -0.18
+   ],
+   "to": [
+    9.13,
+    7.78,
+    1.18
+   ]
+  },
+  {
+   "name": "strand_highB_0",
+   "parent": "wire_high_run",
+   "from": [
+    6.87,
+    7.22,
+    -0.18
+   ],
+   "to": [
+    7.43,
+    7.78,
+    1.18
+   ]
+  },
+  {
+   "name": "strand_highA_1",
+   "parent": "wire_high_run",
+   "from": [
+    8.321,
+    7.821,
+    0.82
+   ],
+   "to": [
+    8.881,
+    8.381,
+    2.18
+   ]
+  },
+  {
+   "name": "strand_highB_1",
+   "parent": "wire_high_run",
+   "from": [
+    7.119,
+    6.619,
+    0.82
+   ],
+   "to": [
+    7.679,
+    7.179,
+    2.18
+   ]
+  },
+  {
+   "name": "strand_highA_2",
+   "parent": "wire_high_run",
+   "from": [
+    7.72,
+    8.07,
+    1.82
+   ],
+   "to": [
+    8.28,
+    8.63,
+    3.18
+   ]
+  },
+  {
+   "name": "strand_highB_2",
+   "parent": "wire_high_run",
+   "from": [
+    7.72,
+    6.37,
+    1.82
+   ],
+   "to": [
+    8.28,
+    6.93,
+    3.18
+   ]
+  },
+  {
+   "name": "strand_highA_3",
+   "parent": "wire_high_run",
+   "from": [
+    7.119,
+    7.821,
+    2.82
+   ],
+   "to": [
+    7.679,
+    8.381,
+    4.18
+   ]
+  },
+  {
+   "name": "strand_highB_3",
+   "parent": "wire_high_run",
+   "from": [
+    8.321,
+    6.619,
+    2.82
+   ],
+   "to": [
+    8.881,
+    7.179,
+    4.18
+   ]
+  },
+  {
+   "name": "strand_highA_4",
+   "parent": "wire_high_run",
+   "from": [
+    6.87,
+    7.22,
+    3.82
+   ],
+   "to": [
+    7.43,
+    7.78,
+    5.18
+   ]
+  },
+  {
+   "name": "strand_highB_4",
+   "parent": "wire_high_run",
+   "from": [
+    8.57,
+    7.22,
+    3.82
+   ],
+   "to": [
+    9.13,
+    7.78,
+    5.18
+   ]
+  },
+  {
+   "name": "strand_highA_5",
+   "parent": "wire_high_run",
+   "from": [
+    7.119,
+    6.619,
+    4.82
+   ],
+   "to": [
+    7.679,
+    7.179,
+    6.18
+   ]
+  },
+  {
+   "name": "strand_highB_5",
+   "parent": "wire_high_run",
+   "from": [
+    8.321,
+    7.821,
+    4.82
+   ],
+   "to": [
+    8.881,
+    8.381,
+    6.18
+   ]
+  },
+  {
+   "name": "strand_highA_6",
+   "parent": "wire_high_run",
+   "from": [
+    7.72,
+    6.37,
+    5.82
+   ],
+   "to": [
+    8.28,
+    6.93,
+    7.18
+   ]
+  },
+  {
+   "name": "strand_highB_6",
+   "parent": "wire_high_run",
+   "from": [
+    7.72,
+    8.07,
+    5.82
+   ],
+   "to": [
+    8.28,
+    8.63,
+    7.18
+   ]
+  },
+  {
+   "name": "strand_highA_7",
+   "parent": "wire_high_run",
+   "from": [
+    8.321,
+    6.619,
+    6.82
+   ],
+   "to": [
+    8.881,
+    7.179,
+    8.18
+   ]
+  },
+  {
+   "name": "strand_highB_7",
+   "parent": "wire_high_run",
+   "from": [
+    7.119,
+    7.821,
+    6.82
+   ],
+   "to": [
+    7.679,
+    8.381,
+    8.18
+   ]
+  }
+ ],
+ "barbs": [
+  {
+   "name": "barb_low_1p5P",
+   "parent": "wire_low_barbs",
+   "from": [
+    5.7,
+    0.84,
+    1.34
+   ],
+   "to": [
+    10.3,
+    1.16,
+    1.66
+   ],
+   "origin": [
+    8,
+    1,
+    1.5
+   ],
+   "rotation": [
+    0,
+    0,
+    45
+   ]
+  },
+  {
+   "name": "barb_low_1p5M",
+   "parent": "wire_low_barbs",
+   "from": [
+    5.7,
+    0.84,
+    1.34
+   ],
+   "to": [
+    10.3,
+    1.16,
+    1.66
+   ],
+   "origin": [
+    8,
+    1,
+    1.5
+   ],
+   "rotation": [
+    0,
+    0,
+    -45
+   ]
+  },
+  {
+   "name": "barb_low_4P",
+   "parent": "wire_low_barbs",
+   "from": [
+    5.7,
+    0.84,
+    3.84
+   ],
+   "to": [
+    10.3,
+    1.16,
+    4.16
+   ],
+   "origin": [
+    8,
+    1,
+    4
+   ],
+   "rotation": [
+    0,
+    0,
+    45
+   ]
+  },
+  {
+   "name": "barb_low_4M",
+   "parent": "wire_low_barbs",
+   "from": [
+    5.7,
+    0.84,
+    3.84
+   ],
+   "to": [
+    10.3,
+    1.16,
+    4.16
+   ],
+   "origin": [
+    8,
+    1,
+    4
+   ],
+   "rotation": [
+    0,
+    0,
+    -45
+   ]
+  },
+  {
+   "name": "barb_low_6p5P",
+   "parent": "wire_low_barbs",
+   "from": [
+    5.7,
+    0.84,
+    6.34
+   ],
+   "to": [
+    10.3,
+    1.16,
+    6.66
+   ],
+   "origin": [
+    8,
+    1,
+    6.5
+   ],
+   "rotation": [
+    0,
+    0,
+    45
+   ]
+  },
+  {
+   "name": "barb_low_6p5M",
+   "parent": "wire_low_barbs",
+   "from": [
+    5.7,
+    0.84,
+    6.34
+   ],
+   "to": [
+    10.3,
+    1.16,
+    6.66
+   ],
+   "origin": [
+    8,
+    1,
+    6.5
+   ],
+   "rotation": [
+    0,
+    0,
+    -45
+   ]
+  },
+  {
+   "name": "barb_high_1p5P",
+   "parent": "wire_high_barbs",
+   "from": [
+    5.7,
+    7.34,
+    1.34
+   ],
+   "to": [
+    10.3,
+    7.66,
+    1.66
+   ],
+   "origin": [
+    8,
+    7.5,
+    1.5
+   ],
+   "rotation": [
+    0,
+    0,
+    45
+   ]
+  },
+  {
+   "name": "barb_high_1p5M",
+   "parent": "wire_high_barbs",
+   "from": [
+    5.7,
+    7.34,
+    1.34
+   ],
+   "to": [
+    10.3,
+    7.66,
+    1.66
+   ],
+   "origin": [
+    8,
+    7.5,
+    1.5
+   ],
+   "rotation": [
+    0,
+    0,
+    -45
+   ]
+  },
+  {
+   "name": "barb_high_4P",
+   "parent": "wire_high_barbs",
+   "from": [
+    5.7,
+    7.34,
+    3.84
+   ],
+   "to": [
+    10.3,
+    7.66,
+    4.16
+   ],
+   "origin": [
+    8,
+    7.5,
+    4
+   ],
+   "rotation": [
+    0,
+    0,
+    45
+   ]
+  },
+  {
+   "name": "barb_high_4M",
+   "parent": "wire_high_barbs",
+   "from": [
+    5.7,
+    7.34,
+    3.84
+   ],
+   "to": [
+    10.3,
+    7.66,
+    4.16
+   ],
+   "origin": [
+    8,
+    7.5,
+    4
+   ],
+   "rotation": [
+    0,
+    0,
+    -45
+   ]
+  },
+  {
+   "name": "barb_high_6p5P",
+   "parent": "wire_high_barbs",
+   "from": [
+    5.7,
+    7.34,
+    6.34
+   ],
+   "to": [
+    10.3,
+    7.66,
+    6.66
+   ],
+   "origin": [
+    8,
+    7.5,
+    6.5
+   ],
+   "rotation": [
+    0,
+    0,
+    45
+   ]
+  },
+  {
+   "name": "barb_high_6p5M",
+   "parent": "wire_high_barbs",
+   "from": [
+    5.7,
+    7.34,
+    6.34
+   ],
+   "to": [
+    10.3,
+    7.66,
+    6.66
+   ],
+   "origin": [
+    8,
+    7.5,
+    6.5
+   ],
+   "rotation": [
+    0,
+    0,
+    -45
+   ]
+  }
+ ]
+}

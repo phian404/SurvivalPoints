@@ -1,0 +1,10 @@
+{
+  "multipart": [
+    { "when": { "top": "false" }, "apply": { "model": "survivalpoints:block/camp_fence_post_beam" } },
+    { "when": { "top": "true" }, "apply": { "model": "survivalpoints:block/camp_fence_post" } },
+    { "when": { "north": "true" }, "apply": { "model": "survivalpoints:block/camp_fence_post_rib", "uvlock": true } },
+    { "when": { "east": "true" }, "apply": { "model": "survivalpoints:block/camp_fence_post_rib", "y": 90, "uvlock": true } },
+    { "when": { "south": "true" }, "apply": { "model": "survivalpoints:block/camp_fence_post_rib", "y": 180, "uvlock": true } },
+    { "when": { "west": "true" }, "apply": { "model": "survivalpoints:block/camp_fence_post_rib", "y": 270, "uvlock": true } }
+  ]
+}

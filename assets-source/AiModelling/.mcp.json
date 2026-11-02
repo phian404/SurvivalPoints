@@ -1,0 +1,15 @@
+{
+	"mcpServers": {
+		"blockbench": {
+			"command": "C:/Program Files/nodejs/node.exe",
+			"args": [
+				"E:/Modding/MDK/SurvivalPoints/assets-source/AiModelling/blockbench-mcp/dist/index.js"
+			],
+			"env": {
+				"BLOCKBENCH_MCP_PORT": "8787"
+			},
+			"disabled": false,
+			"alwaysAllow": []
+		}
+	}
+}

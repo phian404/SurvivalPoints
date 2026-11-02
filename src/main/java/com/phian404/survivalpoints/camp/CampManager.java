@@ -3,6 +3,7 @@ package com.phian404.survivalpoints.camp;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
@@ -170,10 +171,27 @@ public final class CampManager {
             }
             record.setStaffCheckTimer(record.getStaffCheckTimer() + CampTuning.CAMP_TICK_INTERVAL);
             record.setRadioCallTimer(record.getRadioCallTimer() + CampTuning.CAMP_TICK_INTERVAL);
+            updateGate(level, record, night);
         }
 
         if (changed) {
             data.setDirty();
+        }
+    }
+
+    /**
+     * Ворота: ночью закрыты, днём открыты. {@code DoorBlock.setOpen} сам
+     * пропускает состояние, которое уже установлено — лишних {@code setBlock}
+     * не будет. Нижняя половина через {@code updateShape} синхронизирует верхнюю.
+     */
+    private static void updateGate(ServerLevel level, CampRecord record, boolean night) {
+        BlockPos gatePos = record.getGatePos();
+        if (gatePos == null) {
+            return;
+        }
+        BlockState state = level.getBlockState(gatePos);
+        if (state.getBlock() instanceof net.minecraft.world.level.block.DoorBlock door) {
+            door.setOpen(null, level, state, gatePos, !night && !record.isClosed());
         }
     }
 

@@ -1,0 +1,63 @@
+{
+  "counts": {
+    "json_files": 43,
+    "parsed": 43,
+    "findings": 0,
+    "info": 0,
+    "internal_refs": 78,
+    "unresolved": [],
+    "missing_textures": 5
+  },
+  "errors": [],
+  "info": [],
+  "unresolved_internal": [],
+  "missing_textures": [
+    {
+      "from": "models/block/camp_barbed_wire_post.json",
+      "kind": "texture",
+      "ref": "block/camp_barbed_wire"
+    },
+    {
+      "from": "models/block/camp_barbed_wire_post.json",
+      "kind": "texture",
+      "ref": "block/camp_barbed_wire"
+    },
+    {
+      "from": "models/block/camp_barbed_wire_side.json",
+      "kind": "texture",
+      "ref": "block/camp_barbed_wire"
+    },
+    {
+      "from": "models/block/camp_barbed_wire_side.json",
+      "kind": "texture",
+      "ref": "block/camp_barbed_wire"
+    },
+    {
+      "from": "models/item/camp_barbed_wire.json",
+      "kind": "texture",
+      "ref": "block/camp_barbed_wire"
+    }
+  ],
+  "blockstates_without_item_model": [],
+  "external_parents": [
+    "block/cube_all",
+    "block/iron_bars_post",
+    "block/iron_bars_side",
+    "block/iron_door_bottom_left",
+    "block/iron_door_bottom_left_open",
+    "block/iron_door_bottom_right",
+    "block/iron_door_bottom_right_open",
+    "block/iron_door_top_left",
+    "block/iron_door_top_left_open",
+    "block/iron_door_top_right",
+    "block/iron_door_top_right_open",
+    "item/generated",
+    "item/template_spawn_egg"
+  ],
+  "external_textures": [
+    "block/chain",
+    "block/iron_door_bottom",
+    "block/iron_door_top",
+    "item/iron_door"
+  ]
+}

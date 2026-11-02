@@ -17,8 +17,8 @@
 				"inspect-minecraft",
 				"get-class-source",
 				"analyze-symbol",
-				"batch-symbol-exists",
-				"analyze-mod"
+				"analyze-mod",
+				"batch-symbol-exists"
 			],
 			"disabledTools": [
 				"compare-minecraft",
@@ -55,6 +55,63 @@
 				"search-mod-source"
 			],
 			"disabled": false
+		},
+		"blockbench": {
+			"command": "C:/Program Files/nodejs/node.exe",
+			"args": [
+				"E:/Modding/MDK/SurvivalPoints/assets-source/AiModelling/blockbench-mcp/dist/index.js"
+			],
+			"env": {
+				"BLOCKBENCH_MCP_PORT": "8787"
+			},
+			"disabled": true,
+			"alwaysAllow": [
+				"add_groups",
+				"new_project",
+				"add_cubes",
+				"edit_element",
+				"apply_texture",
+				"screenshot_views",
+				"paint_faces",
+				"save_project",
+				"check_model",
+				"list_outliner",
+				"get_status",
+				"audit_complexity",
+				"export_model",
+				"request_review",
+				"wait_review",
+				"get_reference",
+				"execute_script",
+				"measure_model",
+				"get_guide",
+				"pack_uv",
+				"detail_cubes",
+				"check_sides",
+				"compare_reference",
+				"list_textures",
+				"get_rig",
+				"check_rig",
+				"get_texture",
+				"add_hollow_volume",
+				"which_side",
+				"create_texture",
+				"resize_texture",
+				"load_reference",
+				"paint_texture",
+				"list_references",
+				"load_project",
+				"add_group",
+				"add_cube",
+				"add_mesh",
+				"set_camera_angle",
+				"close_project",
+				"import_texture",
+				"render_previews",
+				"delete_element",
+				"list_formats",
+				"set_cube_uv"
+			]
 		}
 	}
 }

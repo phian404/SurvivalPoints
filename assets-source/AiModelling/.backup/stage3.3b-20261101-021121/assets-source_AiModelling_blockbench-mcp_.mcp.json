@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "blockbench": {
+      "command": "C:/Program Files/nodejs/node.exe",
+      "args": [
+        "E:/Modding/Blockbench/AiModelling/blockbench-mcp/dist/index.js"
+      ],
+      "env": {
+        "BLOCKBENCH_MCP_PORT": "8787"
+      }
+    }
+  }
+}

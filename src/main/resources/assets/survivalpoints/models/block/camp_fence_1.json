@@ -1,0 +1,6 @@
+{
+  "parent": "block/cube_all",
+  "textures": {
+    "all": "survivalpoints:block/camp_fence_1"
+  }
+}

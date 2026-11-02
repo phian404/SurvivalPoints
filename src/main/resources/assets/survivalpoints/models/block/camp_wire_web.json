@@ -1,0 +1,25 @@
+{
+  "ambientocclusion": false,
+  "textures": {
+    "particle": "survivalpoints:block/camp_wire_web",
+    "web": "survivalpoints:block/camp_wire_web"
+  },
+  "elements": [
+    {
+      "from": [0, 0, 7.5],
+      "to": [16, 16, 8.5],
+      "faces": {
+        "north": {"uv": [0, 0, 16, 16], "texture": "#web"},
+        "south": {"uv": [0, 0, 16, 16], "texture": "#web"}
+      }
+    },
+    {
+      "from": [7.5, 0, 0],
+      "to": [8.5, 16, 16],
+      "faces": {
+        "east": {"uv": [0, 0, 16, 16], "texture": "#web"},
+        "west": {"uv": [0, 0, 16, 16], "texture": "#web"}
+      }
+    }
+  ]
+}

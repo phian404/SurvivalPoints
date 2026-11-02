@@ -48,6 +48,13 @@ public class CampDebugCommand {
                 .then(Commands.literal("info")
                         .then(Commands.argument("id", StringArgumentType.word())
                                 .executes(ctx -> info(ctx, StringArgumentType.getString(ctx, "id")))))
+                .then(Commands.literal("generate")
+                        .then(Commands.argument("name", StringArgumentType.string())
+                                .executes(ctx -> generate(ctx, StringArgumentType.getString(ctx, "name"),
+                                        CampTuning.CAMP_DEFAULT_RADIUS))
+                                .then(Commands.argument("radius", IntegerArgumentType.integer(8, 64))
+                                        .executes(ctx -> generate(ctx, StringArgumentType.getString(ctx, "name"),
+                                                IntegerArgumentType.getInteger(ctx, "radius"))))))
                 .then(Commands.literal("create")
                         .then(Commands.argument("name", StringArgumentType.string())
                                 .executes(ctx -> create(ctx, StringArgumentType.getString(ctx, "name"),
@@ -126,6 +133,27 @@ public class CampDebugCommand {
                     .append(post.isFree() ? "§8[свободен]" : "§8[занят]");
         }
         ctx.getSource().sendSuccess(() -> Component.literal(posts.toString()), false);
+        return 1;
+    }
+
+    private static int generate(CommandContext<CommandSourceStack> ctx, String name, int radius) {
+        ServerLevel level = ctx.getSource().getLevel();
+        Vec3 pos = ctx.getSource().getPosition();
+        BlockPos anchor = new BlockPos(Mth.floor(pos.x), Mth.floor(pos.y), Mth.floor(pos.z));
+
+        String refusal = CampManager.canCreateCamp(level, null);
+        if (refusal != null) {
+            ctx.getSource().sendFailure(Component.literal("§c" + refusal));
+            return 0;
+        }
+
+        String trimmed = name.length() > CampTuning.CAMP_NAME_MAX_LENGTH
+                ? name.substring(0, CampTuning.CAMP_NAME_MAX_LENGTH) : name;
+
+        CampRecord record = CampManager.createCamp(level, anchor, null, trimmed, radius);
+        com.phian404.survivalpoints.camp.CampGenerator.generate(level, record);
+        ctx.getSource().sendSuccess(() -> Component.literal("§aЛагерь «" + record.getName()
+                + "» построен §7(" + record.getShortId() + ", якорь " + anchor.toShortString() + ")"), true);
         return 1;
     }
 

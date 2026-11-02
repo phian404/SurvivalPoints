@@ -17,6 +17,11 @@ public class ModCreativeTabs {
                     .icon(() -> new ItemStack(ModBlocks.CAMP_RADIO_ITEM.get()))
                     .displayItems((params, output) -> {
                         output.accept(ModBlocks.CAMP_RADIO_ITEM.get());
+                        output.accept(ModBlocks.CAMP_FENCE_ITEM.get());
+                        output.accept(ModBlocks.CAMP_FENCE_POST_ITEM.get());
+                        output.accept(ModBlocks.CAMP_BARBED_WIRE_ITEM.get());
+                        output.accept(ModBlocks.CAMP_WIRE_WEB_ITEM.get());
+                        output.accept(ModBlocks.CAMP_GATE_ITEM.get());
                         output.accept(ModEntities.BASE_GUARDIAN_SPAWN_EGG.get());
                         output.accept(ModEntities.BASE_SURVIVOR_SPAWN_EGG.get());
                     })

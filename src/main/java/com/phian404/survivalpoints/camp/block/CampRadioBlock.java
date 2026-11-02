@@ -61,7 +61,43 @@ public class CampRadioBlock extends BaseEntityBlock {
         return InteractionResult.SUCCESS;
     }
 
-@Override
+    @Override
+    public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
+        super.onPlace(state, level, pos, oldState, movedByPiston);
+        if (level.isClientSide || movedByPiston || !(level instanceof ServerLevel server)) {
+            return;
+        }
+        // Якорь: если рядом уже есть лагерь — это ретранслятор, новый не создаём.
+        if (CampManager.findCampAt(server, pos) != null) {
+            return;
+        }
+        // Привязку campId к BE делает его тик (лениво): на момент onPlace
+        // BlockEntity ещё не поставлен в мир.
+        CampManager.createCamp(server, pos, null,
+                "Лагерь выживших", CampTuning.CAMP_DEFAULT_RADIUS);
+    }
+
+    @Override
+    public void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
+        if (!level.isClientSide && level instanceof ServerLevel server) {
+            // Распад лагеря только если разрушен именно якорь.
+            if (state.getBlock() != newState.getBlock()) {
+                CampRecord record = null;
+                for (CampRecord r : CampManager.data(server).getCamps()) {
+                    if (r.getAnchor().equals(pos)) {
+                        record = r;
+                        break;
+                    }
+                }
+                if (record != null) {
+                    CampManager.data(server).removeCamp(record.getId());
+                }
+            }
+        }
+        super.onRemove(state, level, pos, newState, movedByPiston);
+    }
+
+    @Override
     public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state,
                                                                   BlockEntityType<T> type) {
         if (level.isClientSide) return null;

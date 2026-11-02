@@ -1,0 +1,20 @@
+{
+  "textures": {
+    "particle": "survivalpoints:block/camp_fence_post",
+    "planks": "survivalpoints:block/camp_fence_post"
+  },
+  "elements": [
+    {
+      "from": [6, 0, 6],
+      "to": [10, 16, 10],
+      "faces": {
+        "north": {"uv": [6, 0, 10, 16], "texture": "#planks"},
+        "east":  {"uv": [6, 0, 10, 16], "texture": "#planks"},
+        "south": {"uv": [6, 0, 10, 16], "texture": "#planks"},
+        "west":  {"uv": [6, 0, 10, 16], "texture": "#planks"},
+        "up":    {"uv": [6, 6, 10, 10], "texture": "#planks"},
+        "down":  {"uv": [6, 6, 10, 10], "texture": "#planks"}
+      }
+    }
+  ]
+}

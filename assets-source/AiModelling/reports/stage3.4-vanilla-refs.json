@@ -1,0 +1,92 @@
+{
+  "jar": "client.jar",
+  "index": "5.json",
+  "checks": [
+    {
+      "kind": "parent",
+      "ref": "block/cube_all",
+      "key": "models/block/cube_all.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "block/iron_bars_post",
+      "key": "models/block/iron_bars_post.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "block/iron_bars_side",
+      "key": "models/block/iron_bars_side.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "block/iron_door_bottom_left",
+      "key": "models/block/iron_door_bottom_left.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "block/iron_door_bottom_left_open",
+      "key": "models/block/iron_door_bottom_left_open.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "block/iron_door_bottom_right",
+      "key": "models/block/iron_door_bottom_right.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "block/iron_door_bottom_right_open",
+      "key": "models/block/iron_door_bottom_right_open.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "block/iron_door_top_left",
+      "key": "models/block/iron_door_top_left.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "block/iron_door_top_left_open",
+      "key": "models/block/iron_door_top_left_open.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "block/iron_door_top_right",
+      "key": "models/block/iron_door_top_right.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "block/iron_door_top_right_open",
+      "key": "models/block/iron_door_top_right_open.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "item/generated",
+      "key": "models/item/generated.json"
+    },
+    {
+      "kind": "parent",
+      "ref": "item/template_spawn_egg",
+      "key": "models/item/template_spawn_egg.json"
+    },
+    {
+      "kind": "texture",
+      "ref": "block/chain",
+      "key": "textures/block/chain.png"
+    },
+    {
+      "kind": "texture",
+      "ref": "block/iron_door_bottom",
+      "key": "textures/block/iron_door_bottom.png"
+    },
+    {
+      "kind": "texture",
+      "ref": "block/iron_door_top",
+      "key": "textures/block/iron_door_top.png"
+    },
+    {
+      "kind": "texture",
+      "ref": "item/iron_door",
+      "key": "textures/item/iron_door.png"
+    }
+  ],
+  "missing": 0
+}

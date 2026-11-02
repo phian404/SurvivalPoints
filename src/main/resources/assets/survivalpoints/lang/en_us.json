@@ -1,5 +1,10 @@
 {
   "block.survivalpoints.camp_radio": "Radio Tower",
+  "block.survivalpoints.camp_fence": "Camp Fence",
+  "block.survivalpoints.camp_fence_post": "Camp Perimeter Post",
+  "block.survivalpoints.camp_barbed_wire": "Camp Barbed Wire",
+  "block.survivalpoints.camp_wire_web": "Camp Wire Web (test)",
+  "block.survivalpoints.camp_gate": "Camp Gate",
   "item.survivalpoints.base_guardian_spawn_egg": "Base Guardian Spawn Egg",
   "item.survivalpoints.base_survivor_spawn_egg": "Survivor Spawn Egg",
   "entity.survivalpoints.base_survivor": "Survivor",
