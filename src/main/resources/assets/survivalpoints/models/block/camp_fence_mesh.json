@@ -1,8 +1,8 @@
 {
   "ambientocclusion": false,
   "textures": {
-    "particle": "survivalpoints:block/block_steel",
-    "mesh": "survivalpoints:block/block_steel"
+    "particle": "survivalpoints:block/camp_fence",
+    "mesh": "survivalpoints:block/camp_fence"
   },
   "elements": [
     {

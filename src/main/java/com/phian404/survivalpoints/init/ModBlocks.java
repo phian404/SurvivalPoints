@@ -2,6 +2,7 @@ package com.phian404.survivalpoints.init;
 
 import com.phian404.survivalpoints.SurvivalPointsMod;
 import com.phian404.survivalpoints.camp.block.CampBarbedWireBlock;
+import com.phian404.survivalpoints.camp.block.CampBarbedWireBracketBlock;
 import com.phian404.survivalpoints.camp.block.CampFenceBlock;
 import com.phian404.survivalpoints.camp.block.CampFencePostBlock;
 import com.phian404.survivalpoints.camp.block.CampGateBlock;
@@ -35,6 +36,9 @@ public class ModBlocks {
     public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_GATE =
             BLOCKS.register("camp_gate", CampGateBlock::new);
 
+    public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_BARBED_WIRE_BRACKET =
+            BLOCKS.register("camp_barbed_wire_bracket", CampBarbedWireBracketBlock::new);
+
     /** ТЕСТОВЫЙ вариант проволоки — паутина (сравнение с camp_barbed_wire). */
     public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_WIRE_WEB =
             BLOCKS.register("camp_wire_web", CampWireWebBlock::new);
@@ -64,6 +68,10 @@ public class ModBlocks {
 
     public static final net.minecraftforge.registries.RegistryObject<Item> CAMP_WIRE_WEB_ITEM =
             ITEMS.register("camp_wire_web", () -> new BlockItem(CAMP_WIRE_WEB.get(),
+                    new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> CAMP_BARBED_WIRE_BRACKET_ITEM =
+            ITEMS.register("camp_barbed_wire_bracket", () -> new BlockItem(CAMP_BARBED_WIRE_BRACKET.get(),
                     new Item.Properties()));
 
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES =

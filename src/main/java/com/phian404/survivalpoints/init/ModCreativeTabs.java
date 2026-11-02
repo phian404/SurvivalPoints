@@ -20,6 +20,7 @@ public class ModCreativeTabs {
                         output.accept(ModBlocks.CAMP_FENCE_ITEM.get());
                         output.accept(ModBlocks.CAMP_FENCE_POST_ITEM.get());
                         output.accept(ModBlocks.CAMP_BARBED_WIRE_ITEM.get());
+                        output.accept(ModBlocks.CAMP_BARBED_WIRE_BRACKET_ITEM.get());
                         output.accept(ModBlocks.CAMP_WIRE_WEB_ITEM.get());
                         output.accept(ModBlocks.CAMP_GATE_ITEM.get());
                         output.accept(ModEntities.BASE_GUARDIAN_SPAWN_EGG.get());

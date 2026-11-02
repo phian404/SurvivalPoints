@@ -1,3 +1,6 @@
+# Исходники ассетов (не индексировать)
+assets-source/
+
 # eclipse
 bin
 *.launch
@@ -43,4 +46,3 @@ backups/
 report.txt
 Report.txt
 oldAI_CONTEXT
-assets_source/
