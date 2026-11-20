@@ -4,3 +4,40 @@ run/
 bin/
 *.log
 .idea/
+
+# === AiModelling: ограничение доступа Roo (локальное хранилище, вне Git) ===
+
+# Сторонний Blockbench MCP — нужны только README.md и skills/
+assets-source/AiModelling/blockbench-mcp/src/
+assets-source/AiModelling/blockbench-mcp/test/
+assets-source/AiModelling/blockbench-mcp/assets/
+assets-source/AiModelling/blockbench-mcp/plugin/
+assets-source/AiModelling/blockbench-mcp/tsconfig.json
+assets-source/AiModelling/blockbench-mcp/package-lock.json
+assets-source/AiModelling/blockbench-mcp/.mcp.json
+
+# Служебное, конфигурация и дубли
+assets-source/AiModelling/.backup/
+assets-source/AiModelling/.roo/
+assets-source/AiModelling/.mcp.json
+assets-source/AiModelling/VANILLA_FRIENDLY_GUIDELINES.md
+
+# Ванильные референсы: тяжёлые нерелевантные ветки
+assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/sounds/
+assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/sounds.json
+assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/shaders/
+assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/font/
+assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/lang/
+assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/particles/
+assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/atlases/
+assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/resourcepacks/
+assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/textures/
+assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/texts/
+
+# Производные и регенерируемые данные
+assets-source/AiModelling/references/zooms/
+assets-source/AiModelling/export/previews/
+assets-source/AiModelling/reports/previews/
+
+# Старые копии Art-документов: канон в .roo/plans/Art/
+assets-source/AiModelling/inbox/approved-art-docs/

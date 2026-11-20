@@ -8,10 +8,13 @@ import com.phian404.survivalpoints.camp.block.CampFencePostBlock;
 import com.phian404.survivalpoints.camp.block.CampGateBlock;
 import com.phian404.survivalpoints.camp.block.CampRadioBlock;
 import com.phian404.survivalpoints.camp.block.CampWireWebBlock;
+import com.phian404.survivalpoints.camp.block.fence.PostBlock;
+import com.phian404.survivalpoints.camp.block.fence.SectionBlock;
 import com.phian404.survivalpoints.camp.blockentity.CampRadioBlockEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
@@ -43,6 +46,30 @@ public class ModBlocks {
     public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_WIRE_WEB =
             BLOCKS.register("camp_wire_web", CampWireWebBlock::new);
 
+    // === Модульные ограждения по спеке v1.1.7-final ===
+    // Актуальная система. Legacy camp_* выше оставлены ради CampGenerator
+    // и скрыты из креативной вкладки. См. .roo/plans/fences/.
+
+    /** Опора периметра: обтёсанное бревно 8×8 px, стекуется вертикально. */
+    public static final net.minecraftforge.registries.RegistryObject<Block> POST =
+            BLOCKS.register("post", PostBlock::new);
+
+    /** Секция из досок: две доски с просветом. */
+    public static final net.minecraftforge.registries.RegistryObject<Block> PLANK_SECTION =
+            BLOCKS.register("plank_section", () -> new SectionBlock(SoundType.WOOD));
+
+    /** Секция колючей проволоки: две нити на высотах 4..6 и 12..14. */
+    public static final net.minecraftforge.registries.RegistryObject<Block> WIRE_SECTION =
+            BLOCKS.register("wire_section", () -> new SectionBlock(SoundType.METAL));
+
+    /** Секция сетки «рабица»: плоская панель 2 px. */
+    public static final net.minecraftforge.registries.RegistryObject<Block> MESH_SECTION =
+            BLOCKS.register("mesh_section", () -> new SectionBlock(SoundType.METAL));
+
+    /** Секция листа: плоская панель с металлической рейкой внизу. */
+    public static final net.minecraftforge.registries.RegistryObject<Block> SHEET_SECTION =
+            BLOCKS.register("sheet_section", () -> new SectionBlock(SoundType.METAL));
+
     public static final DeferredRegister<Item> ITEMS =
             DeferredRegister.create(ForgeRegistries.ITEMS, SurvivalPointsMod.MOD_ID);
 
@@ -73,6 +100,21 @@ public class ModBlocks {
     public static final net.minecraftforge.registries.RegistryObject<Item> CAMP_BARBED_WIRE_BRACKET_ITEM =
             ITEMS.register("camp_barbed_wire_bracket", () -> new BlockItem(CAMP_BARBED_WIRE_BRACKET.get(),
                     new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> POST_ITEM =
+            ITEMS.register("post", () -> new BlockItem(POST.get(), new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> PLANK_SECTION_ITEM =
+            ITEMS.register("plank_section", () -> new BlockItem(PLANK_SECTION.get(), new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> WIRE_SECTION_ITEM =
+            ITEMS.register("wire_section", () -> new BlockItem(WIRE_SECTION.get(), new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> MESH_SECTION_ITEM =
+            ITEMS.register("mesh_section", () -> new BlockItem(MESH_SECTION.get(), new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> SHEET_SECTION_ITEM =
+            ITEMS.register("sheet_section", () -> new BlockItem(SHEET_SECTION.get(), new Item.Properties()));
 
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES =
             DeferredRegister.create(ForgeRegistries.BLOCK_ENTITY_TYPES, SurvivalPointsMod.MOD_ID);

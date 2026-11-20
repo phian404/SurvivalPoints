@@ -1,5 +1,10 @@
 {
   "itemGroup.survivalpoints": "SurvivalPoints",
+  "block.survivalpoints.post": "Столб ограждения",
+  "block.survivalpoints.plank_section": "Секция из досок",
+  "block.survivalpoints.wire_section": "Секция колючей проволоки",
+  "block.survivalpoints.mesh_section": "Секция сетки",
+  "block.survivalpoints.sheet_section": "Секция листа",
   "block.survivalpoints.camp_radio": "Радио вышка лагеря",
   "block.survivalpoints.camp_fence": "Забор лагеря",
   "block.survivalpoints.camp_fence_post": "Столб периметра лагеря",
