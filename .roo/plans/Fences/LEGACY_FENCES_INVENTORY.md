@@ -5,10 +5,22 @@
 > Не использовать как образец, не расширять, не «улучшать», не копировать паттерны.
 >
 > Единственный источник истины по дизайну ограждений:
-> [`SurvivalPoints_Fences_v1.1.7-final.md`](.roo/plans/fences/SurvivalPoints_Fences_v1.1.7-final.md)
-> и [`SurvivalPoints_Fences_Visual_Reference_v5.md`](.roo/plans/fences/SurvivalPoints_Fences_Visual_Reference_v5.md).
+> [`SurvivalPoints_Fences_v1.1.7-final.md`](.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md) —
+> основной документ (требования, геометрия, коллизии, состояния) и
+> [`SurvivalPoints_Fences_Visual_Reference_v5.md`](.roo/plans/Fences/SurvivalPoints_Fences_Visual_Reference_v5.md) —
+> визуальный референс к нему.
 >
-> План внедрения новой системы: [`fences-v1.1.7-implementation-plan.md`](.roo/plans/fences/fences-v1.1.7-implementation-plan.md).
+> Иерархия остальных документов пакета:
+>
+> | Роль | Документ |
+> |---|---|
+> | Основной документ | [`SurvivalPoints_Fences_v1.1.7-final.md`](.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md) |
+> | Визуальный референс | [`SurvivalPoints_Fences_Visual_Reference_v5.md`](.roo/plans/Fences/SurvivalPoints_Fences_Visual_Reference_v5.md) |
+> | План внедрения (статус шапки отменён, см. ниже) | [`fences-v1.1.7-implementation-plan.md`](.roo/plans/Fences/fences-v1.1.7-implementation-plan.md) |
+> | Принятое изменение: `tip = 0` + направленный язык | [`fences-tip0-directional-tongue-plan.md`](.roo/plans/Fences/fences-tip0-directional-tongue-plan.md) — **отменяет** раздел `tip = 4` плана внедрения |
+> | Открытый вопрос: 32×32 текстуры | [`fences-textures-32-rewrite-plan.md`](.roo/plans/Fences/fences-textures-32-rewrite-plan.md) — конфликт 16×16/32×32 **не решён**, см. §2 этого документа |
+> | Точечная правка торцов | [`fences-torцы-2px-plan.md`](.roo/plans/Fences/fences-torцы-2px-plan.md) |
+> | Историческая инвентаризация legacy | этот документ |
 
 ## Статус
 

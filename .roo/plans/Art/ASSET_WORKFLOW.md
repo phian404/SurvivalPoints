@@ -1,6 +1,6 @@
 # SurvivalPoints — Asset Workflow
 
-> **Status:** Draft v1.0 — prepared for owner review; not yet committed to the repository.  
+> **Status:** Committed — pending owner approval (v1.0 content is in the repository but not yet approved as final).
 > **Purpose:** define how the owner, Roo Code, and the asset tools move from a natural-language request to an accepted in-game asset pack.
 
 ## 1. Core principle
@@ -24,8 +24,19 @@ The agent must not silently change approved design decisions or write to runtime
 
 ### 2.2 Roo Code skills
 
+Current state — only one skill exists:
+
 ```text
-.roo/skills/
+.roo/skills-minecraft-modeler/
+└── blockbench-mcp-modeling/
+    ├── SKILL.md
+    └── references/
+```
+
+Planned asset skills (not created yet; the agent must not assume they exist):
+
+```text
+.roo/skills/                       # planned, does not exist
 ├── survivalpoints-asset-director/
 │   └── SKILL.md
 ├── survivalpoints-block-assets/
@@ -36,37 +47,36 @@ The agent must not silently change approved design decisions or write to runtime
     └── SKILL.md
 ```
 
+Until these skills exist, their responsibilities are covered by this document and the mode instructions.
+
 ### 2.3 Source assets and tools
+
+Current state (verified):
 
 ```text
 assets-source/AiModelling/
-├── palettes/
-│   ├── wood.json
-│   ├── stone.json
-│   ├── metal.json
-│   ├── leather.json
-│   ├── cloth.json
-│   └── npc-skin.json
-├── References/
-│   └── vanilla-reference-notes.md
-├── Fences/
-│   ├── source/
-│   ├── textures/
-│   ├── models/
-│   └── previews/
-├── NPC-Skins/
-│   ├── template/
-│   ├── layers/shared/
-│   ├── layers/arms/WIDE/
-│   ├── layers/arms/SLIM/
-│   ├── manifests/
-│   ├── exports/
-│   └── previews/
-└── tools/
-    ├── validate_assets.py
-    ├── preview_textures.py
-    └── compose_skins.py
+├── blockbench-mcp/          # Blockbench MCP server, includes skills/
+├── export/                  # intermediate exported models, textures, previews
+├── inbox/approved-art-docs/ # archived copies of approved Art documents (roo-ignored)
+├── projects/                # *.bbmodel Blockbench sources
+├── references/              # visual references (vanilla tiles, zooms)
+├── reports/                 # validation reports and preview contact sheets
+├── scripts/                 # check_vanilla_refs.js, validate_forge_assets.js, *.ps1 helpers
+└── vanilla-reference/       # local vanilla 1.20.1 resource reference
 ```
+
+Target state (planned; create only when a task requires it):
+
+```text
+assets-source/AiModelling/
+├── palettes/                # planned: wood.json, stone.json, metal.json, leather.json, cloth.json, npc-skin.json
+├── references/notes/        # planned: vanilla-reference-notes.md
+├── Fences/                  # planned: source/, textures/, models/, previews/
+├── NPC-Skins/               # planned: template/, layers/shared/, layers/arms/WIDE|SLIM/, manifests/, exports/, previews/
+└── scripts/                 # planned additions: validate_assets.py, preview_textures.py, compose_skins.py
+```
+
+The existing validator is `assets-source/AiModelling/scripts/validate_forge_assets.js` (read-only checks of Forge asset JSON and texture references). The Python tools listed in section 6 are targets, not existing files.
 
 `assets-source/AiModelling/` is for working sources and outputs, not a second runtime resource tree. Vanilla Minecraft files are not copied into the public mod assets; record resource locations and keep any permitted local reference copies outside distributable assets.
 
@@ -138,10 +148,12 @@ Do not silently replace assets used by another system.
 
 ### 4.1 Canonical inputs
 
-- `SurvivalPoints_Fences_v1.1.7-final.md`
-- `SurvivalPoints_Fences_Visual_Reference_v5.md`
+- `.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md`
+- `.roo/plans/Fences/SurvivalPoints_Fences_Visual_Reference_v5.md`
 
 These two files are the authoritative requirements for the Fences pack. The new global rules add production constraints but do not silently revise the approved geometry, behavior, IDs, states, palette, or accepted limitations.
+
+The full document hierarchy for the Fences pack — which plans refine the specification and which are historical — is listed in `.roo/plans/README.md` and in `.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md`.
 
 ### 4.2 Important distinction: Fences pack versus existing camp perimeter
 
@@ -208,7 +220,7 @@ The Fences specification's 16/32/64 texture-resolution question remains open unt
 
 ### 5.1 Compatibility baseline
 
-Use the current local `SurvivorSkin.VARIANTS` as the final authority. The inspected public `master` snapshot has 14 regular entries, with 8 WIDE and 6 SLIM profiles:
+Use the current local `SurvivorSkin.VARIANTS` as the final authority. The local [`SurvivorSkin.java`](../../../src/main/java/com/phian404/survivalpoints/entity/SurvivorSkin.java) defines 14 regular entries, with 8 WIDE and 6 SLIM profiles:
 
 | Index | Variant | Profile |
 |---:|---|---|
@@ -228,6 +240,27 @@ Use the current local `SurvivorSkin.VARIANTS` as the final authority. The inspec
 | 13 | Trader | WIDE |
 
 Preserve all 14 indices, file names, and runtime resource paths. The four leader skins remain a separate pack for later work.
+
+Source skin file names in `assets-source/ReadyToUseSkins/BasicNPCs/` do **not** match the runtime names. The fixed mapping (verified against the local `SurvivorSkin.VARIANTS` order) is:
+
+| Index | Runtime texture (`src/main/resources`) | Source file (`assets-source/ReadyToUseSkins/BasicNPCs/`) |
+|---:|---|---|
+| 0 | `npc_carpenter_0.png` | `Carpenter_male_0.png` |
+| 1 | `npc_cook_0.png` | `Cook_female_0.png` |
+| 2 | `npc_farmer_0.png` | `Farm_female_0.png` |
+| 3 | `npc_farmer_1.png` | `Farm_female_1.png` |
+| 4 | `npc_farmer_2.png` | `Farmer_male_0.png` |
+| 5 | `npc_guard_0.png` | `Guard_male_0.png` |
+| 6 | `npc_hunter_0.png` | `Hunter_female_0.png` |
+| 7 | `npc_mechanic_0.png` | `Mechanic_male_0.png` |
+| 8 | `npc_mechanic_1.png` | `Mechanic_male_1.png` |
+| 9 | `npc_medic_0.png` | `Medic_female_0.png` |
+| 10 | `npc_ranger_0.png` | `Ranger_male_0.png` |
+| 11 | `npc_scavenger_0.png` | `Scavenger_male_0.png` |
+| 12 | `npc_settler_0.png` | `Settler_female_0.png` |
+| 13 | `npc_trader_0.png` | `Trader_male_0.png` |
+
+Never rename a source skin and never reorder `SurvivorSkin.VARIANTS` to match file names.
 
 ### 5.2 Layered 64×64 master template
 
@@ -271,7 +304,9 @@ Do not accept the two samples using only a generic vanilla player preview.
 
 The first implementation should remain small and local. No MCP server, external agent framework, Blender pipeline, or new runtime dependency is required for the initial pilots.
 
-### 6.1 Skills
+**Status of this section:** everything in 6.1-6.4 is a target design, not an existing implementation. None of the four asset skills and none of the three Python tools exist in the repository. The only working validator today is `assets-source/AiModelling/scripts/validate_forge_assets.js` (Node.js, read-only). Do not call a Python tool before creating it.
+
+### 6.1 Skills (planned - does not exist yet)
 
 | Skill | Responsibility |
 |---|---|
@@ -328,7 +363,6 @@ Capabilities:
 - generate a contact sheet of all 14 results and a machine-readable build report.
 
 The default output is under `assets-source/AiModelling/NPC-Skins/exports/`. Copying results into `src/main/resources` must require a separate explicit install command and owner approval.
-
 ### 6.5 Dependencies and safety
 
 Pillow may be used for PNG reading, compositing, nearest-neighbour previews, and contact sheets. Prefer Python standard library for JSON, paths, CLI parsing, and reports. Keep the dependency list minimal and document its version.

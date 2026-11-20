@@ -61,7 +61,7 @@
 			"env": {
 				"BLOCKBENCH_MCP_PORT": "8787"
 			},
-			"disabled": false,
+			"disabled": true,
 			"alwaysAllow": [
 				"add_groups",
 				"new_project",

@@ -19,8 +19,8 @@
 | Воздух | Выступ висит в пустоте | Визуально приемлемо, но геометрия выходит за блок |
 
 Дополнительный усилитель: UV длинных граней натянут на 24 px
-(например [`section_planks.json`](src/main/resources/assets/survivalpoints/models/block/section_planks.json:14) —
-`[1,0,23,5]`). В полосе перекрытия сосед показывает **другой участок** текстуры,
+(например [`section_planks.json`](src/main/resources/assets/survivalpoints/models/block/section_planks.json:13) —
+`[1,0,17,5]`). В полосе перекрытия сосед показывает **другой участок** текстуры,
 поэтому дефект читается не как мерцание, а как «другая текстура».
 
 ### 1.2. Почему сдвиг на 0.01 px не подходит
@@ -52,7 +52,7 @@
 
 ### 2.2. Что отменяется
 
-Шапка [`fences-v1.1.7-implementation-plan.md`](.roo/plans/fences/fences-v1.1.7-implementation-plan.md:3)
+Шапка [`fences-v1.1.7-implementation-plan.md`](.roo/plans/Fences/fences-v1.1.7-implementation-plan.md:3)
 с «санкционированным отступлением tip = 4» **переписывается**: отступление
 отменено как источник дефекта, возвращается `tip = 0` из спеки плюс
 направленные языки.
@@ -141,7 +141,7 @@ waterlog-логику. Возврат `state.setValue(...)` вместо `super`
 | [`section_mesh.json`](src/main/resources/assets/survivalpoints/models/block/section_mesh.json:9) | `[7,0,-4] .. [9,16,20]`, UV `[0,0,24,16]` | `[7,0,0] .. [9,16,16]`, UV `[0,0,16,16]` |
 | [`section_sheet.json`](src/main/resources/assets/survivalpoints/models/block/section_sheet.json:10) | панель `-4..20`, рейка `-4..20` | панель `0..16`, рейка `0..16` |
 | [`section_wire.json`](src/main/resources/assets/survivalpoints/models/block/section_wire.json:9) | нити `-4..20` | нити `0..16` |
-| [`section_planks.json`](src/main/resources/assets/survivalpoints/models/block/section_planks.json:9) | доски `-4..20`, UV `[1,0,23,5]` | доски `0..16`, UV `[1,0,17,5]` |
+| [`section_planks.json`](src/main/resources/assets/survivalpoints/models/block/section_planks.json:9) | доски `-4..20`, UV `[1,0,17,5]` | доски `0..16`, UV `[1,0,17,5]` |
 
 UV длинных граней: длина 16 px вместо 24 px. Для `plank` сохраняется
 1 px отступа с каждой стороны (кромка end-grain), то есть `[1,0,17,5]`.
@@ -224,7 +224,7 @@ UV длинных граней: длина 16 px вместо 24 px. Для `pla
 
 | # | Шаг | Файлы |
 |---|---|---|
-| 1 | Переписать шапку плана: отменить `tip = 4`, зафиксировать причину | [`fences-v1.1.7-implementation-plan.md`](.roo/plans/fences/fences-v1.1.7-implementation-plan.md:3) |
+| 1 | Переписать шапку плана: отменить `tip = 4`, зафиксировать причину | [`fences-v1.1.7-implementation-plan.md`](.roo/plans/Fences/fences-v1.1.7-implementation-plan.md:3) |
 | 2 | Добавить 4 свойства и регистрацию | [`SectionBlock`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:43) |
 | 3 | `getStateForPlacement` — выставить стороны по опорам | [`SectionBlock`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:72) |
 | 4 | `updateShape` — пересчёт сторон | [`SectionBlock`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:191) |
@@ -233,7 +233,7 @@ UV длинных граней: длина 16 px вместо 24 px. Для `pla
 | 7 | Перевести blockstates на `multipart` | 4 blockstate-файла |
 | 8 | Сборка `gradlew.bat build -x test` | — |
 | 9 | Проверка в игре | — |
-| 10 | Дополнить критерии готовности | [`fences-v1.1.7-implementation-plan.md`](.roo/plans/fences/fences-v1.1.7-implementation-plan.md:207) |
+| 10 | Дополнить критерии готовности | [`fences-v1.1.7-implementation-plan.md`](.roo/plans/Fences/fences-v1.1.7-implementation-plan.md:207) |
 
 ## 7. Проверки приёмки
 

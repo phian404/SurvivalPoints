@@ -1,6 +1,6 @@
 # SurvivalPoints — Art Vision
 
-> **Status:** Draft v1.0 — prepared for owner review; not yet committed to the repository.  
+> **Status:** Committed — pending owner approval (v1.0 content is in the repository but not yet approved as final).
 > **Target:** Minecraft Java Edition 1.20.1 / Forge 47.x / Java 17.  
 > **Purpose:** define the shared artistic identity of every SurvivalPoints asset.
 
@@ -138,6 +138,8 @@ Use references in this order:
 3. This Art Vision.
 4. The technical production rules in `Vanilla-Friendly Guidelines.md`.
 5. Verified vanilla Minecraft Java Edition 1.20.1 resources.
+
+Pack-specific document sets that refine this order are listed in `.roo/plans/README.md`. For the fence pack the order is defined by the Fences document hierarchy: the main specification first, then the accepted change plans, then historical plans that are kept for traceability only.
 
 A pack-specific approved decision may be more specific than this general vision. It must not be silently overridden by a general rule. If two approved sources conflict, stop and report the conflict rather than choosing one without the owner's decision.
 

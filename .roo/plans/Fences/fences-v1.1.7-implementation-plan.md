@@ -1,42 +1,42 @@
 # План: внедрение модульных ограждений по спеке v1.1.7-final (волна 1)
 
-> ## ⚠️ Санкционированное отступление от спеки: tip = 4
+> ## ⚠️ Раздел отменён: принято `tip = 0` + направленный язык
 >
-> Спека v1.1.7-final требует `tip = 0` (элементы строго `0..16` по оси).
-> **В реализации принято `tip = 4`**: секции занимают `-4..20` по оси пролёта.
+> Текст ниже сохранён как история решения. **Действующее решение** —
+> [`fences-tip0-directional-tongue-plan.md`](.roo/plans/Fences/fences-tip0-directional-tongue-plan.md):
+> `tip = 4` отменён как источник Z-fighting на стыках, возвращается `tip = 0`
+> из спеки плюс направленный «язык» (`section_*_tongue.json`) только в сторону
+> [`PostBlock`](../src/main/java/com/phian404/survivalpoints/camp/block/fence/PostBlock.java:46).
 >
-> **Причина:** при `tip = 0` между концом секции (`Z 0`/`Z 16`) и поверхностью
-> колонны (`Z 4..12`) остаётся 4 px воздуха. Спека называет это «допустимым
-> ограничением v1, невидимым на дистанции», но в игре разрыв читается как
-> «секция не примыкает к столбу». Заказчик выбрал закрыть разрыв.
+> ~~Спека v1.1.7-final требует `tip = 0` (элементы строго `0..16` по оси).
+> В реализации принято `tip = 4`: секции занимают `-4..20` по оси пролёта.~~
 >
-> **Следствия, которые нельзя «исправлять» обратно:**
-> - Секции выступают на 4 px в соседние блоки. На стыке секция-секция
->   выступы перекрываются — это осознанная плата за отсутствие разрыва.
-> - UV длинных граней растянут на 24 px (`0..24`), чтобы текстура
->   сохраняла масштаб 1:1 с миром.
-> - Коллизия (D-08) **не менялась**: остаётся `box(7,0,0,9,16,16)` /
->   `box(0,0,7,16,16,9)`. Выступы чисто визуальные.
-> - Раздел §P спеки («tip = 0 закрыт») для этой реализации **не действует**.
+> Причина отмены: при `tip = 4` выступ секции попадает в одну плоскость с гранью
+> плотного ванильного блока и с выступом соседней секции — возникает Z-fighting,
+> читаемый как «чужая текстура». Подробный разбор — в плане `tip0`.
 >
-> Если потребуется вернуться к `tip = 0` — это отдельное решение заказчика,
-> а не «починка бага».
+> Что остаётся неизменным:
+> - Коллизия (D-08) **не менялась**: `box(7,0,0,9,16,16)` / `box(0,0,7,16,16,9)`.
+> - `canSurvive` сохраняет прежнюю семантику.
 
 > **Статус: код и ассеты реализованы, сборка проходит (BUILD SUCCESSFUL).**
 > Остались шаги, требующие запуска клиента: проверка загрузки мира, скриншот-тест
 > разрешений и игровая проверка визуала.
 >
 > Что уже в проекте:
-> - [`PostBlock`](src/main/java/com/phian404/survivalpoints/camp/block/fence/PostBlock.java:39)
-> - [`SectionBlock`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:44)
-> - регистрация 5 блоков и предметов в [`ModBlocks`](src/main/java/com/phian404/survivalpoints/init/ModBlocks.java:46)
+> - [`PostBlock`](../../src/main/java/com/phian404/survivalpoints/camp/block/fence/PostBlock.java:39)
+> - [`SectionBlock`](../../src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:44)
+> - регистрация 5 блоков и предметов в [`ModBlocks`](../../src/main/java/com/phian404/survivalpoints/init/ModBlocks.java:46)
 > - модели `post_core`, `section_wire`, `section_mesh`, `section_sheet`, `section_planks`
-> - текстуры `plank`, `wire`, `mesh`, `sheet`, `metal` (16×16, генератор — `tools/gen-fence-textures.ps1`)
+> - модели `section_*_tongue` (направленный язык к опоре, см. `fences-tip0-directional-tongue-plan.md`)
+> - текстуры `plank`, `wire`, `mesh`, `sheet`, `metal` — разрешение **не подтверждено**, см. ниже
 > - blockstates по `WATERLOGGED` / `AXIS`, item-модели, lang en/ru
 > - render type через `ItemBlockRenderTypes` (конвенция проекта)
 > - legacy `camp_*` скрыт из креативной вкладки
 
-Источник истины по дизайну: [`SurvivalPoints_Fences_v1.1.7-final.md`](.roo/plans/fences/SurvivalPoints_Fences_v1.1.7-final.md) и [`SurvivalPoints_Fences_Visual_Reference_v5.md`](.roo/plans/fences/SurvivalPoints_Fences_Visual_Reference_v5.md).
+**Открытый вопрос: разрешение текстур.** Ранее здесь утверждалось «16×16, генератор — `tools/gen-fence-textures.ps1`». Проверка показала: генератор `tools/gen-fence-textures.ps1` **не существует** (`tools/` содержит только `package.json` и `package-lock.json`), а фактическое разрешение PNG инструментально не подтверждено. Параллельно [`fences-textures-32-rewrite-plan.md`](.roo/plans/Fences/fences-textures-32-rewrite-plan.md) предлагает 32×32. Конфликт **не решён**; ни один вариант не является утверждённым стандартом.
+
+Источник истины по дизайну: [`SurvivalPoints_Fences_v1.1.7-final.md`](.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md) и [`SurvivalPoints_Fences_Visual_Reference_v5.md`](.roo/plans/Fences/SurvivalPoints_Fences_Visual_Reference_v5.md). Иерархия остальных документов пакета — в [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md).
 
 ## Итоги аудита текущего состояния
 
@@ -89,7 +89,7 @@
 
 ### Шаг 1. Инвентаризация legacy
 
-Создать [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/fences/LEGACY_FENCES_INVENTORY.md) с перечнем:
+Создать [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md) с перечнем:
 
 - 4 legacy-блока: `camp_fence`, `camp_fence_post`, `camp_barbed_wire`, `camp_barbed_wire_bracket`;
 - их классы, blockstates, модели (включая сироты), текстуры (включая битые и отсутствующие), item-модели;
@@ -202,7 +202,7 @@ UV: `0..16` блока = полная ширина текстуры, спец-к
 
 ### Шаг 14. Документация
 
-Обновить [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/fences/LEGACY_FENCES_INVENTORY.md): раздел legacy с пометкой «не использовать в новых задачах», ссылкой на спеку v1.1.7-final как единственный источник истины и перечнем того, что в новой системе отсутствует (кронштейн, `camp_wire_web`, направленные свойства опоры).
+Обновить [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md): раздел legacy с пометкой «не использовать в новых задачах», ссылкой на спеку v1.1.7-final как единственный источник истины и перечнем того, что в новой системе отсутствует (кронштейн, `camp_wire_web`, направленные свойства опоры).
 
 ## Критерии готовности волны
 
@@ -220,16 +220,6 @@ UV: `0..16` блока = полная ширина текстуры, спец-к
 - Опора — 8×8 px, без металла и направленных свойств.
 - Скриншот-тест проведён, решение по разрешению зафиксировано.
 - `LEGACY_FENCES_INVENTORY.md` создан и содержит предупреждение для других чатов.
-
-## Вне рамок этой волны
-
-- Каскад разрушения опор (§5.1 спеки) — отдельная волна.
-- Datagen-провайдеры — при необходимости отдельной волной.
-- Рецепты, лут-таблицы, миграция `CampGenerator` на новую систему, удаление legacy-файлов.
-
-- Каскад разрушения опор (§5.1 спеки) — отдельная волна.
-- Datagen-провайдеры — при необходимости отдельной волной.
-- Рецепты, лут-таблицы, миграция `CampGenerator` на новую систему, удаление legacy-файлов.
 
 ## Вне рамок этой волны
 

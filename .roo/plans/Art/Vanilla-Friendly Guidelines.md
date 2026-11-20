@@ -1,6 +1,6 @@
 # Vanilla-Friendly Guidelines — SurvivalPoints
 
-> **Status:** Draft v1.0 — prepared for owner review; not yet committed to the repository.  
+> **Status:** Committed — pending owner approval (v1.0 content is in the repository but not yet approved as final).
 > **Target:** Minecraft Java Edition 1.20.1 / Forge 47.x / Java 17.  
 > **Purpose:** convert the shared Art Vision into practical rules for creating, validating, and delivering models and textures.
 
@@ -224,6 +224,7 @@ Therefore, the Carpenter WIDE and Cook SLIM golden samples must be accepted **in
 - Preserve existing runtime texture resource paths and file names unless a separate migration is approved.
 - Do not rename or reorder a skin because its visual concept changed.
 - Keep the four leader skins as a separate content set unless the owner approves a separate integration plan.
+- Source file names in `assets-source/ReadyToUseSkins/BasicNPCs/` differ from the runtime `npc_*` names. The fixed mapping table is in `ASSET_WORKFLOW.md`, section 5.1. "Preserve names" always refers to the runtime names.
 
 ## 9. Model and texture validation
 
@@ -243,6 +244,8 @@ Before final delivery, validate:
 
 Automated checks are a first gate, not a replacement for visual review or game testing.
 
+The existing automated checker is `assets-source/AiModelling/scripts/validate_forge_assets.js`. It performs read-only checks of Forge asset JSON and texture references. It does not cover every item in the list above; the remaining items are manual review steps. A Python-based validator is a planned, not existing, tool.
+
 ## 10. Legacy assets and exceptions
 
 Existing assets may predate these rules. The validator must distinguish:
@@ -255,10 +258,11 @@ A global rule must not trigger a mass rewrite of existing assets. Migration is p
 
 ## 11. Deliverables and source/runtime separation
 
-- `assets-source/AiModelling/` contains editable sources: `.bbmodel`, PNG layers, palette JSON, manifests, scripts, and generated previews/exports.
+- `assets-source/AiModelling/` contains editable sources: `.bbmodel` projects, PNG layers, scripts, and generated previews/exports. Current subfolders: `projects/`, `references/`, `scripts/`, `export/`, `reports/`, `inbox/`, `vanilla-reference/`, `blockbench-mcp/`. The `palettes/` and `NPC-Skins/` trees are planned, not created.
 - `.roo/plans/Art/` contains the text standards and workflow documents.
-- `.roo/skills/` contains compact Roo Code operational skills.
+- `.roo/skills-minecraft-modeler/` contains the one existing Roo Code skill (`blockbench-mcp-modeling`). The planned `.roo/skills/` asset-skill set does not exist yet.
 - `src/main/resources/assets/survivalpoints/` contains only approved runtime assets and their game resource files.
+- `assets-source/` is excluded from Git by `.gitignore`; only `src/main/resources` runtime assets are published.
 
 A generation or validation command must not silently install, overwrite, rename, or delete runtime assets. Copying outputs into `src/main/resources` requires an explicit integration step and owner approval.
 

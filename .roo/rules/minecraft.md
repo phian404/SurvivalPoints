@@ -9,9 +9,13 @@
 - Project roadmap: `.roo/plans/Roadmap/ROADMAP.md` (canonical wave order and priorities).
 - NPC architecture (canonical, implemented): `.roo/plans/Entities/plan.md`.
 - NPC and camp simulation target model: `.roo/plans/Entities/NPC_CAMP_SIMULATION_DESIGN.md`.
-- Task plans: `.roo/plans/` (topic subfolders: `Camp/`, `Entities/`, `Combat/`, `Items/`, `Roadmap/`, `Architecture/`, `Testing/`).
+- Task plans: `.roo/plans/` (topic subfolders: `Architecture/`, `Art/`, `Camp/`, `Combat/`, `Entities/`, `Fences/`, `Items/`, `Roadmap/`, `Testing/`).
 - Documentation entry point: `.roo/plans/README.md` (pick the single document matching the task type; do not read all files in a row).
+- Fences design (canonical): `.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md` and `.roo/plans/Fences/SurvivalPoints_Fences_Visual_Reference_v5.md`. Supporting and historical plans are listed in `.roo/plans/README.md` and `.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md`. Do not treat a historical plan as current design.
+- Art documents (`.roo/plans/Art/`) are committed but **pending owner approval**; they are not approved final standards. Art/src layout: `.roo/plans/Art/` holds the text standards; `assets-source/AiModelling/` holds editable sources. Planned subfolders and skills described in `ASSET_WORKFLOW.md` may not exist yet — check the filesystem before relying on them.
 - Source assets (not loaded by the game): `assets-source/ReadyToUseSkins/` (14 regular NPC skins in `BasicNPCs/`, 4 leader skins in `Leaders/`, leader lore in `SurvivalPoints_Leaders.md`). Runtime copies live in `src/main/resources/assets/survivalpoints/textures/entity/skin/`.
+- Source NPC skin file names are **not** the runtime names (`Farm_female_0.png` → `npc_farmer_0.png`, `Farmer_male_0.png` → `npc_farmer_2.png`, etc.). The fixed index mapping is in `.roo/plans/Art/ASSET_WORKFLOW.md` §5.1. Never rename source skins or reorder `SurvivorSkin.VARIANTS`.
+- `assets-source/` is excluded from Git by `.gitignore`; only runtime assets under `src/main/resources` are published.
 
 Before planning or implementing a task, check the relevant project documentation and existing plans. Do not assume a planned feature is already implemented; verify the source code.
 
