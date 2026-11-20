@@ -63,6 +63,19 @@ public class ModEntityRenderers {
         net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
                 com.phian404.survivalpoints.init.ModBlocks.CAMP_WIRE_WEB.get(),
                 net.minecraft.client.renderer.RenderType.cutout());
+
+        // Модульные ограждения (спека v1.1.7-final, D-14):
+        // wire, mesh и sheet — cutout: в их текстурах есть прозрачные пиксели.
+        // При solid-рендере альфа игнорируется и прозрачные пиксели становятся чёрными.
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.WIRE_SECTION.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.MESH_SECTION.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.SHEET_SECTION.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
     }
 
     private static boolean shouldShowNameWithinRange(BaseSurvivorEntity entity) {

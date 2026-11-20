@@ -1,5 +1,7 @@
 # Исходники ассетов (не индексировать)
 assets-source/
+assets-source/AiModelling
+assets-source/NonGit/derelict/
 
 # eclipse
 bin

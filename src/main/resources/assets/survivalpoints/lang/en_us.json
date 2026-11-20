@@ -1,4 +1,9 @@
 {
+  "block.survivalpoints.post": "Fence Post",
+  "block.survivalpoints.plank_section": "Plank Fence Section",
+  "block.survivalpoints.wire_section": "Barbed Wire Section",
+  "block.survivalpoints.mesh_section": "Mesh Fence Section",
+  "block.survivalpoints.sheet_section": "Sheet Fence Section",
   "block.survivalpoints.camp_radio": "Radio Tower",
   "block.survivalpoints.camp_fence": "Camp Fence",
   "block.survivalpoints.camp_fence_post": "Camp Perimeter Post",

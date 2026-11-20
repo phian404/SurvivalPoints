@@ -9,6 +9,9 @@
 |---|---|
 | Общий контекст проекта, состояние кода, правила работы | [`AI_CONTEXT.md`](../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md) |
 | Замысел мода, среда, список механик, принципы | [`Architecture/PROJECT_VISION.md`](Architecture/PROJECT_VISION.md) |
+| Художественная концепция и визуальное направление | [`Art/ART_VISION.md`](Art/ART_VISION.md) |
+| Визуальные и технические стандарты ассетов | [`Art/Vanilla-Friendly Guidelines.md`](Art/Vanilla-Friendly%20Guidelines.md) |
+| Процесс подготовки, проверки и утверждения ассетов | [`Art/ASSET_WORKFLOW.md`](Art/ASSET_WORKFLOW.md) |
 | Порядок волн, приоритеты, риски, бюджеты | **`Roadmap/ROADMAP.md`** |
 | Архитектура NPC: база, identity UUID, роли | **`Entities/plan.md`** |
 | Модель NPC: навыки 0–10, симуляция лагерей | **`Entities/NPC_CAMP_SIMULATION_DESIGN.md`** |
@@ -32,6 +35,10 @@
 ├── README.md                     — этот навигатор
 ├── Architecture/                 — общая архитектура и замысел
 │   └── PROJECT_VISION.md
+├── Art/                          — художественное направление и производство ассетов
+│   ├── ART_VISION.md             — визуальная концепция (Vanilla+, силуэт, палитры)
+│   ├── Vanilla-Friendly Guidelines.md — стандарты моделей, текстур и UV
+│   └── ASSET_WORKFLOW.md         — цикл подготовки, проверки и утверждения
 ├── Roadmap/                      — порядок разработки
 │   └── ROADMAP.md
 ├── Entities/                     — NPC и сущности
@@ -58,6 +65,7 @@
 
 ## Источники истины
 
+- **Художественное направление и стандарты ассетов** — [`Art/ART_VISION.md`](Art/ART_VISION.md) и [`Art/Vanilla-Friendly Guidelines.md`](Art/Vanilla-Friendly%20Guidelines.md).
 - **Порядок волн и приоритеты** — [`Roadmap/ROADMAP.md`](Roadmap/ROADMAP.md) §2.
 - **Архитектура NPC** — [`Entities/plan.md`](Entities/plan.md).
 - **Модель NPC и симуляция** — [`Entities/NPC_CAMP_SIMULATION_DESIGN.md`](Entities/NPC_CAMP_SIMULATION_DESIGN.md).
@@ -67,5 +75,6 @@
 ## Важно
 
 - [`Camp/CAMP_IDEAS.md`](Camp/CAMP_IDEAS.md) — **банк идей**, а не утверждённые задачи. Не реализовывать без согласования.
+- Канон Art-документов — только `.roo/plans/Art/`. Копии в `assets-source/AiModelling/inbox/approved-art-docs/` устарели и закрыты через `.rooignore`.
 - При расхождении документов приоритет у источника истины; при сомнении — спросить владельца.
 - Правила работы и стиля — в `.roo/rules/` и `.roo/rules-code/` (загружаются автоматически).

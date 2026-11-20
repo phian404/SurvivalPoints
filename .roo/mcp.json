@@ -2,12 +2,9 @@
 	"mcpServers": {
 		"minecraft-modding": {
 			"type": "stdio",
-			"command": "cmd",
+			"command": "C:\\Program Files\\nodejs\\node.exe",
 			"args": [
-				"/c",
-				"npx",
-				"-y",
-				"@adhisang/minecraft-modding-mcp"
+				"E:\\Modding\\MDK\\SurvivalPoints\\tools\\node_modules\\@adhisang\\minecraft-modding-mcp\\dist\\cli.js"
 			],
 			"alwaysAllow": [
 				"batch-class-members",
@@ -54,7 +51,7 @@
 				"get-mod-class-source",
 				"search-mod-source"
 			],
-			"disabled": false
+			"disabled": true
 		},
 		"blockbench": {
 			"command": "C:/Program Files/nodejs/node.exe",
@@ -64,7 +61,7 @@
 			"env": {
 				"BLOCKBENCH_MCP_PORT": "8787"
 			},
-			"disabled": true,
+			"disabled": false,
 			"alwaysAllow": [
 				"add_groups",
 				"new_project",
@@ -110,7 +107,8 @@
 				"render_previews",
 				"delete_element",
 				"list_formats",
-				"set_cube_uv"
+				"set_cube_uv",
+				"get_element"
 			]
 		}
 	}
