@@ -56,7 +56,6 @@ customModes:
       - mcp
     customInstructions: Фокусируйся на архитектуре и логике, не углубляйся в синтаксис Java.
     source: project
-
   - slug: minecraft-modeler
     name: 🧱 Minecraft Modeler
     description: "Создание и доработка Minecraft-моделей, UV-развёрток, текстур, ригов и анимаций для SurvivalPoints через Blockbench."
