@@ -45,23 +45,13 @@ public class ModEntityRenderers {
      * только сужает их.
      */
     /**
-     * Render type cutout для блоков с прозрачными текстурами (проволока, ворота).
-     * Без этого прозрачные пиксели рендерятся чёрными. Стена периметра — полнотелая,
-     * cutout ей не нужен.
+     * Render type cutout для блоков с прозрачными текстурами (ворота, секции
+     * ограждений). Без этого прозрачные пиксели рендерятся чёрными.
      */
     @SubscribeEvent
     public static void onClientSetup(net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent event) {
         net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
-                com.phian404.survivalpoints.init.ModBlocks.CAMP_FENCE.get(),
-                net.minecraft.client.renderer.RenderType.cutout());
-        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
-                com.phian404.survivalpoints.init.ModBlocks.CAMP_BARBED_WIRE.get(),
-                net.minecraft.client.renderer.RenderType.cutout());
-        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
                 com.phian404.survivalpoints.init.ModBlocks.CAMP_GATE.get(),
-                net.minecraft.client.renderer.RenderType.cutout());
-        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
-                com.phian404.survivalpoints.init.ModBlocks.CAMP_WIRE_WEB.get(),
                 net.minecraft.client.renderer.RenderType.cutout());
 
         // Модульные ограждения (спека v1.1.7-final, D-14):

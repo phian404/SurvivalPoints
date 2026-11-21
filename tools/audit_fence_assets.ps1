@@ -10,9 +10,11 @@ $modDir = Join-Path $root 'src\main\resources\assets\survivalpoints\models\block
 $fail = 0
 
 Write-Host '=== TEXTURES ==='
-# Spec §6.3: 5 own PNGs + 2 VANILLA references for the post.
-# post_wood.png / post_wood_top.png were an unauthorised deviation and are gone.
-foreach ($n in @('plank.png','wire.png','mesh.png','sheet.png','metal.png')) {
+# 4 own PNGs + VANILLA references: post_core uses stripped_oak_log,
+# plank sections use oak_planks (owner decision: vanilla planks replaced
+# the custom plank.png). post_wood.png / post_wood_top.png were an
+# unauthorised deviation and are gone.
+foreach ($n in @('wire.png','mesh.png','sheet.png','metal.png')) {
     $p = Join-Path $texDir $n
     if (-not (Test-Path $p)) { Write-Host ("MISSING " + $n); $fail++; continue }
     $bmp = New-Object System.Drawing.Bitmap($p)
@@ -60,9 +62,11 @@ foreach ($m in $models) {
     foreach ($t in $j.textures.PSObject.Properties) {
         $v = $t.Value
         # The POST is required by spec §6.2 to use vanilla stripped_oak_log.
-        # Sections must stay self-contained and must never borrow vanilla textures.
+        # Plank sections use vanilla oak_planks by owner decision.
+        # Other sections must stay self-contained and never borrow vanilla textures.
+        $vanillaAllowed = @('post_core.json','section_planks.json','section_planks_tongue.json')
         if ($v -like 'minecraft:*' -or $v -like 'block/*') {
-            if ($m -eq 'post_core.json') {
+            if ($vanillaAllowed -contains $m) {
                 Write-Host ("  OK-VANILLA " + $m + " " + $t.Name + " = " + $v)
             }
             else {

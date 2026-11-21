@@ -146,22 +146,22 @@ com.phian404.survivalpoints
 `CampSavedData`, `CampManager`, диагностическая команда `/sp_camp`. Посты пока
 виртуальные.
 
-Физическая часть (волна 2, в работе):
+Физическая часть (волна 2):
 
 - `CampRadioBlock` + `CampRadioBlockEntity` — якорь лагеря (под-волна 2.1, принято
   владельцем в игре): `onPlace` создаёт лагерь, `onRemove` распускает, BE
   привязывается к лагерю лениво в тике;
-- периметр (под-волна 2.2): цоколь из смешанных ванильных каменных оград
-  (кирпич/замшелый каменно-кирпичный + редкие замшелый булыжник/андезит) →
-  три яруса «столб (`CampFencePostBlock`) → пролёты прутьев (`CampFenceBlock`)» →
-  колючая проволока (`CampBarbedWireBlock`) над пролётами; ворота 1×2
-  (`CampGateBlock extends DoorBlock`, временные, ночью закрываются);
-- `CampGenerator.generatePerimeter` — два прохода: материя периметра, затем
-  соединения прутьев/столбов/стен через `updateShape` по фактическим соседям
-  (`setBlock` не вызывает `getStateForPlacement` — без второго прохода соединений нет);
-- столб периметра — `extends IronBarsBlock`: прутья соединяются с ним
-  автоматически, `getShape`/`getCollisionShape` повторяют модель (форма наведения
-  не полный куб), рёбра-перемычки — multipart `camp_fence_post_rib`;
+- ворота 1×2 (`CampGateBlock extends DoorBlock`, временные, ночью закрываются);
+- **периметр (под-волна 2.2) временно отключён**: legacy-набор `camp_fence` /
+  `camp_fence_post` / `camp_barbed_wire` / `camp_barbed_wire_bracket` /
+  `camp_wire_web` удалён при очистке старых попыток;
+  `CampGenerator.generatePerimeter` — заглушка с `TODO`;
+- актуальная система ограждений (спека v1.1.7-final) реализована отдельно:
+  `post`, `plank_section`, `wire_section`, `mesh_section`, `sheet_section`
+  (`PostBlock`, `SectionBlock`, `StackedSectionBlock`, `MeshSectionBlock`,
+  `SheetSectionBlock`, `WireSectionBlock`); подробности —
+  [`SurvivalPoints_Fences_v1.1.7-final.md`](../../../../../../.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md)
+  и [`fence-legacy-cleanup-plan.md`](../../../../../../.roo/plans/Fences/fence-legacy-cleanup-plan.md);
 - `CampBlueprintParser` написан, но полигон рисуется программно; блюпринт — для
   будущих вариантов планировок.
 

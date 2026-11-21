@@ -66,6 +66,9 @@ foreach ($m in $models) {
     foreach ($p in $json.textures.PSObject.Properties) {
         $v = [string]$p.Value
         if ($v.StartsWith("#")) { continue }
+        # Vanilla references (minecraft:block/x or block/x) are resolved by the
+        # game, not by this script: skip them instead of reporting "missing".
+        if ($v -match '^(minecraft:)?block/' -or $v -match '^(minecraft:)?textures/') { continue }
         if ($v -match '^survivalpoints:block/(.+)$') { $resolved[$p.Name] = $Matches[1] }
         elseif ($v -match '^(.+)$') { $resolved[$p.Name] = $v }
     }

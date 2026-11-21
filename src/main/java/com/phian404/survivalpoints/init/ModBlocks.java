@@ -1,13 +1,8 @@
 package com.phian404.survivalpoints.init;
 
 import com.phian404.survivalpoints.SurvivalPointsMod;
-import com.phian404.survivalpoints.camp.block.CampBarbedWireBlock;
-import com.phian404.survivalpoints.camp.block.CampBarbedWireBracketBlock;
-import com.phian404.survivalpoints.camp.block.CampFenceBlock;
-import com.phian404.survivalpoints.camp.block.CampFencePostBlock;
 import com.phian404.survivalpoints.camp.block.CampGateBlock;
 import com.phian404.survivalpoints.camp.block.CampRadioBlock;
-import com.phian404.survivalpoints.camp.block.CampWireWebBlock;
 import com.phian404.survivalpoints.camp.block.fence.MeshSectionBlock;
 import com.phian404.survivalpoints.camp.block.fence.PostBlock;
 import com.phian404.survivalpoints.camp.block.fence.SectionBlock;
@@ -30,28 +25,13 @@ public class ModBlocks {
     public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_RADIO =
             BLOCKS.register("camp_radio", () -> new CampRadioBlock());
 
-    public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_FENCE =
-            BLOCKS.register("camp_fence", CampFenceBlock::new);
-
-    public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_FENCE_POST =
-            BLOCKS.register("camp_fence_post", CampFencePostBlock::new);
-
-    public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_BARBED_WIRE =
-            BLOCKS.register("camp_barbed_wire", CampBarbedWireBlock::new);
-
     public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_GATE =
             BLOCKS.register("camp_gate", CampGateBlock::new);
 
-    public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_BARBED_WIRE_BRACKET =
-            BLOCKS.register("camp_barbed_wire_bracket", CampBarbedWireBracketBlock::new);
-
-    /** ТЕСТОВЫЙ вариант проволоки — паутина (сравнение с camp_barbed_wire). */
-    public static final net.minecraftforge.registries.RegistryObject<Block> CAMP_WIRE_WEB =
-            BLOCKS.register("camp_wire_web", CampWireWebBlock::new);
-
     // === Модульные ограждения по спеке v1.1.7-final ===
-    // Актуальная система. Legacy camp_* выше оставлены ради CampGenerator
-    // и скрыты из креативной вкладки. См. .roo/plans/fences/.
+    // Единственная система ограждений. Legacy camp_fence / camp_fence_post /
+    // camp_barbed_wire / camp_barbed_wire_bracket / camp_wire_web удалены при
+    // очистке старых попыток. См. .roo/plans/Fences/fence-legacy-cleanup-plan.md.
 
     /** Опора периметра: обтёсанное бревно 8×8 px, стекуется вертикально. */
     public static final net.minecraftforge.registries.RegistryObject<Block> POST =
@@ -80,28 +60,8 @@ public class ModBlocks {
             ITEMS.register("camp_radio", () -> new BlockItem(CAMP_RADIO.get(),
                     new Item.Properties()));
 
-    public static final net.minecraftforge.registries.RegistryObject<Item> CAMP_FENCE_ITEM =
-            ITEMS.register("camp_fence", () -> new BlockItem(CAMP_FENCE.get(),
-                    new Item.Properties()));
-
-    public static final net.minecraftforge.registries.RegistryObject<Item> CAMP_FENCE_POST_ITEM =
-            ITEMS.register("camp_fence_post", () -> new BlockItem(CAMP_FENCE_POST.get(),
-                    new Item.Properties()));
-
-    public static final net.minecraftforge.registries.RegistryObject<Item> CAMP_BARBED_WIRE_ITEM =
-            ITEMS.register("camp_barbed_wire", () -> new BlockItem(CAMP_BARBED_WIRE.get(),
-                    new Item.Properties()));
-
     public static final net.minecraftforge.registries.RegistryObject<Item> CAMP_GATE_ITEM =
             ITEMS.register("camp_gate", () -> new BlockItem(CAMP_GATE.get(),
-                    new Item.Properties()));
-
-    public static final net.minecraftforge.registries.RegistryObject<Item> CAMP_WIRE_WEB_ITEM =
-            ITEMS.register("camp_wire_web", () -> new BlockItem(CAMP_WIRE_WEB.get(),
-                    new Item.Properties()));
-
-    public static final net.minecraftforge.registries.RegistryObject<Item> CAMP_BARBED_WIRE_BRACKET_ITEM =
-            ITEMS.register("camp_barbed_wire_bracket", () -> new BlockItem(CAMP_BARBED_WIRE_BRACKET.get(),
                     new Item.Properties()));
 
     public static final net.minecraftforge.registries.RegistryObject<Item> POST_ITEM =

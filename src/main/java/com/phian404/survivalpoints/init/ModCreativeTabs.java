@@ -22,12 +22,11 @@ public class ModCreativeTabs {
                         output.accept(ModBlocks.WIRE_SECTION_ITEM.get());
                         output.accept(ModBlocks.MESH_SECTION_ITEM.get());
                         output.accept(ModBlocks.SHEET_SECTION_ITEM.get());
-                        // Legacy-ограждения (camp_fence, camp_fence_post,
-                        // camp_barbed_wire, camp_barbed_wire_bracket, camp_wire_web)
-                        // скрыты из вкладки: они остаются зарегистрированными ради
-                        // CampGenerator, но развитию не подлежат.
-                        // Актуальная система — post / *_section по спеке v1.1.7-final.
-                        // См. .roo/plans/fences/LEGACY_FENCES_INVENTORY.md
+                        // Актуальная система ограждений — post / *_section по спеке
+                        // v1.1.7-final. Legacy camp_fence / camp_fence_post /
+                        // camp_barbed_wire / camp_barbed_wire_bracket / camp_wire_web
+                        // удалены при очистке старых попыток.
+                        // См. .roo/plans/Fences/fence-legacy-cleanup-plan.md
                         output.accept(ModBlocks.CAMP_GATE_ITEM.get());
                         output.accept(ModEntities.BASE_GUARDIAN_SPAWN_EGG.get());
                         output.accept(ModEntities.BASE_SURVIVOR_SPAWN_EGG.get());

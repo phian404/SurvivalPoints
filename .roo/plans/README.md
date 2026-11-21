@@ -14,6 +14,7 @@
 | Процесс подготовки, проверки и утверждения ассетов | [`Art/ASSET_WORKFLOW.md`](Art/ASSET_WORKFLOW.md) |
 | Ограждения: спецификация, визуальный референс, план реализации | **`Fences/SurvivalPoints_Fences_v1.1.7-final.md`** и **`Fences/SurvivalPoints_Fences_Visual_Reference_v5.md`** |
 | Ограждения: актуальный план правок и история | `Fences/fences-v1.1.7-implementation-plan.md`, `Fences/LEGACY_FENCES_INVENTORY.md` |
+| Ограждения: очистка legacy-мусора (`camp_*` удаление, пауза периметра) | **`Fences/fence-legacy-cleanup-plan.md`** |
 | Точечные правки ограждений (торцы, направленный язык) | `Fences/fences-torцы-2px-plan.md`, `Fences/fences-tip0-directional-tongue-plan.md` |
 | Переход текстур ограждений на 32×32 | `Fences/fences-textures-32-rewrite-plan.md` |
 | Кронштейн колючей проволоки | `Camp/barbed-wire-bracket-block-plan.md` |
@@ -55,6 +56,7 @@
 ├── Fences/                       — ограждения: спецификация и планы
 │   ├── SurvivalPoints_Fences_v1.1.7-final.md      — канон требований
 │   ├── SurvivalPoints_Fences_Visual_Reference_v5.md — канон визуала
+│   ├── fence-legacy-cleanup-plan.md       — очистка legacy camp_* (выполнено)
 │   ├── fences-v1.1.7-implementation-plan.md
 │   ├── fences-textures-32-rewrite-plan.md
 │   ├── fences-tip0-directional-tongue-plan.md

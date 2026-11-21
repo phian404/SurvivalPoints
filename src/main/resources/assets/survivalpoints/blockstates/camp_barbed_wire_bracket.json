@@ -1,8 +1,0 @@
-{
-  "variants": {
-    "facing=north": { "model": "survivalpoints:block/camp_barbed_wire_bracket" },
-    "facing=east": { "model": "survivalpoints:block/camp_barbed_wire_bracket", "y": 90 },
-    "facing=south": { "model": "survivalpoints:block/camp_barbed_wire_bracket", "y": 180 },
-    "facing=west": { "model": "survivalpoints:block/camp_barbed_wire_bracket", "y": 270 }
-  }
-}
