@@ -66,6 +66,26 @@ public class ModEntityRenderers {
         net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
                 com.phian404.survivalpoints.init.ModBlocks.SHEET_SECTION.get(),
                 net.minecraft.client.renderer.RenderType.cutout());
+
+        // Ржавые вариации материалов — те же geometry/альфа-требования, cutout.
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.RUSTED_MESH_0.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.RUSTED_MESH_1.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.RUSTED_SHEET_0.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.RUSTED_SHEET_1.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.RUSTED_WIRE_0.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
+        net.minecraft.client.renderer.ItemBlockRenderTypes.setRenderLayer(
+                com.phian404.survivalpoints.init.ModBlocks.RUSTED_WIRE_1.get(),
+                net.minecraft.client.renderer.RenderType.cutout());
     }
 
     private static boolean shouldShowNameWithinRange(BaseSurvivorEntity entity) {

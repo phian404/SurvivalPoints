@@ -53,6 +53,35 @@ public class ModBlocks {
     public static final net.minecraftforge.registries.RegistryObject<Block> SHEET_SECTION =
             BLOCKS.register("sheet_section", SheetSectionBlock::new);
 
+    // === Ржавые вариации материалов (решение заказчика) ===
+    // Отдельные block-id с той же геометрией и той же логикой; отличаются только
+    // текстурой. Сшиваются с базовым вариантом своего материала: см.
+    // StackedSectionBlock.isSameMaterial() и isinstance-проверки в подклассах.
+
+    /** Сетка, слабый налёт ржавчины (индекс 0). */
+    public static final net.minecraftforge.registries.RegistryObject<Block> RUSTED_MESH_0 =
+            BLOCKS.register("rusted_mesh_0", MeshSectionBlock::new);
+
+    /** Сетка, сильный налёт ржавчины (индекс 1). */
+    public static final net.minecraftforge.registries.RegistryObject<Block> RUSTED_MESH_1 =
+            BLOCKS.register("rusted_mesh_1", MeshSectionBlock::new);
+
+    /** Лист, слабый налёт ржавчины (индекс 0). */
+    public static final net.minecraftforge.registries.RegistryObject<Block> RUSTED_SHEET_0 =
+            BLOCKS.register("rusted_sheet_0", SheetSectionBlock::new);
+
+    /** Лист, сильный налёт ржавчины (индекс 1). */
+    public static final net.minecraftforge.registries.RegistryObject<Block> RUSTED_SHEET_1 =
+            BLOCKS.register("rusted_sheet_1", SheetSectionBlock::new);
+
+    /** Проволока, слабый налёт ржавчины (индекс 0). */
+    public static final net.minecraftforge.registries.RegistryObject<Block> RUSTED_WIRE_0 =
+            BLOCKS.register("rusted_wire_0", WireSectionBlock::new);
+
+    /** Проволока, сильный налёт ржавчины (индекс 1). */
+    public static final net.minecraftforge.registries.RegistryObject<Block> RUSTED_WIRE_1 =
+            BLOCKS.register("rusted_wire_1", WireSectionBlock::new);
+
     public static final DeferredRegister<Item> ITEMS =
             DeferredRegister.create(ForgeRegistries.ITEMS, SurvivalPointsMod.MOD_ID);
 
@@ -78,6 +107,24 @@ public class ModBlocks {
 
     public static final net.minecraftforge.registries.RegistryObject<Item> SHEET_SECTION_ITEM =
             ITEMS.register("sheet_section", () -> new BlockItem(SHEET_SECTION.get(), new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> RUSTED_MESH_0_ITEM =
+            ITEMS.register("rusted_mesh_0", () -> new BlockItem(RUSTED_MESH_0.get(), new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> RUSTED_MESH_1_ITEM =
+            ITEMS.register("rusted_mesh_1", () -> new BlockItem(RUSTED_MESH_1.get(), new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> RUSTED_SHEET_0_ITEM =
+            ITEMS.register("rusted_sheet_0", () -> new BlockItem(RUSTED_SHEET_0.get(), new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> RUSTED_SHEET_1_ITEM =
+            ITEMS.register("rusted_sheet_1", () -> new BlockItem(RUSTED_SHEET_1.get(), new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> RUSTED_WIRE_0_ITEM =
+            ITEMS.register("rusted_wire_0", () -> new BlockItem(RUSTED_WIRE_0.get(), new Item.Properties()));
+
+    public static final net.minecraftforge.registries.RegistryObject<Item> RUSTED_WIRE_1_ITEM =
+            ITEMS.register("rusted_wire_1", () -> new BlockItem(RUSTED_WIRE_1.get(), new Item.Properties()));
 
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES =
             DeferredRegister.create(ForgeRegistries.BLOCK_ENTITY_TYPES, SurvivalPointsMod.MOD_ID);

@@ -1,5 +1,6 @@
 package com.phian404.survivalpoints.camp.block.fence;
 
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 
@@ -57,5 +58,11 @@ public class SheetSectionBlock extends StackedSectionBlock {
     @Override
     protected BooleanProperty belowProperty() {
         return SHEET_BELOW;
+    }
+
+    /** Базовый и ржавые варианты листа — один материал и сшиваются между собой. */
+    @Override
+    protected boolean isSameMaterial(Block block) {
+        return block instanceof SheetSectionBlock;
     }
 }

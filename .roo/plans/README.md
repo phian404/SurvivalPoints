@@ -15,6 +15,7 @@
 | Ограждения: спецификация, визуальный референс, план реализации | **`Fences/SurvivalPoints_Fences_v1.1.7-final.md`** и **`Fences/SurvivalPoints_Fences_Visual_Reference_v5.md`** |
 | Ограждения: актуальный план правок и история | `Fences/fences-v1.1.7-implementation-plan.md`, `Fences/LEGACY_FENCES_INVENTORY.md` |
 | Ограждения: очистка legacy-мусора (`camp_*` удаление, пауза периметра) | **`Fences/fence-legacy-cleanup-plan.md`** |
+| Ограждения: ржавые вариации секций (`rusted_mesh/sheet/wire_0/1`) | **`Fences/fence-rusted-variants-plan.md`** |
 | Точечные правки ограждений (торцы, направленный язык) | `Fences/fences-torцы-2px-plan.md`, `Fences/fences-tip0-directional-tongue-plan.md` |
 | Переход текстур ограждений на 32×32 | `Fences/fences-textures-32-rewrite-plan.md` |
 | Кронштейн колючей проволоки | `Camp/barbed-wire-bracket-block-plan.md` |

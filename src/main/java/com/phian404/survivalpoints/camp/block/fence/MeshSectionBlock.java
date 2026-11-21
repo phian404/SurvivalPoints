@@ -1,5 +1,6 @@
 package com.phian404.survivalpoints.camp.block.fence;
 
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 
@@ -43,5 +44,11 @@ public class MeshSectionBlock extends StackedSectionBlock {
     @Override
     protected BooleanProperty belowProperty() {
         return MESH_BELOW;
+    }
+
+    /** Базовый и ржавые варианты сетки — один материал и сшиваются между собой. */
+    @Override
+    protected boolean isSameMaterial(Block block) {
+        return block instanceof MeshSectionBlock;
     }
 }

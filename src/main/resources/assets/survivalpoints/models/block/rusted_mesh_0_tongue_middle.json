@@ -1,0 +1,7 @@
+{
+	"parent": "survivalpoints:block/section_mesh_tongue_middle",
+	"textures": {
+		"particle": "survivalpoints:block/rusted_mesh_0",
+		"mesh": "survivalpoints:block/rusted_mesh_0"
+	}
+}

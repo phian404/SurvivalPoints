@@ -1,0 +1,25 @@
+{
+  "multipart": [
+    { "when": { "axis": "z", "wire_braced": "false", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/rusted_wire_1" } },
+    { "when": { "axis": "x", "wire_braced": "false", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/rusted_wire_1", "y": 90 } },
+
+    { "when": { "axis": "z", "wire_braced": "true", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_brace" } },
+    { "when": { "axis": "x", "wire_braced": "true", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_brace", "y": 90 } },
+
+    { "when": { "axis": "z", "wire_braced": "false", "wire_end_positive": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_end" } },
+    { "when": { "axis": "z", "wire_braced": "false", "wire_end_negative": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_end", "y": 180 } },
+    { "when": { "axis": "x", "wire_braced": "false", "wire_end_positive": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_end", "y": 270 } },
+    { "when": { "axis": "x", "wire_braced": "false", "wire_end_negative": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_end", "y": 90 } },
+
+    { "when": { "axis": "z", "wire_braced": "true", "wire_end_positive": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_end_brace" } },
+    { "when": { "axis": "z", "wire_braced": "true", "wire_end_negative": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_end_brace", "y": 180 } },
+    { "when": { "axis": "x", "wire_braced": "true", "wire_end_positive": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_end_brace", "y": 270 } },
+    { "when": { "axis": "x", "wire_braced": "true", "wire_end_negative": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_end_brace", "y": 90 } },
+
+    { "when": { "axis": "z", "north": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_tongue" } },
+    { "when": { "axis": "z", "south": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_tongue", "y": 180 } },
+
+    { "when": { "axis": "x", "east": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_tongue", "y": 90 } },
+    { "when": { "axis": "x", "west": "true" }, "apply": { "model": "survivalpoints:block/rusted_wire_1_tongue", "y": 270 } }
+  ]
+}

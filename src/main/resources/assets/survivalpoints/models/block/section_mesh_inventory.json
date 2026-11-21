@@ -1,0 +1,64 @@
+{
+	"format_version": "26.3",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:block/block",
+	"ambientocclusion": false,
+	"display": {
+		"gui": {
+			"rotation": [30, 135, 0],
+			"translation": [0, 0, 0],
+			"scale": [0.625, 0.625, 0.625]
+		},
+		"fixed": {
+			"rotation": [0, 90, 0],
+			"translation": [0, 0, 0],
+			"scale": [0.5, 0.5, 0.5]
+		}
+	},
+	"textures": {
+		"particle": "#mesh",
+		"mesh": "survivalpoints:block/mesh",
+		"metal": "survivalpoints:block/metal"
+	},
+	"elements": [
+		{
+			"name": "mesh",
+			"from": [8, 0, 0],
+			"to": [8, 16, 16],
+			"faces": {
+				"north": {"uv": [0, 0, 2, 16], "texture": "#mesh"},
+				"east": {"uv": [0, 0, 16, 16], "texture": "#mesh"},
+				"south": {"uv": [0, 0, 2, 16], "texture": "#mesh"},
+				"west": {"uv": [0, 0, 16, 16], "texture": "#mesh"},
+				"up": {"uv": [0, 0, 2, 16], "texture": "#mesh"},
+				"down": {"uv": [0, 0, 2, 16], "texture": "#mesh"}
+			}
+		},
+		{
+			"name": "core_up",
+			"from": [7, 15, 0],
+			"to": [9, 16, 16],
+			"faces": {
+				"north": {"uv": [0, 0, 4, 1], "rotation": 180, "texture": "#metal"},
+				"east": {"uv": [0, 0, 16, 1], "rotation": 180, "texture": "#metal"},
+				"south": {"uv": [0, 0, 4, 1], "rotation": 180, "texture": "#metal"},
+				"west": {"uv": [0, 0, 16, 1], "rotation": 180, "texture": "#metal"},
+				"up": {"uv": [0, 1, 16, 3], "rotation": 90, "texture": "#metal"},
+				"down": {"uv": [0, 1, 16, 3], "texture": "#metal"}
+			}
+		},
+		{
+			"name": "core_down",
+			"from": [7, 0, 0],
+			"to": [9, 1, 16],
+			"faces": {
+				"north": {"uv": [0, 0, 4, 1], "rotation": 180, "texture": "#metal"},
+				"east": {"uv": [0, 0, 16, 1], "rotation": 180, "texture": "#metal"},
+				"south": {"uv": [0, 0, 4, 1], "rotation": 180, "texture": "#metal"},
+				"west": {"uv": [0, 0, 16, 1], "rotation": 180, "texture": "#metal"},
+				"up": {"uv": [0, 1, 16, 3], "rotation": 90, "texture": "#metal"},
+				"down": {"uv": [0, 1, 16, 3], "texture": "#metal"}
+			}
+		}
+	]
+}

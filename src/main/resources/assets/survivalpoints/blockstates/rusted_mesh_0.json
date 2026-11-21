@@ -1,0 +1,35 @@
+{
+  "multipart": [
+    { "when": { "axis": "z", "mesh_above": "false", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0" } },
+    { "when": { "axis": "x", "mesh_above": "false", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0", "y": 90 } },
+
+    { "when": { "axis": "z", "mesh_above": "true", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_bottom" } },
+    { "when": { "axis": "x", "mesh_above": "true", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_bottom", "y": 90 } },
+
+    { "when": { "axis": "z", "mesh_above": "false", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_top" } },
+    { "when": { "axis": "x", "mesh_above": "false", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_top", "y": 90 } },
+
+    { "when": { "axis": "z", "mesh_above": "true", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_middle" } },
+    { "when": { "axis": "x", "mesh_above": "true", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_middle", "y": 90 } },
+
+    { "when": { "axis": "z", "north": "true", "mesh_above": "false", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue" } },
+    { "when": { "axis": "z", "south": "true", "mesh_above": "false", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue", "y": 180 } },
+    { "when": { "axis": "x", "east": "true", "mesh_above": "false", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue", "y": 90 } },
+    { "when": { "axis": "x", "west": "true", "mesh_above": "false", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue", "y": 270 } },
+
+    { "when": { "axis": "z", "north": "true", "mesh_above": "true", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_bottom" } },
+    { "when": { "axis": "z", "south": "true", "mesh_above": "true", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_bottom", "y": 180 } },
+    { "when": { "axis": "x", "east": "true", "mesh_above": "true", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_bottom", "y": 90 } },
+    { "when": { "axis": "x", "west": "true", "mesh_above": "true", "mesh_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_bottom", "y": 270 } },
+
+    { "when": { "axis": "z", "north": "true", "mesh_above": "false", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_top" } },
+    { "when": { "axis": "z", "south": "true", "mesh_above": "false", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_top", "y": 180 } },
+    { "when": { "axis": "x", "east": "true", "mesh_above": "false", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_top", "y": 90 } },
+    { "when": { "axis": "x", "west": "true", "mesh_above": "false", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_top", "y": 270 } },
+
+    { "when": { "axis": "z", "north": "true", "mesh_above": "true", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_middle" } },
+    { "when": { "axis": "z", "south": "true", "mesh_above": "true", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_middle", "y": 180 } },
+    { "when": { "axis": "x", "east": "true", "mesh_above": "true", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_middle", "y": 90 } },
+    { "when": { "axis": "x", "west": "true", "mesh_above": "true", "mesh_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_mesh_0_tongue_middle", "y": 270 } }
+  ]
+}

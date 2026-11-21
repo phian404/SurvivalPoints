@@ -116,11 +116,23 @@ public abstract class StackedSectionBlock extends SectionBlock {
     }
 
     /**
-     * Стоит ли в указанном направлении именно этот же блок: секции другого
-     * материала не сшиваются, иначе их панели разной толщины стыковались бы
+     * Стоит ли в указанном направлении секция того же материала: секции разных
+     * материалов не сшиваются, иначе их панели разной толщины стыковались бы
      * со сдвигом.
      */
     private boolean isStackedAt(LevelReader level, BlockPos pos, Direction dir) {
-        return level.getBlockState(pos.relative(dir)).is(this);
+        return isSameMaterial(level.getBlockState(pos.relative(dir)).getBlock());
+    }
+
+    /**
+     * Относится ли указанный блок к тому же материалу, что и этот.
+     *
+     * <p>По умолчанию — только этот же блок. Семейства, у которых несколько
+     * block-id отличаются только текстурой (базовый вариант и ржавые), пускают
+     * в семейство все свои варианты: геометрия и толщина панели у них
+     * одинаковые, поэтому сшивание между вариантами корректно.
+     */
+    protected boolean isSameMaterial(Block block) {
+        return block == this;
     }
 }

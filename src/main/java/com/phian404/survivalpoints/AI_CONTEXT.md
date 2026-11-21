@@ -162,6 +162,10 @@ com.phian404.survivalpoints
   `SheetSectionBlock`, `WireSectionBlock`); подробности —
   [`SurvivalPoints_Fences_v1.1.7-final.md`](../../../../../../.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md)
   и [`fence-legacy-cleanup-plan.md`](../../../../../../.roo/plans/Fences/fence-legacy-cleanup-plan.md);
+- ржавые вариации секций (отдельные block-id, та же геометрия и логика, сшиваются
+  с базовым материалом через `StackedSectionBlock.isSameMaterial`):
+  `rusted_mesh_0/1`, `rusted_sheet_0/1`, `rusted_wire_0/1`; предметы выведены в
+  креатив — [`fence-rusted-variants-plan.md`](../../../../../../.roo/plans/Fences/fence-rusted-variants-plan.md);
 - `CampBlueprintParser` написан, но полигон рисуется программно; блюпринт — для
   будущих вариантов планировок.
 

@@ -163,8 +163,16 @@ public class SectionBlock extends Block implements SimpleWaterloggedBlock {
         return false;
     }
 
-    /** Сосед, к которому секция может примкнуть: опора или другая секция. */
-    private static boolean isConnectable(BlockState state) {
+    /**
+     * Сосед, к которому секция может примкнуть: опора или другая секция.
+     *
+     * <p>Доступен подклассам: семейство проволоки определяет по этому правилу
+     * незамкнутые концы линии ({@code wire_end_positive} / {@code
+     * wire_end_negative}) и должно считать соседа ровно так же, как
+     * {@link #canSurvive}, иначе конец линии мог бы не совпасть с условием
+     * существования блока.
+     */
+    protected static boolean isConnectable(BlockState state) {
         return state.getBlock() instanceof PostBlock
                 || state.getBlock() instanceof SectionBlock;
     }

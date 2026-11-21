@@ -1,0 +1,35 @@
+{
+  "multipart": [
+    { "when": { "axis": "z", "sheet_above": "false", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1" } },
+    { "when": { "axis": "x", "sheet_above": "false", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1", "y": 90 } },
+
+    { "when": { "axis": "z", "sheet_above": "true", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_bottom" } },
+    { "when": { "axis": "x", "sheet_above": "true", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_bottom", "y": 90 } },
+
+    { "when": { "axis": "z", "sheet_above": "false", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_top" } },
+    { "when": { "axis": "x", "sheet_above": "false", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_top", "y": 90 } },
+
+    { "when": { "axis": "z", "sheet_above": "true", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_middle" } },
+    { "when": { "axis": "x", "sheet_above": "true", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_middle", "y": 90 } },
+
+    { "when": { "axis": "z", "north": "true", "sheet_above": "false", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue" } },
+    { "when": { "axis": "z", "south": "true", "sheet_above": "false", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue", "y": 180 } },
+    { "when": { "axis": "x", "east": "true", "sheet_above": "false", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue", "y": 90 } },
+    { "when": { "axis": "x", "west": "true", "sheet_above": "false", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue", "y": 270 } },
+
+    { "when": { "axis": "z", "north": "true", "sheet_above": "true", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_bottom" } },
+    { "when": { "axis": "z", "south": "true", "sheet_above": "true", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_bottom", "y": 180 } },
+    { "when": { "axis": "x", "east": "true", "sheet_above": "true", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_bottom", "y": 90 } },
+    { "when": { "axis": "x", "west": "true", "sheet_above": "true", "sheet_below": "false" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_bottom", "y": 270 } },
+
+    { "when": { "axis": "z", "north": "true", "sheet_above": "false", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_top" } },
+    { "when": { "axis": "z", "south": "true", "sheet_above": "false", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_top", "y": 180 } },
+    { "when": { "axis": "x", "east": "true", "sheet_above": "false", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_top", "y": 90 } },
+    { "when": { "axis": "x", "west": "true", "sheet_above": "false", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_top", "y": 270 } },
+
+    { "when": { "axis": "z", "north": "true", "sheet_above": "true", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_middle" } },
+    { "when": { "axis": "z", "south": "true", "sheet_above": "true", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_middle", "y": 180 } },
+    { "when": { "axis": "x", "east": "true", "sheet_above": "true", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_middle", "y": 90 } },
+    { "when": { "axis": "x", "west": "true", "sheet_above": "true", "sheet_below": "true" }, "apply": { "model": "survivalpoints:block/rusted_sheet_1_tongue_middle", "y": 270 } }
+  ]
+}

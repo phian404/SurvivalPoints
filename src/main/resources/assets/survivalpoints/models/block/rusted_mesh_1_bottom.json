@@ -1,0 +1,7 @@
+{
+	"parent": "survivalpoints:block/section_mesh_bottom",
+	"textures": {
+		"particle": "survivalpoints:block/rusted_mesh_1",
+		"mesh": "survivalpoints:block/rusted_mesh_1"
+	}
+}

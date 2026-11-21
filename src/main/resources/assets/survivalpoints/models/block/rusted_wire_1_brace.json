@@ -1,0 +1,7 @@
+{
+	"parent": "survivalpoints:block/section_wire_brace",
+	"textures": {
+		"particle": "survivalpoints:block/rusted_wire_1",
+		"wire": "survivalpoints:block/rusted_wire_1"
+	}
+}

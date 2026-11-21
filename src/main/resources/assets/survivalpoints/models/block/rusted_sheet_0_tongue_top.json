@@ -1,0 +1,7 @@
+{
+	"parent": "survivalpoints:block/section_sheet_tongue_top",
+	"textures": {
+		"particle": "survivalpoints:block/rusted_sheet_0",
+		"sheet": "survivalpoints:block/rusted_sheet_0"
+	}
+}

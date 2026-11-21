@@ -1,0 +1,50 @@
+{
+	"format_version": "26.3",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:block/block",
+	"ambientocclusion": false,
+	"display": {
+		"gui": {
+			"rotation": [30, 135, 0],
+			"translation": [0, 0, 0],
+			"scale": [0.625, 0.625, 0.625]
+		},
+		"fixed": {
+			"rotation": [0, 90, 0],
+			"translation": [0, 0, 0],
+			"scale": [0.5, 0.5, 0.5]
+		}
+	},
+	"textures": {
+		"particle": "#plank",
+		"plank": "minecraft:block/oak_planks"
+	},
+	"elements": [
+		{
+			"name": "plank_low",
+			"from": [7, 0, 0],
+			"to": [9, 5, 16],
+			"faces": {
+				"north": {"uv": [0, 5, 2, 10], "texture": "#plank"},
+				"east": {"uv": [0, 5, 16, 10], "texture": "#plank"},
+				"south": {"uv": [0, 5, 2, 10], "texture": "#plank"},
+				"west": {"uv": [0, 5, 16, 10], "texture": "#plank"},
+				"up": {"uv": [0, 0, 16, 2], "rotation": 90, "texture": "#plank"},
+				"down": {"uv": [0, 0, 16, 2], "rotation": 90, "texture": "#plank"}
+			}
+		},
+		{
+			"name": "plank_high",
+			"from": [7, 10, 0],
+			"to": [9, 15, 16],
+			"faces": {
+				"north": {"uv": [0, 5, 2, 10], "texture": "#plank"},
+				"east": {"uv": [0, 5, 16, 10], "texture": "#plank"},
+				"south": {"uv": [0, 5, 2, 10], "texture": "#plank"},
+				"west": {"uv": [0, 5, 16, 10], "texture": "#plank"},
+				"up": {"uv": [0, 0, 16, 2], "rotation": 90, "texture": "#plank"},
+				"down": {"uv": [0, 0, 16, 2], "rotation": 90, "texture": "#plank"}
+			}
+		}
+	]
+}

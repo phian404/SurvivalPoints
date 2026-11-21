@@ -12,7 +12,6 @@
 				"search-class-source",
 				"check-symbol-exists",
 				"inspect-minecraft",
-				"get-class-source",
 				"analyze-symbol",
 				"analyze-mod",
 				"batch-symbol-exists"

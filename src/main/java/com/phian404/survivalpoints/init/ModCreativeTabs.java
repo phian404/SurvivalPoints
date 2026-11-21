@@ -21,7 +21,13 @@ public class ModCreativeTabs {
                         output.accept(ModBlocks.PLANK_SECTION_ITEM.get());
                         output.accept(ModBlocks.WIRE_SECTION_ITEM.get());
                         output.accept(ModBlocks.MESH_SECTION_ITEM.get());
+                        output.accept(ModBlocks.RUSTED_MESH_0_ITEM.get());
+                        output.accept(ModBlocks.RUSTED_MESH_1_ITEM.get());
                         output.accept(ModBlocks.SHEET_SECTION_ITEM.get());
+                        output.accept(ModBlocks.RUSTED_SHEET_0_ITEM.get());
+                        output.accept(ModBlocks.RUSTED_SHEET_1_ITEM.get());
+                        output.accept(ModBlocks.RUSTED_WIRE_0_ITEM.get());
+                        output.accept(ModBlocks.RUSTED_WIRE_1_ITEM.get());
                         // Актуальная система ограждений — post / *_section по спеке
                         // v1.1.7-final. Legacy camp_fence / camp_fence_post /
                         // camp_barbed_wire / camp_barbed_wire_bracket / camp_wire_web
