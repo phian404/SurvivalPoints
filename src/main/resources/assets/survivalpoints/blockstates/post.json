@@ -1,0 +1,6 @@
+{
+  "variants": {
+    "waterlogged=false": { "model": "survivalpoints:block/post_core" },
+    "waterlogged=true": { "model": "survivalpoints:block/post_core" }
+  }
+}

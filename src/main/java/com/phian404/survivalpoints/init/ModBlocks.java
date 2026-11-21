@@ -8,8 +8,11 @@ import com.phian404.survivalpoints.camp.block.CampFencePostBlock;
 import com.phian404.survivalpoints.camp.block.CampGateBlock;
 import com.phian404.survivalpoints.camp.block.CampRadioBlock;
 import com.phian404.survivalpoints.camp.block.CampWireWebBlock;
+import com.phian404.survivalpoints.camp.block.fence.MeshSectionBlock;
 import com.phian404.survivalpoints.camp.block.fence.PostBlock;
 import com.phian404.survivalpoints.camp.block.fence.SectionBlock;
+import com.phian404.survivalpoints.camp.block.fence.SheetSectionBlock;
+import com.phian404.survivalpoints.camp.block.fence.WireSectionBlock;
 import com.phian404.survivalpoints.camp.blockentity.CampRadioBlockEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
@@ -60,15 +63,15 @@ public class ModBlocks {
 
     /** Секция колючей проволоки: две нити на высотах 4..6 и 12..14. */
     public static final net.minecraftforge.registries.RegistryObject<Block> WIRE_SECTION =
-            BLOCKS.register("wire_section", () -> new SectionBlock(SoundType.METAL));
+            BLOCKS.register("wire_section", WireSectionBlock::new);
 
-    /** Секция сетки «рабица»: плоская панель 2 px. */
+    /** Секция сетки «рабица»: плоская панель 2 px со сшиванием при стековании. */
     public static final net.minecraftforge.registries.RegistryObject<Block> MESH_SECTION =
-            BLOCKS.register("mesh_section", () -> new SectionBlock(SoundType.METAL));
+            BLOCKS.register("mesh_section", MeshSectionBlock::new);
 
-    /** Секция листа: плоская панель с металлической рейкой внизу. */
+    /** Секция листа: панель с рейками на торцах и сшиванием при стековании. */
     public static final net.minecraftforge.registries.RegistryObject<Block> SHEET_SECTION =
-            BLOCKS.register("sheet_section", () -> new SectionBlock(SoundType.METAL));
+            BLOCKS.register("sheet_section", SheetSectionBlock::new);
 
     public static final DeferredRegister<Item> ITEMS =
             DeferredRegister.create(ForgeRegistries.ITEMS, SurvivalPointsMod.MOD_ID);

@@ -1,0 +1,12 @@
+{
+  "multipart": [
+    { "when": { "axis": "z" }, "apply": { "model": "survivalpoints:block/section_planks" } },
+    { "when": { "axis": "x" }, "apply": { "model": "survivalpoints:block/section_planks", "y": 90 } },
+
+    { "when": { "axis": "z", "north": "true" }, "apply": { "model": "survivalpoints:block/section_planks_tongue" } },
+    { "when": { "axis": "z", "south": "true" }, "apply": { "model": "survivalpoints:block/section_planks_tongue", "y": 180 } },
+
+    { "when": { "axis": "x", "east": "true" }, "apply": { "model": "survivalpoints:block/section_planks_tongue", "y": 90 } },
+    { "when": { "axis": "x", "west": "true" }, "apply": { "model": "survivalpoints:block/section_planks_tongue", "y": 270 } }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+	"format_version": "26.3",
+	"credit": "Made with Blockbench",
+	"ambientocclusion": false,
+	"textures": {
+		"particle": "survivalpoints:block/sheet",
+		"sheet": "survivalpoints:block/sheet",
+		"metal": "survivalpoints:block/metal"
+	},
+	"elements": [
+		{
+			"name": "sheet",
+			"from": [7, 0, -4],
+			"to": [9, 15, 0],
+			"rotation": {"angle": 0, "axis": "y", "origin": [0.2, 0, -4]},
+			"faces": {
+				"north": {"uv": [2, 1, 4, 16], "texture": "#sheet"},
+				"east": {"uv": [0, 1, 4, 16], "texture": "#sheet"},
+				"south": {"uv": [2, 1, 4, 16], "texture": "#sheet"},
+				"west": {"uv": [0, 1, 4, 16], "texture": "#sheet"},
+				"up": {"uv": [2, 0, 4, 4], "texture": "#sheet"}
+			}
+		},
+		{
+			"name": "core_up",
+			"from": [6, 15, -4],
+			"to": [10, 16, 0],
+			"rotation": {"angle": 0, "axis": "y", "origin": [0, 14, -4]},
+			"faces": {
+				"north": {"uv": [0, 0, 4, 1], "rotation": 180, "texture": "#metal"},
+				"east": {"uv": [0, 0, 4, 1], "rotation": 180, "texture": "#metal"},
+				"south": {"uv": [0, 0, 4, 1], "rotation": 180, "texture": "#metal"},
+				"west": {"uv": [0, 0, 4, 1], "rotation": 180, "texture": "#metal"},
+				"up": {"uv": [0, 1, 4, 5], "rotation": 90, "texture": "#metal"},
+				"down": {"uv": [0, 1, 4, 5], "texture": "#metal"}
+			}
+		}
+	]
+}

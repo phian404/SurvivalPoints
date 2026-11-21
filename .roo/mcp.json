@@ -51,7 +51,7 @@
 				"get-mod-class-source",
 				"search-mod-source"
 			],
-			"disabled": true
+			"disabled": false
 		},
 		"blockbench": {
 			"command": "C:/Program Files/nodejs/node.exe",

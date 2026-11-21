@@ -1,0 +1,15 @@
+{
+  "multipart": [
+    { "when": { "axis": "z", "wire_braced": "false" }, "apply": { "model": "survivalpoints:block/section_wire" } },
+    { "when": { "axis": "x", "wire_braced": "false" }, "apply": { "model": "survivalpoints:block/section_wire", "y": 90 } },
+
+    { "when": { "axis": "z", "wire_braced": "true" }, "apply": { "model": "survivalpoints:block/section_wire_brace" } },
+    { "when": { "axis": "x", "wire_braced": "true" }, "apply": { "model": "survivalpoints:block/section_wire_brace", "y": 90 } },
+
+    { "when": { "axis": "z", "north": "true" }, "apply": { "model": "survivalpoints:block/section_wire_tongue" } },
+    { "when": { "axis": "z", "south": "true" }, "apply": { "model": "survivalpoints:block/section_wire_tongue", "y": 180 } },
+
+    { "when": { "axis": "x", "east": "true" }, "apply": { "model": "survivalpoints:block/section_wire_tongue", "y": 90 } },
+    { "when": { "axis": "x", "west": "true" }, "apply": { "model": "survivalpoints:block/section_wire_tongue", "y": 270 } }
+  ]
+}
