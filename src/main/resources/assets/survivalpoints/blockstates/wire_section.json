@@ -1,10 +1,13 @@
 {
   "multipart": [
-    { "when": { "axis": "z", "wire_braced": "false", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/section_wire" } },
-    { "when": { "axis": "x", "wire_braced": "false", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/section_wire", "y": 90 } },
+    { "when": { "axis": "z", "wire_center": "true" }, "apply": { "model": "survivalpoints:block/section_wire_center_brace" } },
+    { "when": { "axis": "x", "wire_center": "true" }, "apply": { "model": "survivalpoints:block/section_wire_center_brace", "y": 90 } },
 
-    { "when": { "axis": "z", "wire_braced": "true", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/section_wire_brace" } },
-    { "when": { "axis": "x", "wire_braced": "true", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/section_wire_brace", "y": 90 } },
+    { "when": { "axis": "z", "wire_braced": "false", "wire_center": "false", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/section_wire" } },
+    { "when": { "axis": "x", "wire_braced": "false", "wire_center": "false", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/section_wire", "y": 90 } },
+
+    { "when": { "axis": "z", "wire_braced": "true", "wire_center": "false", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/section_wire_brace" } },
+    { "when": { "axis": "x", "wire_braced": "true", "wire_center": "false", "wire_end_positive": "false", "wire_end_negative": "false" }, "apply": { "model": "survivalpoints:block/section_wire_brace", "y": 90 } },
 
     { "when": { "axis": "z", "wire_braced": "false", "wire_end_positive": "true" }, "apply": { "model": "survivalpoints:block/section_wire_end" } },
     { "when": { "axis": "z", "wire_braced": "false", "wire_end_negative": "true" }, "apply": { "model": "survivalpoints:block/section_wire_end", "y": 180 } },

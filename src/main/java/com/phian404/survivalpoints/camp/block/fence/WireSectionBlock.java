@@ -13,11 +13,11 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 
 /**
- * Секция колючей проволоки ({@code wire_section}) с опорной стойкой и
- * оформленными концами линии.
+ * Секция колючей проволоки ({@code wire_section}) с опорной стойкой,
+ * оформленными концами линии и центральным креплением.
  *
  * <p>Модель собирается из двух независимых признаков, которые дают четыре
- * комбинации плюс два варианта конца на каждую:
+ * комбинации:
  * <ul>
  *   <li>{@code section_wire} — две диагональные нити и горизонтальная нить
  *       посередине (полотно во всю ширину блока);</li>
@@ -25,7 +25,10 @@ import net.minecraft.world.level.block.state.properties.BooleanProperty;
  *       {@code Y 0..8} по центру, которая соединяет нити с нижним ярусом;</li>
  *   <li>{@code section_wire_end} / {@code section_wire_end_brace} — полотно,
  *       срезанное до центра блока со стороны, где соседа нет: нити не уходят
- *       в пустоту, а замыкаются на стойке.</li>
+ *       в пустоту, а замыкаются на стойке;</li>
+ *   <li>{@code section_wire_center_brace} — короткий центральный крест нитей
+ *       со стойкой, без полотна во всю ширину: проволока стоит на опоре
+ *       верхом, соседей вдоль оси нет вообще.</li>
  * </ul>
  *
  * <p>Правило стойки {@link #WIRE_BRACED}: стойка нужна тогда, когда под
@@ -40,15 +43,21 @@ import net.minecraft.world.level.block.state.properties.BooleanProperty;
  * конец линии — это отсутствие соседа вдоль оси секции. Стороны названы по
  * знаку координаты вдоль оси (positive — {@code SOUTH} для оси Z и
  * {@code EAST} для оси X), а не «право/лево», потому что право и лево зависят
- * от того, с какой стороны смотрит игрок. Оба конца одновременно пустыми быть
- * не могут: {@link #canSurvive} требует хотя бы одного соседа вдоль оси, и
- * такая секция удаляется. Одна и та же модель-конец обслуживает вторую
- * сторону поворотом на 180° в blockstate, поэтому геометрия не дублируется.
+ * от того, с какой стороны смотрит игрок. Одна и та же модель-конец
+ * обслуживает вторую сторону поворотом на 180° в blockstate, поэтому геометрия
+ * не дублируется.
  *
- * <p>Вертикального сшивания (как у {@link StackedSectionBlock}) у проволоки
- * нет: у неё нет реек на торцах, поэтому свойства {@code above}/{@code below}
- * не нужны. Модель концов и стойки пересчитывается при установке и при
- * изменении соседа снизу или соседа вдоль оси.
+ * <p>Правило центра {@link #WIRE_CENTER}: соседей вдоль оси нет ни с одной
+ * стороны, но под проволокой есть несущий элемент. Это единственный случай,
+ * когда проволока может существовать без горизонтальных соседей — иначе её
+ * нельзя поставить верхом на опору, сетку или лист. Такая секция рисует только
+ * центральное крепление.
+ *
+ * <p>Правило существования ({@link #canSurvive}): сосед вдоль оси <b>или</b>
+ * несущий блок снизу. Вертикального сшивания (как у
+ * {@link StackedSectionBlock}) у проволоки нет: у неё нет реек на торцах,
+ * поэтому свойства {@code above}/{@code below} не нужны. Модель пересчитывается
+ * при установке и при изменении соседа снизу или соседа вдоль оси.
  */
 public class WireSectionBlock extends SectionBlock {
 
@@ -63,6 +72,9 @@ public class WireSectionBlock extends SectionBlock {
     public static final BooleanProperty WIRE_END_NEGATIVE =
             BooleanProperty.create("wire_end_negative");
 
+    /** Соседей вдоль оси нет вообще — рисуется только центральное крепление. */
+    public static final BooleanProperty WIRE_CENTER = BooleanProperty.create("wire_center");
+
     public WireSectionBlock() {
         super(SoundType.METAL);
         // StateDefinition.any() берёт первое значение каждого свойства, а у
@@ -72,13 +84,14 @@ public class WireSectionBlock extends SectionBlock {
         this.registerDefaultState(this.defaultBlockState()
                 .setValue(WIRE_BRACED, false)
                 .setValue(WIRE_END_POSITIVE, false)
-                .setValue(WIRE_END_NEGATIVE, false));
+                .setValue(WIRE_END_NEGATIVE, false)
+                .setValue(WIRE_CENTER, false));
     }
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         super.createBlockStateDefinition(builder);
-        builder.add(WIRE_BRACED, WIRE_END_POSITIVE, WIRE_END_NEGATIVE);
+        builder.add(WIRE_BRACED, WIRE_END_POSITIVE, WIRE_END_NEGATIVE, WIRE_CENTER);
     }
 
     /**
@@ -94,15 +107,29 @@ public class WireSectionBlock extends SectionBlock {
         }
         Level level = context.getLevel();
         BlockPos pos = context.getClickedPos();
-        return applyEnds(state, level, pos)
+        return applyLine(state, level, pos)
                 .setValue(WIRE_BRACED, isSupportBelow(level, pos));
     }
 
+    /**
+     * Секция существует при соседе вдоль оси <b>или</b> при несущем блоке
+     * снизу. Второе условие добавлено ради установки проволоки верхом на
+     * опору, сетку или лист: без горизонтальных соседей такая секция раньше
+     * удалялась сразу после установки, потому что базовое правило
+     * {@link SectionBlock#canSurvive} требует соединения вдоль оси.
+     */
+    @Override
+    public boolean canSurvive(BlockState state, LevelReader level, BlockPos pos) {
+        Direction positive = positiveDirection(state.getValue(AXIS));
+        return isConnectedAt(level, pos, positive)
+                || isConnectedAt(level, pos, positive.getOpposite())
+                || isSupportBelow(level, pos);
+    }
 
     /**
-     * Пересчёт стойки и концов линии при изменении соседа: снизу — стойка,
-     * вдоль оси — замкнутость линии. Прочие направления влияют только на
-     * языки и обрабатываются {@link SectionBlock#updateShape}.
+     * Пересчёт стойки, концов линии и центра при изменении соседа: снизу —
+     * стойка, вдоль оси — замкнутость линии. Прочие направления влияют только
+     * на языки и обрабатываются {@link SectionBlock#updateShape}.
      *
      * <p>Возврат изменённого состояния выполняется только при фактической
      * смене значения, иначе каждое обновление соседа порождало бы лишний
@@ -114,9 +141,9 @@ public class WireSectionBlock extends SectionBlock {
         BlockState updated = super.updateShape(state, direction, neighborState, level, pos, neighborPos);
 
         if (direction.getAxis() == updated.getValue(AXIS)) {
-            BlockState withEnds = applyEnds(updated, level, pos);
-            if (!withEnds.equals(updated)) {
-                updated = withEnds;
+            BlockState withLine = applyLine(updated, level, pos);
+            if (!withLine.equals(updated)) {
+                updated = withLine;
             }
         }
 
@@ -130,20 +157,28 @@ public class WireSectionBlock extends SectionBlock {
     }
 
     /**
-     * Выставить концы линии по фактическим соседям вдоль оси.
+     * Выставить концы линии и центральное крепление по фактическим соседям
+     * вдоль оси.
      *
-     * <p>Конец — это отсутствие соседа, но только если противоположный конец
-     * замкнут: секция без соседей вдоль оси не существует
-     * ({@link #canSurvive}), а состояние с двумя концами рисовало бы два
-     * среза одновременно.
+     * <p>Три взаимоисключающих исхода: линия замкнута с обеих сторон (ни
+     * концов, ни центра), разомкнута с одной стороны (один конец), либо не
+     * имеет соседей вдоль оси вообще (центр). Последний вариант существует
+     * только благодаря несущему блоку снизу — см. {@link #canSurvive}.
+     *
+     * <p>Совместимость с blockstate: у замкнутой линии оба свойства концов
+     * {@code false}, поэтому ветки базовой модели обязаны проверять ещё и
+     * {@link #WIRE_CENTER}, иначе {@code multipart} наложил бы полотно во всю
+     * ширину поверх центрального крепления.
      */
-    private static BlockState applyEnds(BlockState state, LevelReader level, BlockPos pos) {
+    private static BlockState applyLine(BlockState state, LevelReader level, BlockPos pos) {
         Direction positive = positiveDirection(state.getValue(AXIS));
         boolean positiveConnected = isConnectedAt(level, pos, positive);
         boolean negativeConnected = isConnectedAt(level, pos, positive.getOpposite());
+        boolean centered = !positiveConnected && !negativeConnected;
         return state
-                .setValue(WIRE_END_POSITIVE, !positiveConnected && negativeConnected)
-                .setValue(WIRE_END_NEGATIVE, !negativeConnected && positiveConnected);
+                .setValue(WIRE_CENTER, centered)
+                .setValue(WIRE_END_POSITIVE, !centered && !positiveConnected)
+                .setValue(WIRE_END_NEGATIVE, !centered && !negativeConnected);
     }
 
     /**
