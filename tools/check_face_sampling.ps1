@@ -37,6 +37,10 @@ function Get-TexInfo([string]$name) {
     if (-not (Test-Path $path)) { return $null }
     $bmp = [System.Drawing.Bitmap]::FromFile((Resolve-Path $path))
     $w = $bmp.Width; $h = $bmp.Height
+    if ($w -ne 16 -or $h -ne 16) {
+        Write-Host "  TEXTURE SIZE NOT 16x16: $name ($w x $h)"
+        $script:issues++
+    }
     $alpha = New-Object 'bool[,]' $w, $h
     for ($y = 0; $y -lt $h; $y++) {
         for ($x = 0; $x -lt $w; $x++) {

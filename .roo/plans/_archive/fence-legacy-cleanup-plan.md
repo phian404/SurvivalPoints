@@ -8,7 +8,7 @@
 
 - `.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md`
 - `.roo/plans/Fences/SurvivalPoints_Fences_Visual_Reference_v5.md`
-- `.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md`
+- `.roo/plans/_archive/LEGACY_FENCES_INVENTORY.md`
 
 ## Решения владельца
 

@@ -52,7 +52,7 @@
 
 ### 2.2. Что отменяется
 
-Шапка [`fences-v1.1.7-implementation-plan.md`](.roo/plans/Fences/fences-v1.1.7-implementation-plan.md:3)
+Шапка [`fences-v1.1.7-implementation-plan.md`](.roo/plans/_archive/fences-v1.1.7-implementation-plan.md:3)
 с «санкционированным отступлением tip = 4» **переписывается**: отступление
 отменено как источник дефекта, возвращается `tip = 0` из спеки плюс
 направленные языки.
@@ -224,7 +224,7 @@ UV длинных граней: длина 16 px вместо 24 px. Для `pla
 
 | # | Шаг | Файлы |
 |---|---|---|
-| 1 | Переписать шапку плана: отменить `tip = 4`, зафиксировать причину | [`fences-v1.1.7-implementation-plan.md`](.roo/plans/Fences/fences-v1.1.7-implementation-plan.md:3) |
+| 1 | Переписать шапку плана: отменить `tip = 4`, зафиксировать причину | [`fences-v1.1.7-implementation-plan.md`](.roo/plans/_archive/fences-v1.1.7-implementation-plan.md:3) |
 | 2 | Добавить 4 свойства и регистрацию | [`SectionBlock`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:43) |
 | 3 | `getStateForPlacement` — выставить стороны по опорам | [`SectionBlock`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:72) |
 | 4 | `updateShape` — пересчёт сторон | [`SectionBlock`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:191) |
@@ -233,7 +233,7 @@ UV длинных граней: длина 16 px вместо 24 px. Для `pla
 | 7 | Перевести blockstates на `multipart` | 4 blockstate-файла |
 | 8 | Сборка `gradlew.bat build -x test` | — |
 | 9 | Проверка в игре | — |
-| 10 | Дополнить критерии готовности | [`fences-v1.1.7-implementation-plan.md`](.roo/plans/Fences/fences-v1.1.7-implementation-plan.md:207) |
+| 10 | Дополнить критерии готовности | [`fences-v1.1.7-implementation-plan.md`](.roo/plans/_archive/fences-v1.1.7-implementation-plan.md:207) |
 
 ## 7. Проверки приёмки
 

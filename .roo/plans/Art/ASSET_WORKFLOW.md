@@ -153,7 +153,7 @@ Do not silently replace assets used by another system.
 
 These two files are the authoritative requirements for the Fences pack. The new global rules add production constraints but do not silently revise the approved geometry, behavior, IDs, states, palette, or accepted limitations.
 
-The full document hierarchy for the Fences pack — which plans refine the specification and which are historical — is listed in `.roo/plans/README.md` and in `.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md`.
+The full document hierarchy for the Fences pack — which plans refine the specification and which are historical — is listed in `.roo/plans/README.md` and in `.roo/plans/_archive/LEGACY_FENCES_INVENTORY.md`.
 
 ### 4.2 Important distinction: Fences pack versus existing camp perimeter
 

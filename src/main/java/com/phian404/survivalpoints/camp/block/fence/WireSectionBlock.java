@@ -2,7 +2,12 @@ package com.phian404.survivalpoints.camp.block.fence;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.LevelReader;
@@ -11,6 +16,13 @@ import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.pathfinder.BlockPathTypes;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
+
+import javax.annotation.Nullable;
 
 /**
  * Секция колючей проволоки ({@code wire_section}) с опорной стойкой,
@@ -74,6 +86,56 @@ public class WireSectionBlock extends SectionBlock {
 
     /** Соседей вдоль оси нет вообще — рисуется только центральное крепление. */
     public static final BooleanProperty WIRE_CENTER = BooleanProperty.create("wire_center");
+
+    /*
+     * Формы проволоки (решение §4.1 плана ржавых вариантов). Две роли
+     * разделены:
+     *
+     * <p><b>Коллизия</b> — только стойка, когда проволока стоит на опоре.
+     * Нить из коллизии исключена: сквозь неё можно пройти, и именно это
+     * включает контактную механику {@link #entityInside}. Без стойки
+     * коллизия пустая — висящая в воздухе нить не препятствие.
+     *
+     * <p><b>Выделение и рейкаст</b> ({@link #getShape}) — габарит полотна со
+     * стойкой, то есть видимая геометрия. Если не переопределять
+     * {@code getShape}, при наведении подсвечивалась бы сплошная панель
+     * 2×16×16 из {@link SectionBlock}, которая к проволоке отношения не имеет.
+     *
+     * <p>Формы — статические константы: {@code Shapes.or} считается один раз
+     * при загрузке класса, а не в каждом вызове метода.
+     */
+
+    /**
+     * Полотно вдоль оси Z: один параллелепипед на весь крест нитей —
+     * {@code X 4..12}, {@code Y 0..10}, вся длина блока. Высота взята с
+     * запасом над диагоналями ({@code Y ≈ 0.8..9.2}), а не по одной
+     * горизонтальной нити: {@code VoxelShape} не умеет диагоналей, поэтому
+     * габарит — единственный способ покрыть крест без ступеней.
+     *
+     * <p>Запас по форме намеренный: рамка выделения и зона прицела
+     * ({@code ClipContext.Block.OUTLINE}) крупнее видимой геометрии, как у
+     * ванильного {@code SweetBerryBushBlock} ({@code box(1,0,1,15,16,15)}).
+     */
+    private static final VoxelShape SHAPE_Z = Block.box(4.0D, 0.0D, 0.0D, 12.0D, 10.0D, 16.0D);
+
+    /** Полотно вдоль оси X: тот же габарит, развёрнутый по Z. */
+    private static final VoxelShape SHAPE_X = Block.box(0.0D, 0.0D, 4.0D, 16.0D, 10.0D, 12.0D);
+
+    /** Стойка центрального крепления: полновысотная, 1×1 px. */
+    private static final VoxelShape SHAPE_BRACE =
+            Block.box(7.5D, 0.0D, 7.5D, 8.5D, 16.0D, 8.5D);
+
+    private static final VoxelShape SHAPE_Z_BRACED = Shapes.or(SHAPE_Z, SHAPE_BRACE);
+    private static final VoxelShape SHAPE_X_BRACED = Shapes.or(SHAPE_X, SHAPE_BRACE);
+
+    /** Множитель скорости внутри проволоки — как у сладких ягод. */
+    private static final Vec3 SLOWDOWN = new Vec3(0.8D, 0.75D, 0.8D);
+
+    /** Порог смещения за тик, ниже которого урон не наносится. */
+    private static final float HURT_SPEED_THRESHOLD = 0.003F;
+
+    /** Урон за тик движения; интервал ограничивает ванильная неуязвимость. */
+    private static final float HURT_DAMAGE = 1.0F;
 
     public WireSectionBlock() {
         super(SoundType.METAL);
@@ -204,5 +266,77 @@ public class WireSectionBlock extends SectionBlock {
         return block instanceof PostBlock
                 || block instanceof MeshSectionBlock
                 || block instanceof SheetSectionBlock;
+    }
+
+    /**
+     * Коллизия — только стойка, и только при {@link #WIRE_BRACED}. Нить
+     * намеренно не входит: сквозь проволоку нужно проходить, иначе
+     * {@link #entityInside} почти не срабатывает — игрок упирается в
+     * невидимую стену вместо того, чтобы зацепиться за нить.
+     *
+     * <p>Без стойки форма пустая, поэтому висящая в воздухе проволока не
+     * препятствие вообще.
+     */
+    @Override
+    public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos,
+                                        CollisionContext context) {
+        return state.getValue(WIRE_BRACED) ? SHAPE_BRACE : Shapes.empty();
+    }
+
+    /**
+     * Выделение блока и рейкаст — по видимой геометрии: габарит полотна плюс
+     * стойка. Переопределение обязательно, потому что базовый
+     * {@link SectionBlock#getShape} отдаёт сплошную панель 2×16×16, и при
+     * наведении подсвечивалась бы она, а не проволока.
+     */
+    @Override
+    public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos,
+                               CollisionContext context) {
+        boolean braced = state.getValue(WIRE_BRACED);
+        if (state.getValue(AXIS) == Direction.Axis.X) {
+            return braced ? SHAPE_X_BRACED : SHAPE_X;
+        }
+        return braced ? SHAPE_Z_BRACED : SHAPE_Z;
+    }
+
+    /**
+     * Контакт с проволокой: замедление и урон при движении — та же механика,
+     * что у сладких ягод ({@code SweetBerryBushBlock.entityInside}).
+     *
+     * <p>Замедление ставится всем, кроме лисы и пчелы (ванильные исключения),
+     * а урон — только на сервере и только при фактическом смещении: стоящий
+     * в проволоке игрок не получает урон. Частоту ограничивает ванильная
+     * неуязвимость {@code LivingEntity}, поэтому собственный кулдаун не нужен.
+     */
+    @Override
+    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
+        if (!(entity instanceof LivingEntity)
+                || entity.getType() == EntityType.FOX
+                || entity.getType() == EntityType.BEE) {
+            return;
+        }
+        entity.makeStuckInBlock(state, SLOWDOWN);
+        if (level.isClientSide()) {
+            return;
+        }
+        double dx = Math.abs(entity.getX() - entity.xOld);
+        double dz = Math.abs(entity.getZ() - entity.zOld);
+        if (dx >= HURT_SPEED_THRESHOLD || dz >= HURT_SPEED_THRESHOLD) {
+            entity.hurt(level.damageSources().sweetBerryBush(), HURT_DAMAGE);
+        }
+    }
+
+    /**
+     * Мобы считают проволоку опасной клеткой и обходят её. Без этого хука
+     * ванильный {@code WalkNodeEvaluator} узнаёт только {@code CACTUS} и
+     * {@code SWEET_BERRY_BUSH} по явному {@code is(...)}, а проволока получила
+     * бы тип от формы — {@code BLOCKED}, из-за чего моб упирался бы в неё,
+     * вместо того чтобы искать обход.
+     */
+    @Nullable
+    @Override
+    public BlockPathTypes getBlockPathType(BlockState state, BlockGetter level, BlockPos pos,
+                                           @Nullable Mob mob) {
+        return BlockPathTypes.DAMAGE_OTHER;
     }
 }

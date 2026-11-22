@@ -8,13 +8,14 @@
 			],
 			"alwaysAllow": [
 				"batch-class-members",
-				"get-class-members",
 				"search-class-source",
 				"check-symbol-exists",
 				"inspect-minecraft",
 				"analyze-symbol",
 				"analyze-mod",
-				"batch-symbol-exists"
+				"batch-symbol-exists",
+				"get-class-members",
+				"get-class-source"
 			],
 			"disabledTools": [
 				"compare-minecraft",

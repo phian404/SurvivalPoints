@@ -45,13 +45,13 @@
 | `mesh.png` | 16×16 | сетка-рабица |
 | `sheet.png` | 16×16 | листовая панель |
 | `metal.png` | 16×16 | рейка/скоба |
-Вариант 32×32 из [`fences-textures-32-rewrite-plan.md`](.roo/plans/Fences/fences-textures-32-rewrite-plan.md) **отклонён**: при UV-окнах `0..16` и плотности 16 px/блок текстура 32×32 либо сэмплируется вчетверо мельче (диссонанс с ванильной опорой), либо требует UV `0..32` с пересчётом всех девяти моделей. Стандарт `strict_16` из Art-гайдлайнов и §6.3 спеки соблюдён без отклонений.
+Вариант 32×32 из [`LEGACY_fences-textures-32-rewrite-plan.md`](.roo/plans/_archive/LEGACY_fences-textures-32-rewrite-plan.md) **отклонён**: при UV-окнах `0..16` и плотности 16 px/блок текстура 32×32 либо сэмплируется вчетверо мельче (диссонанс с ванильной опорой), либо требует UV `0..32` с пересчётом всех девяти моделей. Стандарт `strict_16` из Art-гайдлайнов и §6.3 спеки соблюдён без отклонений.
 
 **Опора — только ванильные текстуры (без отклонений).** §6.2 и §6.3 спеки прямо предписывают `minecraft:block/stripped_oak_log` и `minecraft:block/stripped_oak_log_top`: всего 5 собственных PNG + 2 ванильные ссылки. Ранее здесь было самовольно введено отклонение — собственные `post_wood.png` / `post_wood_top.png`. Оно **отменено и откачено**: файлы удалены, [`post_core.json`](src/main/resources/assets/survivalpoints/models/block/post_core.json:1) снова ссылается на ванильные текстуры. Причина отката — прямое нарушение `vanilla_plus`: самодельная грубая древесина проигрывала ванильному обтёсанному бревну и разрушала стилистическое единство. Форма колонны (`4..12` по X/Z, `0..16` по Y) не менялась.
 
 UV колонны приведены к ванильному эталону [`fence_post.json`](assets-source/AiModelling/vanilla-reference/1.20.1/assets/minecraft/models/block/fence_post.json:1): бока `[4,0,12,16]`, торцы `[4,4,12,12]` — масштаб 1:1 с мировым пикселем, а не растяжение на всю текстуру.
 
-Источник истины по дизайну: [`SurvivalPoints_Fences_v1.1.7-final.md`](.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md) и [`SurvivalPoints_Fences_Visual_Reference_v5.md`](.roo/plans/Fences/SurvivalPoints_Fences_Visual_Reference_v5.md). Иерархия остальных документов пакета — в [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md).
+Источник истины по дизайну: [`SurvivalPoints_Fences_v1.1.7-final.md`](.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md) и [`SurvivalPoints_Fences_Visual_Reference_v5.md`](.roo/plans/Fences/SurvivalPoints_Fences_Visual_Reference_v5.md). Иерархия остальных документов пакета — в [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/_archive/LEGACY_FENCES_INVENTORY.md).
 
 ## Итоги аудита текущего состояния
 
@@ -104,7 +104,7 @@ UV колонны приведены к ванильному эталону [`fe
 
 ### Шаг 1. Инвентаризация legacy
 
-Создать [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md) с перечнем:
+Создать [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/_archive/LEGACY_FENCES_INVENTORY.md) с перечнем:
 
 - 4 legacy-блока: `camp_fence`, `camp_fence_post`, `camp_barbed_wire`, `camp_barbed_wire_bracket`;
 - их классы, blockstates, модели (включая сироты), текстуры (включая битые и отсутствующие), item-модели;
@@ -239,7 +239,7 @@ UV: `0..16` блока = полная ширина текстуры 16×16, сп
 
 ### Шаг 14. Документация
 
-Обновить [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md): раздел legacy с пометкой «не использовать в новых задачах», ссылкой на спеку v1.1.7-final как единственный источник истины и перечнем того, что в новой системе отсутствует (кронштейн, `camp_wire_web`, направленные свойства опоры).
+Обновить [`LEGACY_FENCES_INVENTORY.md`](.roo/plans/_archive/LEGACY_FENCES_INVENTORY.md): раздел legacy с пометкой «не использовать в новых задачах», ссылкой на спеку v1.1.7-final как единственный источник истины и перечнем того, что в новой системе отсутствует (кронштейн, `camp_wire_web`, направленные свойства опоры).
 
 ## Критерии готовности волны
 

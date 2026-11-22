@@ -12,8 +12,8 @@
 | Яйцо призыва стража (`BaseGuardianEntity`) | Spawn Egg | [`ModEntities.java`](../../../src/main/java/com/phian404/survivalpoints/init/ModEntities.java) | ✅ |
 | Яйцо призыва выжившего (`BaseSurvivorNpcEntity`) | Spawn Egg | [`ModEntities.java`](../../../src/main/java/com/phian404/survivalpoints/init/ModEntities.java) | ✅ |
 | Радио вышка (`CampRadioBlock`) | Block | [`ModBlocks.java`](../../../src/main/java/com/phian404/survivalpoints/init/ModBlocks.java) | ✅ |
-| Забор (`CampFenceBlock`) | Block | Будущий | ⬜ |
-| Ворота (`CampGateBlock`) | Block | Будущий | ⬜ |
+| Заборы: `post` + `plank/wire/mesh/sheet_section` + 6 ржавых | Block | [`ModBlocks.java`](../../../src/main/java/com/phian404/survivalpoints/init/ModBlocks.java) | ✅ |
+| Ворота (`camp_gate`, авто-закрытие ночью) | Block | [`ModBlocks.java`](../../../src/main/java/com/phian404/survivalpoints/init/ModBlocks.java) | ✅ |
 | Вышка (`CampWatchtowerBlock`) | Block | Будущий | ⬜ |
 | Склад (`CampStorageBlock`) | Block | Будущий | ⬜ |
 

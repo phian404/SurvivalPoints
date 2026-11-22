@@ -1,5 +1,9 @@
 # Волна 2: Якорь + генерация лагеря
 
+> **Статус: LEGACY — старый YIIIY-периметр.** Конструкция «YIIIY» (цоколь + столбы + прутья + колючая проволока на `CampFenceBlock`/`CampFencePostBlock`/`CampBarbedWireBlock`) устарела и не используется.
+> Актуальная система ограждений — модульная: `post` + `plank_section`/`wire_section`/`mesh_section`/`sheet_section` + 6 ржавых вариаций + `camp_gate` (ночная дверь). См. `.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md` и `fence-rusted-variants-plan.md`.
+> Документ сохранён как исторический отчёт; не использовать как образец.
+
 > **Цель:** материальный лагерь с радио вышкой как якорем, забором, воротами, вышками, складом.
 > **Источник:** [`DESIGN_CAMP_SYSTEM.md`](DESIGN_CAMP_SYSTEM.md) §3.2, §10, §18; [`DESIGN_CAMP_SOCIAL.md`](DESIGN_CAMP_SOCIAL.md) §9.
 

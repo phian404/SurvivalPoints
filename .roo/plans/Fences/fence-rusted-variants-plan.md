@@ -215,6 +215,82 @@ canSurvive = сосед вдоль оси с любой стороны  ИЛИ  
 Офлайн-валидаторы `tools/*.ps1` в этой задаче не запускались: они не влияют на
 сборку и работу игры, а новые модели наследуют уже проверенную геометрию базовых.
 
+### 4.1 Коллизия, навигация и контакт проволоки (утверждено)
+
+#### Утверждённые решения заказчика
+
+| Вопрос | Решение |
+|---|---|
+| Область действия | **Только проволока**: `wire_section`, `rusted_wire_0`, `rusted_wire_1` (класс [`WireSectionBlock`](src/main/java/com/phian404/survivalpoints/camp/block/fence/WireSectionBlock.java:62)). Доски, сетка, лист не затрагиваются |
+| Коллизия | **Только стойка** при `wire_braced`: `box(7.5,0,7.5,8.5,16,8.5)`. Нить из коллизии исключена — сквозь проволоку можно пройти, и именно это включает контактную механику. Без стойки — `Shapes.empty()` |
+| `getShape` (выделение, рейкаст) | **Переопределён одним параллелепипедом на весь крест**: `box(4,0,0,12,10,16)` (ось Z) / `box(0,0,4,16,10,12)` (ось X) плюс стойка при `wire_braced`. Базовый `SectionBlock.getShape` отдаёт панель `box(7,0,0,9,16,16)`, и при наведении подсвечивалась бы она. Габарит намеренно крупнее видимой геометрии — как у ванильного `SweetBerryBushBlock` (`box(1,0,1,15,16,15)`) |
+| Контакт | Замедление `makeStuckInBlock(state, new Vec3(0.8, 0.75, 0.8))` + урон `1.0F` при движении, порог `0.003F` — механика `SweetBerryBushBlock.entityInside`. Только сервер (`level.isClientSide()` → выход) |
+| Источник урона | **Ванильный** `level.damageSources().sweetBerryBush()`. Собственный `DamageType` не заводится |
+| Иммунные сущности | `EntityType.FOX`, `EntityType.BEE` — как в ванили; урон только по `LivingEntity` |
+| Навигация | `getBlockPathType(...)` → `BlockPathTypes.DAMAGE_OTHER` (Forge-хук, `IForgeBlock.java:547`) |
+| `getAdjacentBlockPathType` | **Не добавляется** на первом шаге — только если после проверки N-2 моб будет срезать угол сквозь клетку с проволокой |
+| Отклонение от D-08 | Коллизия секции из §1 спеки [`SurvivalPoints_Fences_v1.1.7-final.md`](.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md:191) (`box(7,0,0,9,16,16)`) для проволоки заменена на составную форму. Зафиксировать при выпуске следующей версии спеки |
+
+**Почему нить исключена из коллизии.** Если нить — препятствие, игрок упирается
+в невидимую стену и внутрь блока не попадает: `entityInside` вызывается только
+для блоков, пересекающихся с AABB сущности, поэтому контактная механика почти не
+срабатывала бы (пункт C-10). Проходимая нить — условие того, что урон и
+замедление вообще имеют смысл. Стойка остаётся полновысотной и не даёт пройти
+насквозь там, где проволока лежит на опоре.
+
+Побочный эффект: висящая в воздухе проволока без соседей вдоль оси больше не
+препятствие для игрока вообще. Для ИИ она по-прежнему опасна —
+`getBlockPathType` возвращает `DAMAGE_OTHER` независимо от коллизии.
+
+#### Реализовано в [`WireSectionBlock`](src/main/java/com/phian404/survivalpoints/camp/block/fence/WireSectionBlock.java:74)
+
+| Что | Реализация |
+|---|---|
+| Коллизия | `getCollisionShape` → `SHAPE_BRACE` при `wire_braced`, иначе `Shapes.empty()`. Нить в коллизию не входит |
+| `getShape` | Переопределён: `SHAPE_Z` `box(4,0,0,12,10,16)`, `SHAPE_X` `box(0,0,4,16,10,12)`, со стойкой — через `Shapes.or`. Высота `Y 0..10` покрывает диагонали (`Y ≈ 0.8..9.2`), а не только горизонтальную нить (`Y 4..6`). Формы собраны **в статическом инициализаторе**, не в вызове метода |
+| Контакт | `entityInside`: `makeStuckInBlock(state, SLOWDOWN)` где `SLOWDOWN = new Vec3(0.8, 0.75, 0.8)` — статическая константа; урон `1.0F` по порогу `HURT_SPEED_THRESHOLD = 0.003F` смещения `xOld`/`zOld`; `level.isClientSide()` → урон пропускается |
+| Урон | `level.damageSources().sweetBerryBush()` — ванильный `DamageSource` |
+| Иммунитет | `EntityType.FOX`, `EntityType.BEE`; урон только по `LivingEntity` |
+| Навигация | `getBlockPathType(...)` → `BlockPathTypes.DAMAGE_OTHER`, аннотирован `@Nullable` |
+
+**Почему `DAMAGE_OTHER` действительно работает.** В Forge-патче
+`WalkNodeEvaluator.getBlockPathTypeRaw` (строка 486) вызов
+`blockstate.getBlockPathType(...)` идёт **первым**, до всех ванильных `is(...)`
+и до `isPathfindable`. Ненулевой результат сразу возвращается — значит
+`DAMAGE_OTHER` (малус `-1.0F`) перекрывает и форму, и `PathComputationType.LAND`.
+`getAdjacentBlockPathType` не добавлялся: при `DAMAGE_OTHER` на самой клетке
+моб и так не строит через неё путь.
+
+Пункты N-1…N-7 и C-1…C-10 остаются как список ручных проверок в клиенте —
+автоматических тестов в проекте нет.
+
+#### Навигация
+
+| # | Проверка | Где смотреть | Ожидание / развилка |
+|---|---|---|---|
+| N-1 | Блок получает `BlockPathTypes.DAMAGE_OTHER` | Forge-хук `IForgeBlock#getBlockPathType(BlockState, BlockGetter, BlockPos, Mob)` (`IForgeBlock.java:547`) | Моб считает клетку опасной и обходит. Без хука ванильный `WalkNodeEvaluator.getBlockPathTypeRaw` узнаёт только `Blocks.CACTUS`/`Blocks.SWEET_BERRY_BUSH` по `is(...)`, а наш блок получит тип от формы: `BLOCKED` при старой коллизии, `OPEN` при тонкой |
+| N-2 | Соседние клетки получают `DANGER_OTHER` | `IForgeBlock#getAdjacentBlockPathType(...)` (`IForgeBlock.java:566`) — в Forge ровно так помечен `SWEET_BERRY_BUSH` | Моб не срезает угол сквозь клетку с проволокой; без хука угловой путь проходит вплотную |
+| N-3 | `isPathfindable(..., PathComputationType.LAND)` | [`SectionBlock.getCollisionShape()`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:216) → `WalkNodeEvaluator` (`:534`) | Развилка: `false` — мобы обходят, но «тонкая» коллизия перестаёт быть тонкой для ИИ; `true` — проходимо, навигация проволоку не видит вообще. Решение фиксируется в спеке |
+| N-4 | Уточнение имени типа | 1.20.1 `net.minecraft.world.level.pathfinder.BlockPathTypes` | **`PathType` в 1.20.1 не существует** (появился в 1.21). Единственный путь — `BlockPathTypes` + два Forge-хука выше; искать «PathType-хук» в этой версии бесполезно |
+| N-5 | Малус пути отрицателен | `Mob#getPathfindingMalus(BlockPathTypes)` | `FENCE`/`DAMAGE_OTHER` дают `-1.0F` (`BlockPathTypes`), узел отвергается: путь не строится через проволоку, моб ищет обход |
+| N-6 | `FENCE`-семантика | `WalkNodeEvaluator` (`:530`): `BlockTags.FENCES` / `BlockTags.WALLS` → `FENCE` | Решить, добавлять ли блок в `minecraft:fences`-тег. Тег даёт обход без Java-кода, но меняет поведение соединений у ванильных блоков и влияет на `isPathfindable`-логику соседей |
+| N-7 | Мобы мода | `BaseSurvivorEntity`, `BaseGuardianEntity` ([`ModEntityRenderers.java`](src/main/java/com/phian404/survivalpoints/client/ModEntityRenderers.java:28)) | Проверить, что NPC не застревают у линии и не пытаются пройти сквозь неё; при `DAMAGE_OTHER` — не считают её проходимой |
+
+#### Контакт: урон и замедление (по аналогии со сладкими ягодами)
+
+| # | Проверка | Где смотреть | Ожидание / развилка |
+|---|---|---|---|
+| C-1 | Замедление через `makeStuckInBlock` | `SweetBerryBushBlock.entityInside` | `entity.makeStuckInBlock(state, new Vec3(0.8F, 0.75D, 0.8F))` — тот же множитель, что у ягод. Проверить, что эффект не суммируется с водой и с несколькими блоками проволоки в одной клетке |
+| C-2 | Урон только при движении | `HURT_SPEED_THRESHOLD = 0.003F`, сравнение `xOld`/`zOld` в `SweetBerryBushBlock.entityInside` | Стояние в блоке не наносит урон; урон идёт при фактическом смещении. Проверить частоту: 1.0F за каждый тик движения — снять замер, при необходимости добавить кулдаун |
+| C-3 | Источник урона | `level.damageSources().sweetBerryBush()` | Развилка: переиспользовать ванильный `DamageSource` (0 datapack-работы) либо завести `survivalpoints:barbed_wire` (`DamageType` + datapack-JSON + `DamageSources`-хелпер). Второй вариант даёт свой текст смерти и корректную статистику |
+| C-4 | Исключения сущностей | ваниль: `instanceof LivingEntity && type != FOX && type != BEE` | Решить список иммунных: только игрок? игрок + NPC мода? мобы-животные? Проверить, что урон не убивает питомцев и не ломает `Mob#setTarget` |
+| C-5 | Сторона вычисления | `if (!level.isClientSide && ...)` в ванили | Урон и звук — только на сервере; клиент не должен дублировать эффект |
+| C-6 | Взаимодействие с `WATERLOGGED` | [`SectionBlock.getFluidState()`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:222) | Проверить поведение в затопленном состоянии: урон/замедление сохраняются или отключаются; отдельно — плавание у поверхности проволоки |
+| C-7 | Отсутствие побочных эффектов | `neighborChanged` / `destroyBlock` в [`SectionBlock.java`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:202) | Урон не должен вызывать блок-апдейты, разрушение проволоки, рекурсию `updateShape` и спам частиц/звука |
+| C-8 | Производительность | `entityInside` вызывается каждый тик на каждую сущность в блоке | Внутри — ноль аллокаций и никаких `Shapes.or`; `Vec3` для `makeStuckInBlock` держать статической константой, а не создавать в вызове |
+| C-9 | Звук и фидбек | `SoundEvents` при уроне | Решить, нужен ли звук «зацепился за проволоку»; если да — только `SoundSource.BLOCKS` и с ограничением частоты |
+| C-10 | Коллизия + урон вместе | [`SectionBlock.getCollisionShape()`](src/main/java/com/phian404/survivalpoints/camp/block/fence/SectionBlock.java:216) | Проверить оба сценария: старая полная коллизия (замедление почти не срабатывает — игрок упирается в стену) и тонкая (игрок проходит сквозь, урон и замедление работают). От этого зависит, есть ли смысл в C-1..C-3 вообще |
+
 ## 5. Не сделано / на будущее
 
 - Визуальная проверка блоков в мире проводилась заказчиком (подтверждено).
@@ -225,3 +301,8 @@ canSurvive = сосед вдоль оси с любой стороны  ИЛИ  
   `camp_radio`). Дроп с себя у новых блоков появится вместе с остальными секциями.
 - Лимит «5 block-id» из §1 спеки фактически превышен — при выпуске следующей
   версии спеки это нужно зафиксировать.
+- Коллизия проволоки заменена по решению §4.1 (вариант A) — это отклонение от
+  D-08 в §1 спеки, требует записи при выпуске следующей версии.
+- `getAdjacentBlockPathType` и запись в `minecraft:fences`-тег не добавлялись:
+  по решению §4.1 они вводятся только при подтверждённой необходимости (пункты
+  N-2 и N-6).

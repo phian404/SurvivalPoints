@@ -39,5 +39,5 @@ assets-source/AiModelling/references/zooms/
 assets-source/AiModelling/export/previews/
 assets-source/AiModelling/reports/previews/
 
-# Старые копии Art-документов: канон в .roo/plans/Art/
-assets-source/AiModelling/inbox/approved-art-docs/
+# Архив legacy/выполненных планов (не читать)
+.roo/plans/_archive/

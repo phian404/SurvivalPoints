@@ -167,7 +167,7 @@ graph TD
 | [`DESIGN_CAMP_SOCIAL.md`](../Camp/DESIGN_CAMP_SOCIAL.md) | Социально-экономический слой: глава и UI, торговля, репутация, задания и журнал, ферма и скот, роли оружия, генерация лагеря | спецификация |
 | [`NPC_CAMP_SIMULATION_DESIGN.md`](../Entities/NPC_CAMP_SIMULATION_DESIGN.md) | Модель NPC (тип/профессия/навыки/назначение/лидерство), навыки 0–10, симуляция лагерей, население | концепция, частично согласовано |
 | [`RADIO_TOWER_DETAIL.md`](../Camp/RADIO_TOWER_DETAIL.md) | Детали радио-вышки как якоря лагеря | спецификация |
-| [`WAVE2_PLAN.md`](../Camp/WAVE2_PLAN.md) | План волны 2: блоки и генерация лагеря | план волны |
+| [`WAVE2_PLAN.md`](../_archive/WAVE2_PLAN.md) | План волны 2: блоки и генерация лагеря | план волны |
 | [`GUARDIAN_REWORK_PLAN.md`](../Combat/GUARDIAN_REWORK_PLAN.md) | Реворк ИИ стража R0.0–R0.6 | план, частично выполнен |
 | [`TESTING.md`](../Testing/TESTING.md) | Чек-листы проверки по волнам и формат отчёта | спецификация |
 | [`CREATIVE_TAB_PLAN.md`](../Items/CREATIVE_TAB_PLAN.md) | Вкладка креатива и яйца призыва | план |
