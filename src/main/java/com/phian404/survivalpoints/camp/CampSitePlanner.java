@@ -76,6 +76,12 @@ public final class CampSitePlanner {
      */
     public static final int WATCHTOWER_FOOTPRINT = 5;
 
+    /** Маркер {@link #findGroundY}: в колонке встречена вода или лава. */
+    public static final int FLUID_FOUND = Integer.MAX_VALUE;
+
+    /** Маркер {@link #findGroundY}: грунта в колонке нет. */
+    public static final int NO_GROUND = Integer.MIN_VALUE;
+
     private CampSitePlanner() {
     }
 
@@ -284,13 +290,18 @@ public final class CampSitePlanner {
 
         // === Съём высот площадки ===
         // Клетки сетки 0..side по X и Z. Высота каждой клетки — первый
-        // воздушный блок над настоящим грунтом, поэтому стволы, листва и
-        // заменяемая растительность при определении поверхности пропускаются:
-        // иначе клетка с деревом дала бы высоту кроны, и перепад по площадке
-        // считался бы по деревьям, а не по рельефу.
+        // воздушный блок над настоящим грунтом. Стволы, листва, заменяемая
+        // растительность и всё неблокирующее (цветы, трава) при определении
+        // поверхности пропускаются: цветок в 1.20.1 возвращает
+        // canBeReplaced() == false, и без проверки blocksMotion() он был бы
+        // принят за грунт — отсюда ложные высоты и оставшиеся цветы во дворе.
         int cells = radius * 2 + 1;
         int[] surfaceAirY = new int[cells * cells];
         BlockState[] surfaceStates = new BlockState[cells * cells];
+        // Высоты для статистики — без колонки якоря: там стоит блок
+        // camp_radio, и он не должен попадать в медиану как «поверхность».
+        int[] stats = new int[cells * cells];
+        int statsCount = 0;
         int minSurface = Integer.MAX_VALUE;
         int maxSurface = Integer.MIN_VALUE;
 
@@ -298,31 +309,20 @@ public final class CampSitePlanner {
             for (int lz = 0; lz < cells; lz++) {
                 int x = minX + lx;
                 int z = minZ + lz;
-                int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-                int groundY = Integer.MIN_VALUE;
-                BlockState ground = null;
-                for (int y = top; y >= level.getMinBuildHeight(); y--) {
-                    BlockState state = level.getBlockState(new BlockPos(x, y, z));
-                    // Жидкость проверяется раньше canBeReplaced(): вода и лава
-                    // сами являются заменяемыми, и без этой проверки затопленная
-                    // низина считалась бы обычным воздухом над грунтом.
-                    if (!state.getFluidState().isEmpty()) {
-                        return new Outcome(null, "Вода или лава на площадке у " + x + "," + z);
-                    }
-                    if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)
-                            || state.canBeReplaced()) {
-                        continue;
-                    }
-                    groundY = y;
-                    ground = state;
-                    break;
+                int groundY = findGroundY(level, x, z);
+                if (groundY == FLUID_FOUND) {
+                    return new Outcome(null, "Вода или лава на площадке у " + x + "," + z);
                 }
-                if (ground == null) {
+                if (groundY == NO_GROUND) {
                     return new Outcome(null, "Нет грунта на площадке у " + x + "," + z);
                 }
                 int cell = lx * cells + lz;
                 surfaceAirY[cell] = groundY + 1;
-                surfaceStates[cell] = ground;
+                surfaceStates[cell] = level.getBlockState(new BlockPos(x, groundY, z));
+                if (x == anchor.getX() && z == anchor.getZ()) {
+                    continue;
+                }
+                stats[statsCount++] = groundY + 1;
                 minSurface = Math.min(minSurface, groundY + 1);
                 maxSurface = Math.max(maxSurface, groundY + 1);
             }
@@ -338,7 +338,7 @@ public final class CampSitePlanner {
         // блоков выравнивание и подсыпает низины, и срезает бугры, поэтому
         // ярус выбирается по середине рельефа. Значение передаётся в генератор
         // как есть: floorY — первый воздушный ярус над грунтом.
-        int floorY = median(surfaceAirY);
+        int floorY = median(stats, statsCount);
 
         // === Локальная сетка ===
         // Планировка описана в клетках 0..2*radius: (0,0) — северо-запад,
@@ -393,17 +393,52 @@ public final class CampSitePlanner {
      * значений, округлённое до целого яруса: пол двора обязан быть целым
      * блоком, а дробный результат сдвинул бы выравнивание на полблока.
      *
-     * @param values высоты клеток ({@code surfaceAirY})
+     * @param values высоты клеток (без колонки якоря)
+     * @param count  сколько значений заполнено
      * @return целый ярус пола двора
      */
-    private static int median(int[] values) {
-        int[] sorted = values.clone();
+    private static int median(int[] values, int count) {
+        int[] sorted = Arrays.copyOf(values, count);
         Arrays.sort(sorted);
         int mid = sorted.length / 2;
         if (sorted.length % 2 == 1) {
             return sorted[mid];
         }
         return (int) Math.round((sorted[mid - 1] + sorted[mid]) / 2.0D);
+    }
+
+    /**
+     * Найти настоящий грунт колонки.
+     *
+     * <p>Скан идёт сверху вниз от {@link Heightmap.Types#WORLD_SURFACE}: этот
+     * тип включает любые блоки на поверхности, поэтому высокие цветы и
+     * растения попадают в обзор, а не теряются, как при
+     * {@code MOTION_BLOCKING_NO_LEAVES}.
+     *
+     * <p>Порядок проверок важен: жидкость проверяется первой, потому что вода
+     * и лава сами являются {@code canBeReplaced()} и иначе были бы пропущены
+     * как обычный воздух над грунтом. Затем пропускаются брёвна, листва,
+     * заменяемое и всё неблокирующее — цветы, трава, саженцы.
+     *
+     * @param level серверный уровень
+     * @param x     координата
+     * @param z     координата
+     * @return Y грунта, либо {@link #FLUID_FOUND}, либо {@link #NO_GROUND}
+     */
+    public static int findGroundY(ServerLevel level, int x, int z) {
+        int top = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
+        for (int y = top; y >= level.getMinBuildHeight(); y--) {
+            BlockState state = level.getBlockState(new BlockPos(x, y, z));
+            if (!state.getFluidState().isEmpty()) {
+                return FLUID_FOUND;
+            }
+            if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)
+                    || state.canBeReplaced() || !state.blocksMotion()) {
+                continue;
+            }
+            return y;
+        }
+        return NO_GROUND;
     }
 
     /**

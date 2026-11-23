@@ -15,7 +15,6 @@ import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoorHingeSide;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
-import net.minecraft.world.level.levelgen.Heightmap;
 
 import javax.annotation.Nullable;
 
@@ -112,7 +111,9 @@ public class CampGenerator {
                 int surfaceY = plan.cellSurfaceY(lx, lz);
                 int groundY = surfaceY - 1;
 
-                // 1. Расчистка: деревья и заменяемая растительность над грунтом.
+                // 1. Расчистка: деревья, цветы и прочая мягкая растительность.
+                //    Цветы в 1.20.1 возвращают canBeReplaced() == false, поэтому
+                //    без проверки blocksMotion() они пережили бы выравнивание.
                 for (int y = groundY + 1; y <= clearTop; y++) {
                     BlockPos pos = new BlockPos(column.getX(), y, column.getZ());
                     BlockState state = level.getBlockState(pos);
@@ -120,7 +121,7 @@ public class CampGenerator {
                         continue;
                     }
                     if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)
-                            || state.canBeReplaced()) {
+                            || state.canBeReplaced() || !state.blocksMotion()) {
                         level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
                     }
                 }
@@ -224,16 +225,46 @@ public class CampGenerator {
      * @param targetY уровень поверхности, до которого поднимается клетка
      */
     private static void fillEdgeColumn(ServerLevel level, int x, int z, int targetY) {
-        int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-        if (top - 1 >= targetY) {
+        // Грунт ищется той же функцией, что и при съёме высот: цветы и трава
+        // не считаются поверхностью, иначе подсыпка начиналась бы выше неё.
+        int groundY = CampSitePlanner.findGroundY(level, x, z);
+        if (groundY == CampSitePlanner.FLUID_FOUND || groundY == CampSitePlanner.NO_GROUND) {
             return;
         }
-        for (int y = top; y < targetY; y++) {
-            level.setBlock(new BlockPos(x, y, z), Blocks.DIRT.defaultBlockState(),
-                    Block.UPDATE_CLIENTS);
+        if (groundY >= targetY) {
+            return;
         }
-        level.setBlock(new BlockPos(x, targetY, z), Blocks.GRASS_BLOCK.defaultBlockState(),
-                Block.UPDATE_CLIENTS);
+        // Верхний блок кладётся реальным поверхностным блоком колонки, а не
+        // всегда травой: в песчаном биоме двор остался бы с зелёной нашлёпкой.
+        BlockState surface = level.getBlockState(new BlockPos(x, groundY, z));
+        for (int y = groundY + 1; y < targetY; y++) {
+            BlockPos pos = new BlockPos(x, y, z);
+            if (!isReplaceableSoft(level.getBlockState(pos))) {
+                continue;
+            }
+            level.setBlock(pos, Blocks.DIRT.defaultBlockState(), Block.UPDATE_CLIENTS);
+        }
+        BlockPos top = new BlockPos(x, targetY, z);
+        if (isReplaceableSoft(level.getBlockState(top))) {
+            level.setBlock(top, surface, Block.UPDATE_CLIENTS);
+        }
+    }
+
+    /**
+     * Клетка, которую подсыпка вправе занять.
+     *
+     * <p>Только воздух, заменяемое и неблокирующая растительность с пустой
+     * жидкостью. Существующий твёрдый блок (стена, постройка) не трогается:
+     * подсыпка края не должна затирать чужие объекты.
+     *
+     * @param state состояние проверяемой клетки
+     * @return {@code true}, если клетку можно заполнить
+     */
+    private static boolean isReplaceableSoft(BlockState state) {
+        if (!state.getFluidState().isEmpty()) {
+            return false;
+        }
+        return state.isAir() || state.canBeReplaced() || !state.blocksMotion();
     }
 
     /**
@@ -264,7 +295,7 @@ public class CampGenerator {
         // в углу площадки, поэтому проход идёт после размещения модулей.
         refreshAllShapes(level, plan);
 
-        generatePaths(level, plan);
+        generatePaths(level, plan, record);
         placeRadio(level, plan, record);
     }
 
@@ -315,10 +346,12 @@ public class CampGenerator {
      * ворот до радио и дальше на восток к северному входу фермы, чтобы маршрут
      * «ворота → ферма» читался по земле, а не угадывался.
      *
-     * @param level серверный уровень
-     * @param plan  план
+     * @param level  серверный уровень
+     * @param plan   план
+     * @param record лагерь (габариты слотов защищаются от дорожек)
      */
-    private static void generatePaths(ServerLevel level, CampSitePlanner.Plan plan) {
+    private static void generatePaths(ServerLevel level, CampSitePlanner.Plan plan,
+                                      CampRecord record) {
         int floorY = plan.getFloorY();
         BlockPos gate = plan.getGatePos();
         BlockPos radio = plan.getRadioPos();
@@ -327,15 +360,15 @@ public class CampGenerator {
         // 1. От ворот на север. Ширина 2 блока — как у тропинок в шаблонах
         //    модулей: колонка створки и клетка слева от неё.
         for (int z = gate.getZ() - 1; z >= radio.getZ(); z--) {
-            setPath(level, gate.getX(), floorY, z);
-            setPath(level, gate.getX() - 1, floorY, z);
+            setPath(level, record, gate.getX(), floorY, z);
+            setPath(level, record, gate.getX() - 1, floorY, z);
         }
 
         // 2. Поворот на восток, к оси фермы: две строки на уровне радио.
         //    Ширина 2 блока — как у тропинок в шаблонах модулей.
         for (int x = radio.getX(); x <= farm.getX(); x++) {
-            setPath(level, x, floorY, radio.getZ());
-            setPath(level, x, floorY, radio.getZ() + 1);
+            setPath(level, record, x, floorY, radio.getZ());
+            setPath(level, record, x, floorY, radio.getZ() + 1);
         }
 
         // 3. Поворот на север к входу фермы. Габарит 9×9 с центром в
@@ -346,8 +379,8 @@ public class CampGenerator {
         //    шагом 2, здесь идёт только оставшийся отрезок на север.
         int farmEntranceZ = farm.getZ() + 5;
         for (int z = radio.getZ() - 1; z >= farmEntranceZ; z--) {
-            setPath(level, farm.getX() - 1, floorY, z);
-            setPath(level, farm.getX(), floorY, z);
+            setPath(level, record, farm.getX() - 1, floorY, z);
+            setPath(level, record, farm.getX(), floorY, z);
         }
     }
 
@@ -363,18 +396,55 @@ public class CampGenerator {
      * модуль, дорожка другого шага): тропинки не должны проходить сквозь
      * постройки.
      *
+     * <p>Клетки внутри габаритов слотов модулей пропускаются целиком: габарит
+     * слота шире фактического модуля на запас, и дорожка не должна проходить
+     * по территории постройки даже по её краю.
+     *
+     * <p>Отдельно запрещена замена {@code farmland}. У фермы нижний слой —
+     * пашня с посевами: {@code wheat} стоит на {@code floorY} и блокирует
+     * дорожку, но это защита «по факту культуры». Если культура в клетке
+     * отсутствует (снята игроком, сломана пересчётом форм), проверка
+     * {@code isAir} пропускает дорожку, и {@code dirt_path} встаёт вместо
+     * пашни. Пашня под посевом — единственная опора культуры, поэтому такая
+     * замена и давала выпадающие семена. Проверка по блоку грунта закрывает
+     * это независимо от того, что стоит сверху.
+     *
      * @param level  серверный уровень
+     * @param record лагерь (для габаритов уже стоящих слотов)
      * @param x      координата
      * @param floorY ярус пола двора (первый воздушный)
      * @param z      координата
      */
-    private static void setPath(ServerLevel level, int x, int floorY, int z) {
+    private static void setPath(ServerLevel level, CampRecord record, int x, int floorY, int z) {
         BlockPos above = new BlockPos(x, floorY, z);
         if (!level.getBlockState(above).isAir()) {
             return;
         }
+        if (insideModuleSlot(record, above)) {
+            return;
+        }
         BlockPos ground = above.below();
+        BlockState groundState = level.getBlockState(ground);
+        if (groundState.is(Blocks.FARMLAND)) {
+            return;
+        }
         level.setBlock(ground, Blocks.DIRT_PATH.defaultBlockState(), Block.UPDATE_CLIENTS);
+    }
+
+    /**
+     * Точка внутри габарита уже поставленного слота модуля.
+     *
+     * @param record лагерь
+     * @param pos    точка в мире
+     * @return {@code true}, если точка в чьём-то слоте
+     */
+    private static boolean insideModuleSlot(CampRecord record, BlockPos pos) {
+        for (CampModuleSlot slot : record.getModuleSlots().values()) {
+            if (slot.getBounds().contains(pos)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
