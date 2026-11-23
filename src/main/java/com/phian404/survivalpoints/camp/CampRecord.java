@@ -8,6 +8,7 @@ import net.minecraft.nbt.Tag;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,11 +37,29 @@ public class CampRecord {
     /** Якорь лагеря — радио вышка. Пока стоит, лагерь существует. */
     private BlockPos anchor;
 
-    /** Позиция ворот (нижняя половина). {@code null} — ворот ещё нет. */
+    /**
+     * Позиция створки ворот (нижняя половина). {@code null} — ворот ещё нет.
+     *
+     * <p>Створка одна, ровно в центре южной стены: две двери в соседних
+     * клетках проёма распахивались вразнобой и визуально не читались как
+     * ворота. Соседние клетки пролёта заняты глухими панелями, они и дают
+     * двери раму.
+     */
     @Nullable
     private BlockPos gatePos;
 
     private final List<CampPost> posts = new ArrayList<>();
+
+    /**
+     * Слоты модулей лагеря: slotId → слот.
+     *
+     * <p>Ключ — строковый id, а не UUID: слоты адресуются по смыслу
+     * ({@code farm_nw}), чтобы планировка читалась в NBT и в командах.
+     */
+    private final Map<String, CampModuleSlot> moduleSlots = new LinkedHashMap<>();
+
+    /** Точки интереса лагеря. Каждая привязана к слоту через {@link CampPoi#getSlotId()}. */
+    private final List<CampPoi> pois = new ArrayList<>();
 
     /** Привязка стража к посту: id стража → id поста. */
     private final Map<UUID, UUID> guardianPosts = new HashMap<>();
@@ -196,6 +215,94 @@ public class CampRecord {
             }
         }
         return null;
+    }
+
+    // ==================== Слоты модулей ====================
+
+    /** Слоты модулей лагеря (только чтение; менять через {@link #setModuleSlot}). */
+    public Map<String, CampModuleSlot> getModuleSlots() {
+        return this.moduleSlots;
+    }
+
+    /** Слот по id (или {@code null}). */
+    @Nullable
+    public CampModuleSlot getModuleSlot(String slotId) {
+        return this.moduleSlots.get(slotId);
+    }
+
+    /**
+     * Записать слот. Существующий слот того же id заменяется целиком: слот
+     * описывает одно размещение, и «наложение» двух наборов полей здесь
+     * всегда ошибка вызывающего.
+     *
+     * @param slot слот
+     * @return прежний слот с этим id (или {@code null})
+     */
+    @Nullable
+    public CampModuleSlot setModuleSlot(CampModuleSlot slot) {
+        return this.moduleSlots.put(slot.getSlotId(), slot);
+    }
+
+    /** Убрать слот по id (или {@code null}, если такого не было). */
+    @Nullable
+    public CampModuleSlot removeModuleSlot(String slotId) {
+        return this.moduleSlots.remove(slotId);
+    }
+
+    /** Сколько слотов занято. */
+    public int getModuleSlotCount() {
+        return this.moduleSlots.size();
+    }
+
+    // ==================== Точки интереса ====================
+
+    /** Все POI лагеря (только чтение; менять через {@link #replacePois}). */
+    public List<CampPoi> getPois() {
+        return this.pois;
+    }
+
+    /**
+     * POI указанного слота.
+     *
+     * @param slotId id слота
+     * @return список точек (пустой, если у слота их нет)
+     */
+    public List<CampPoi> getPoisOf(String slotId) {
+        List<CampPoi> result = new ArrayList<>();
+        for (CampPoi poi : this.pois) {
+            if (poi.getSlotId().equals(slotId)) {
+                result.add(poi);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Заменить точки слота целиком.
+     *
+     * <p>Замена, а не добавление: при перегенерации слота старый набор POI
+     * относится к прежней планировке. Если шаблон поменялся, часть точек
+     * исчезла, и «докидывание» оставило бы висячие POI в воздухе.
+     *
+     * @param slotId id слота
+     * @param newPois новый набор (может быть пустым — тогда точки снимаются)
+     * @return сколько точек было снято
+     */
+    public int replacePois(String slotId, List<CampPoi> newPois) {
+        int removed = 0;
+        for (int i = this.pois.size() - 1; i >= 0; i--) {
+            if (this.pois.get(i).getSlotId().equals(slotId)) {
+                this.pois.remove(i);
+                removed++;
+            }
+        }
+        this.pois.addAll(newPois);
+        return removed;
+    }
+
+    /** Сколько всего POI. */
+    public int getPoiCount() {
+        return this.pois.size();
     }
 
     // ==================== Штат ====================
@@ -364,6 +471,18 @@ public class CampRecord {
         }
         tag.put("Posts", postList);
 
+        ListTag slotList = new ListTag();
+        for (CampModuleSlot slot : this.moduleSlots.values()) {
+            slotList.add(slot.save());
+        }
+        tag.put("ModuleSlots", slotList);
+
+        ListTag poiList = new ListTag();
+        for (CampPoi poi : this.pois) {
+            poiList.add(poi.save());
+        }
+        tag.put("Pois", poiList);
+
         ListTag guardianList = new ListTag();
         for (Map.Entry<UUID, UUID> entry : this.guardianPosts.entrySet()) {
             CompoundTag pair = new CompoundTag();
@@ -410,6 +529,22 @@ public class CampRecord {
         ListTag postList = tag.getList("Posts", Tag.TAG_COMPOUND);
         for (int i = 0; i < postList.size(); i++) {
             record.posts.add(CampPost.load(postList.getCompound(i)));
+        }
+
+        ListTag slotList = tag.getList("ModuleSlots", Tag.TAG_COMPOUND);
+        for (int i = 0; i < slotList.size(); i++) {
+            CampModuleSlot slot = CampModuleSlot.load(slotList.getCompound(i));
+            if (slot != null) {
+                record.moduleSlots.put(slot.getSlotId(), slot);
+            }
+        }
+
+        ListTag poiList = tag.getList("Pois", Tag.TAG_COMPOUND);
+        for (int i = 0; i < poiList.size(); i++) {
+            CampPoi poi = CampPoi.load(poiList.getCompound(i));
+            if (poi != null) {
+                record.pois.add(poi);
+            }
         }
 
         ListTag guardianList = tag.getList("Guardians", Tag.TAG_COMPOUND);

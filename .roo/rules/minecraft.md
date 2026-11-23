@@ -19,6 +19,16 @@
 
 Before planning or implementing a task, check the relevant project documentation and existing plans. Do not assume a planned feature is already implemented; verify the source code.
 
+## Search Policy
+
+1. **Semantic search first:** for broad discovery of project context, architecture, existing implementations, and related documentation, start with semantic search using relevant keywords and concepts.
+2. Use focused queries with key terms, alternative names, and related concepts instead of broad, generic queries.
+3. **Fallback:** if semantic search returns no useful results or incomplete information, continue with exact text/regex search, symbol search, filename search, and direct file inspection.
+4. If the user provides an exact filename, symbol, class, method, or string, use direct search when it is more efficient than semantic search.
+5. Treat semantic results as navigation hints, not verified facts. Confirm important findings against the actual source files before making implementation decisions.
+6. Read only relevant files and sections. Expand the search or reading scope only when necessary.
+7. Avoid repeating equivalent searches or rereading information already available in the current context.
+
 ## Response Style
 
 1. Be concise. No apologies.

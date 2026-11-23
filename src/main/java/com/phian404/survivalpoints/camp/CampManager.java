@@ -3,6 +3,7 @@ package com.phian404.survivalpoints.camp;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
@@ -59,21 +60,43 @@ public final class CampManager {
     }
 
     /**
-     * Создать лагерь с центром в указанной точке.
+     * Атомарно создать лагерь: проверка участка → запись → застройка.
+     *
+     * <p>При отказе в {@link CampSavedData} ничего не остаётся, блоки не
+     * ставятся — вся причина отказа возвращается в сообщении. Запись лагеря
+     * появляется только после успешного {@link CampSitePlanner#plan}: иначе
+     * прерывание застройки оставляло бы лагерь-призрак без стен и слотов.
+     *
+     * <p>Виртуальная расстановка постов по кругу удалена: посты создаются
+     * из POI модулей в {@link CampGenerator#createPostsFromPois} — они
+     * привязаны к реальной застройке.
      *
      * @param level серверный уровень
      * @param anchor точка якоря (радио вышка)
      * @param owner владелец (null — общий лагерь)
      * @param name название
      * @param radius радиус лагеря
-     * @return созданный лагерь
+     * @return созданный лагерь или {@code null} — участок не прошёл проверку
      */
+    @Nullable
     public static CampRecord createCamp(ServerLevel level, BlockPos anchor, @Nullable UUID owner,
                                          String name, int radius) {
+        String missingModule = CampSitePlanner.checkModules(level);
+        if (missingModule != null) {
+            return null;
+        }
+        CampSitePlanner.Outcome outcome = CampSitePlanner.plan(level, anchor, radius);
+        if (!outcome.isSuccess()) {
+            return null;
+        }
+        CampSitePlanner.Plan plan = outcome.getPlan();
+
         CampRecord record = new CampRecord(name, anchor, radius, owner);
         record.setCenter(anchor);
-        generateWallPosts(record);
         data(level).addCamp(record);
+        CampGenerator.generate(level, plan, record);
+        CampGenerator.createPostsFromPois(record, plan);
+        data(level).setDirty();
         return record;
     }
 
@@ -113,24 +136,24 @@ public final class CampManager {
     // ==================== Посты ====================
 
     /**
-     * Разложить посты по окружности лагеря.
+     * Слот лагеря, содержащий точку (по границам слота).
      *
-     * <p>Посты смотрят наружу от центра — так страж видит подходы, а не внутренности
-     * лагеря. Реальный забор и вышки появятся в волне 2, и посты встанут на них.
+     * <p>Нужен обработчикам событий: {@code BlockEvent} даёт только мировую
+     * координату, а решение «изменил ли игрок слот» принимается по
+     * {@link CampModuleSlot#getBounds()}.
+     *
+     * @param record лагерь
+     * @param pos    точка в мире
+     * @return слот или {@code null}
      */
-    private static void generateWallPosts(CampRecord record) {
-        int count = CampTuning.postsForRadius(record.getRadius());
-        int ring = Math.max(4, record.getRadius() - CampTuning.CAMP_POST_INSET);
-        BlockPos center = record.getCenter();
-
-        for (int i = 0; i < count; i++) {
-            double angle = (Math.PI * 2.0D) * i / count;
-            int x = center.getX() + (int) Math.round(Math.cos(angle) * ring);
-            int z = center.getZ() + (int) Math.round(Math.sin(angle) * ring);
-            // Тот же курс, что и у сущности: atan2(dz, dx) в градусах минус 90.
-            float yaw = (float) Math.toDegrees(angle) - 90.0F;
-            record.addPost(new CampPost(CampPost.Type.WALL, new BlockPos(x, center.getY(), z), yaw));
+    @Nullable
+    public static CampModuleSlot slotAt(CampRecord record, BlockPos pos) {
+        for (CampModuleSlot slot : record.getModuleSlots().values()) {
+            if (slot.getBounds().contains(pos)) {
+                return slot;
+            }
         }
+        return null;
     }
 
     // ==================== Тик ====================
@@ -180,18 +203,32 @@ public final class CampManager {
     }
 
     /**
-     * Ворота: ночью закрыты, днём открыты. {@code DoorBlock.setOpen} сам
-     * пропускает состояние, которое уже установлено — лишних {@code setBlock}
-     * не будет. Нижняя половина через {@code updateShape} синхронизирует верхнюю.
+     * Ворота: ночью закрыты, днём открыты.
+     *
+     * <p>Створка одна, в центре проёма. {@code setOpen} переключает обе
+     * половины {@code DoorBlock} (их синхронизирует
+     * {@code DoorBlock.updateShape}) и сам пропускает состояние, которое уже
+     * установлено, — лишних {@code setBlock} не будет.
      */
     private static void updateGate(ServerLevel level, CampRecord record, boolean night) {
-        BlockPos gatePos = record.getGatePos();
-        if (gatePos == null) {
+        boolean open = !night && !record.isClosed();
+        setGateOpen(level, record.getGatePos(), open);
+    }
+
+    /**
+     * Переключить одну створку ворот, если в этой точке действительно дверь.
+     *
+     * @param level серверный уровень
+     * @param pos   нижняя половина створки ({@code null} — створки нет)
+     * @param open  открыть или закрыть
+     */
+    private static void setGateOpen(ServerLevel level, @Nullable BlockPos pos, boolean open) {
+        if (pos == null) {
             return;
         }
-        BlockState state = level.getBlockState(gatePos);
-        if (state.getBlock() instanceof net.minecraft.world.level.block.DoorBlock door) {
-            door.setOpen(null, level, state, gatePos, !night && !record.isClosed());
+        BlockState state = level.getBlockState(pos);
+        if (state.getBlock() instanceof DoorBlock door) {
+            door.setOpen(null, level, state, pos, open);
         }
     }
 

@@ -1,5 +1,8 @@
 package com.phian404.survivalpoints.camp.block.fence;
 
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.Rotation;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
@@ -17,6 +20,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.pathfinder.BlockPathTypes;
+import net.minecraft.world.level.pathfinder.PathComputationType;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -252,6 +256,51 @@ public class WireSectionBlock extends SectionBlock {
         return axis == Direction.Axis.X ? Direction.EAST : Direction.SOUTH;
     }
 
+    /**
+     * Поворот состояния проволоки.
+     *
+     * <p>Базовый {@link SectionBlock#rotate(BlockState, Rotation)} переставляет
+     * ось и языки, но не знает про концы линии: они адресуются не сторонами
+     * света, а понятием «positive вдоль оси», которое зависит от самой оси
+     * (см. {@link #positiveDirection(Direction.Axis)}). При повороте на 90°/270°
+     * ось меняется, и старый конец positive оказывается на месте negative —
+     * без перестановки линия была бы срезана не с той стороны.
+     *
+     * <p>{@link #WIRE_CENTER} и {@link #WIRE_BRACED} асимметрии не имеют:
+     * центр — свойство «нет соседей вдоль оси», стойка зависит только от блока
+     * снизу.
+     */
+    @Override
+    public BlockState rotate(BlockState state, Rotation rotation) {
+        BlockState rotated = super.rotate(state, rotation);
+        if (rotation != Rotation.CLOCKWISE_90 && rotation != Rotation.COUNTERCLOCKWISE_90) {
+            return rotated;
+        }
+        // 90° и 270° меняют ось местами: positive и negative смотрят врозь.
+        return rotated
+                .setValue(WIRE_END_POSITIVE, state.getValue(WIRE_END_NEGATIVE))
+                .setValue(WIRE_END_NEGATIVE, state.getValue(WIRE_END_POSITIVE));
+    }
+
+    /**
+     * Зеркалирование состояния проволоки.
+     *
+     * <p>Зеркало вдоль оси (FRONT_BACK для X, LEFT_RIGHT для Z) обращает
+     * направление positive: концы меняются местами. Диагональных зеркал в
+     * ванилле нет, поэтому остальные случаи сводятся к перестановке языков,
+     * которую делает {@link SectionBlock#mirror(BlockState, Mirror)}.
+     */
+    @Override
+    public BlockState mirror(BlockState state, Mirror mirror) {
+        BlockState mirrored = super.mirror(state, mirror);
+        if (mirror == Mirror.NONE) {
+            return mirrored;
+        }
+        return mirrored
+                .setValue(WIRE_END_POSITIVE, state.getValue(WIRE_END_NEGATIVE))
+                .setValue(WIRE_END_NEGATIVE, state.getValue(WIRE_END_POSITIVE));
+    }
+
     /** Есть ли в указанном направлении сосед, к которому линия примыкает. */
     private static boolean isConnectedAt(LevelReader level, BlockPos pos, Direction dir) {
         return isConnectable(level.getBlockState(pos.relative(dir)));
@@ -280,7 +329,22 @@ public class WireSectionBlock extends SectionBlock {
     @Override
     public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos,
                                         CollisionContext context) {
-        return state.getValue(WIRE_BRACED) ? SHAPE_BRACE : Shapes.empty();
+        return Shapes.empty();
+    }
+
+    /**
+     * Проволока проходима для поиска пути, в отличие от остальных секций
+     * ({@link SectionBlock#isPathfindable} возвращает {@code false}).
+     *
+     * <p>Это осознанное исключение: проволока не стена, сквозь неё проходят и
+     * получают урон — именно на этом построена её механика. Тип клетки для
+     * мобов задаёт {@link #getBlockPathType} ({@code DAMAGE_OTHER}), поэтому
+     * мобы всё равно обходят проволоку, но не считают её непроходимой.
+     */
+    @Override
+    public boolean isPathfindable(BlockState state, BlockGetter level, BlockPos pos,
+                                  PathComputationType type) {
+        return true;
     }
 
     /**
@@ -291,12 +355,8 @@ public class WireSectionBlock extends SectionBlock {
      */
     @Override
     public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos,
-                               CollisionContext context) {
-        boolean braced = state.getValue(WIRE_BRACED);
-        if (state.getValue(AXIS) == Direction.Axis.X) {
-            return braced ? SHAPE_X_BRACED : SHAPE_X;
-        }
-        return braced ? SHAPE_Z_BRACED : SHAPE_Z;
+                            CollisionContext context) {
+        return state.getValue(AXIS) == Direction.Axis.X ? SHAPE_X : SHAPE_Z;
     }
 
     /**

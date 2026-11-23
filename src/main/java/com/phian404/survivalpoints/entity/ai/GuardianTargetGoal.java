@@ -59,6 +59,15 @@ public class GuardianTargetGoal extends Goal {
      * пока не истечёт {@link GuardianTuning#UNREACHABLE_TARGET_COOLDOWN_TICKS}.
      * Без этого поиск назначал того же зомби обратно, и сброс цели не давал
      * никакого эффекта — страж зацикливался «сбросил → назначил».
+     *
+     * <p><b>Проверка обзора обязательна.</b> Поиск идёт только по расстоянию,
+     * поэтому сквозь глухую стену лагеря страж брал в цель монстра снаружи,
+     * пять секунд держал его вслепую (до сброса по
+     * {@link GuardianTuning#NO_LINE_OF_SIGHT_TICKS}), затем тридцать секунд
+     * игнорировал и повторял цикл. Внешне это выглядело как «страж реагирует
+     * на мобов за оградой». Видимость считается ванильным
+     * {@code hasLineOfSight} по форме коллизии, то есть по сплошному полотну
+     * секций и крыльям опор.
      */
     private LivingEntity findNearestMonster() {
         if (this.guardian.level().isClientSide) {
@@ -68,7 +77,8 @@ public class GuardianTargetGoal extends Goal {
         return this.guardian.level().getEntitiesOfClass(LivingEntity.class,
                         this.guardian.getBoundingBox().inflate(GuardianTuning.TARGET_DETECT_DISTANCE),
                         e -> (e instanceof Monster) && !(e instanceof BaseGuardianEntity) && e.isAlive()
-                                && !this.guardian.isTargetUnreachable(e))
+                                && !this.guardian.isTargetUnreachable(e)
+                                && this.guardian.hasLineOfSight(e))
                 .stream()
                 .min(Comparator.comparingDouble(this.guardian::distanceToSqr))
                 .orElse(null);

@@ -1,0 +1,83 @@
+package com.phian404.survivalpoints.camp;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.LevelAccessor;
+import net.minecraftforge.event.level.BlockEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import com.phian404.survivalpoints.SurvivalPointsMod;
+
+/**
+ * События изменения блоков внутри слотов лагеря.
+ *
+ * <p>Игрок сломал блок в слоте или поставил свой — слот помечается
+ * {@code modified = true} и хранилище сохраняется. Флаг защищает изменения
+ * игрока: апгрейд слота ({@link CampGenerator#upgradeFarm}) отказывает, пока
+ * флаг стоит, чтобы апгрейд молча не стёр постройку игрока.
+ *
+ * <p>События запускаются только на сервере: клиентские копии слотов
+ * отсутствуют, и {@code setDirty()} имеет смысл лишь для серверного уровня.
+ */
+@Mod.EventBusSubscriber(modid = SurvivalPointsMod.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+public final class CampEvents {
+
+    private CampEvents() {
+    }
+
+    /**
+     * Игрок сломал блок внутри слота — слот изменён.
+     *
+     * <p>Воздух/уничтожение {@code structure_block} не учитываются: их не
+     * было в мире к моменту события. Слом пустого места (воздуха) невозможен.
+     *
+     * @param event событие разрушения
+     */
+    @SubscribeEvent
+    public static void onBlockBreak(BlockEvent.BreakEvent event) {
+        markSlotModified(event.getLevel(), event.getPos());
+    }
+
+    /**
+     * Сущность поставила блок внутри слота — слот изменён.
+     *
+     * <p>Фильтр по {@code Player}: блоки от генератора модуля ставятся
+     * программно ({@code level.setBlock}), эти события не порождают;
+     * {@code EntityPlaceEvent} срабатывает на реальные установки сущностью —
+     * в основном игроком.
+     *
+     * @param event событие установки
+     */
+    @SubscribeEvent
+    public static void onEntityPlace(BlockEvent.EntityPlaceEvent event) {
+        LevelAccessor accessor = event.getLevel();
+        Entity entity = event.getEntity();
+        if (!(entity instanceof Player)) {
+            return;
+        }
+        markSlotModified(accessor, event.getPos());
+    }
+
+    /**
+     * Пометить слот, содержащий точку, как изменённый.
+     *
+     * @param accessor уровень события
+     * @param pos      точка изменения
+     */
+    private static void markSlotModified(LevelAccessor accessor, BlockPos pos) {
+        if (!(accessor instanceof ServerLevel level)) {
+            return;
+        }
+        CampRecord record = CampManager.findCampAt(level, pos);
+        if (record == null) {
+            return;
+        }
+        CampModuleSlot slot = CampManager.slotAt(record, pos);
+        if (slot != null && !slot.isModified()) {
+            slot.setModified(true);
+            CampManager.data(level).setDirty();
+        }
+    }
+}

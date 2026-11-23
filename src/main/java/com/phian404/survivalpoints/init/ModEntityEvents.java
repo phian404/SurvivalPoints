@@ -118,13 +118,22 @@ public class ModEntityEvents {
             return;
         }
 
-        // Ближайший страж в пределах досягаемости. Поиск идёт по кэшу,
+        // Ближайший ВИДИМЫЙ страж в пределах досягаемости. Поиск идёт по кэшу,
         // без обращения к сущностям уровня.
+        //
+        // Проверка обзора обязательна: без неё монстр за глухой стеной лагеря
+        // брал стражей в цель прямо через ограду, и они отвечали, хотя не видели
+        // врага. Порядок условий важен — сначала дешёвое сравнение расстояний,
+        // и только для прошедших его кандидатов считается клип видимости.
+        //
+        // Условие «ближайший видимый», а не «ближайший, если видим»: страж
+        // за стеной не должен скрывать стража, стоящего на виду в воротах или
+        // на вышке, иначе такой монстр вообще не находил бы цели.
         double best = GuardianTuning.TARGET_DETECT_DISTANCE * GuardianTuning.TARGET_DETECT_DISTANCE;
         BaseGuardianEntity nearest = null;
         for (BaseGuardianEntity guardian : guardians) {
             double distance = monster.distanceToSqr(guardian);
-            if (distance < best) {
+            if (distance < best && monster.hasLineOfSight(guardian)) {
                 best = distance;
                 nearest = guardian;
             }

@@ -6,23 +6,33 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.phian404.survivalpoints.SurvivalPointsMod;
 import com.phian404.survivalpoints.camp.CampManager;
+import com.phian404.survivalpoints.camp.CampModuleSlot;
+import com.phian404.survivalpoints.camp.CampPoi;
 import com.phian404.survivalpoints.camp.CampPost;
 import com.phian404.survivalpoints.camp.CampRecord;
 import com.phian404.survivalpoints.camp.CampSavedData;
+import com.phian404.survivalpoints.camp.CampGenerator;
+import com.phian404.survivalpoints.camp.CampStructurePlacer;
 import com.phian404.survivalpoints.camp.CampTuning;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -34,6 +44,24 @@ import java.util.Locale;
  */
 @Mod.EventBusSubscriber(modid = SurvivalPointsMod.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class CampDebugCommand {
+
+    /** Модуль для проверки среза «шаблон + маркеры». */
+    private static final String TEST_MODULE = "survivalpoints:test_farm";
+
+    /** Фиксированный слот тестового модуля внутри лагеря. */
+    private static final String TEST_SLOT_ID = "test_farm";
+
+    /** На сколько блоков перед игроком ставится тестовый модуль. */
+    private static final int TEST_SLOT_DISTANCE = 4;
+
+    /** На сколько опустить точку размещения: первый ярус ложится вровень с полом. */
+    private static final int TEST_SLOT_Y_OFFSET = 1;
+
+    /** Сколько раз подсвечивать POI. */
+    private static final int HIGHLIGHT_STEPS = 10;
+
+    /** Пауза между вспышками подсветки (тики). */
+    private static final int HIGHLIGHT_INTERVAL_TICKS = 10;
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
@@ -72,6 +100,23 @@ public class CampDebugCommand {
                 .then(Commands.literal("remove")
                         .then(Commands.argument("id", StringArgumentType.word())
                                 .executes(ctx -> remove(ctx, StringArgumentType.getString(ctx, "id")))))
+                .then(Commands.literal("upgrade")
+                        .then(Commands.argument("id", StringArgumentType.word())
+                                .then(Commands.argument("slot", StringArgumentType.word())
+                                        .executes(ctx -> upgrade(ctx,
+                                                StringArgumentType.getString(ctx, "id"),
+                                                StringArgumentType.getString(ctx, "slot"), false))
+                                        .then(Commands.literal("force")
+                                                .executes(ctx -> upgrade(ctx,
+                                                        StringArgumentType.getString(ctx, "id"),
+                                                        StringArgumentType.getString(ctx, "slot"),
+                                                        true))))))
+                .then(Commands.literal("test_module")
+                        .then(Commands.argument("id", StringArgumentType.word())
+                                .executes(ctx -> testModule(ctx, StringArgumentType.getString(ctx, "id"), 0))
+                                .then(Commands.argument("rotation", IntegerArgumentType.integer())
+                                        .executes(ctx -> testModule(ctx, StringArgumentType.getString(ctx, "id"),
+                                                IntegerArgumentType.getInteger(ctx, "rotation"))))))
                 .then(Commands.literal("show")
                         .executes(ctx -> show(ctx, null))
                         .then(Commands.argument("id", StringArgumentType.word())
@@ -133,6 +178,27 @@ public class CampDebugCommand {
                     .append(post.isFree() ? "§8[свободен]" : "§8[занят]");
         }
         ctx.getSource().sendSuccess(() -> Component.literal(posts.toString()), false);
+
+        // Слоты и POI печатаются из сохранённых данных, а не из мира: это
+        // проверка того, что переживает перезапуск.
+        ctx.getSource().sendSuccess(() -> Component.literal(" §7слоты модулей ("
+                + record.getModuleSlotCount() + "):"), false);
+        for (CampModuleSlot slot : record.getModuleSlots().values()) {
+            ctx.getSource().sendSuccess(() -> Component.literal(" §f" + slot.getSlotId()
+                    + " §8→ §7" + slot.getModuleId()
+                    + " §8| §7ярус " + slot.getLevel()
+                    + " §8| §7поворот " + slot.getRotation() + "°"
+                    + " §8| §7угол " + slot.getOrigin().toShortString()
+                    + " §8| §7рамка " + slot.getBounds()
+                    + (slot.isModified() ? " §8| §eизменён" : "")), false);
+        }
+
+        ctx.getSource().sendSuccess(() -> Component.literal(" §7POI (" + record.getPoiCount() + "):"), false);
+        for (CampPoi poi : record.getPois()) {
+            ctx.getSource().sendSuccess(() -> Component.literal(" §f" + poi.getType()
+                    + " §8| §7слот §f" + poi.getSlotId()
+                    + " §8| §7точка §f" + poi.getPos().toShortString()), false);
+        }
         return 1;
     }
 
@@ -150,10 +216,18 @@ public class CampDebugCommand {
         String trimmed = name.length() > CampTuning.CAMP_NAME_MAX_LENGTH
                 ? name.substring(0, CampTuning.CAMP_NAME_MAX_LENGTH) : name;
 
+        // createCamp атомарен: сначала проверка участка и шаблонов, при
+        // провале запись в CampSavedData не появляется и блоки не ставятся.
         CampRecord record = CampManager.createCamp(level, anchor, null, trimmed, radius);
-        com.phian404.survivalpoints.camp.CampGenerator.generate(level, record);
+        if (record == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "§cУчасток не подходит (неровный, вода, пересечение с другим лагерем) "
+                            + "или шаблоны модулей не найдены"));
+            return 0;
+        }
         ctx.getSource().sendSuccess(() -> Component.literal("§aЛагерь «" + record.getName()
-                + "» построен §7(" + record.getShortId() + ", якорь " + anchor.toShortString() + ")"), true);
+                + "» построен §7(" + record.getShortId() + ", якорь " + anchor.toShortString()
+                + ", слотов " + record.getModuleSlotCount() + ")"), true);
         return 1;
     }
 
@@ -181,8 +255,50 @@ public class CampDebugCommand {
                 ? name.substring(0, CampTuning.CAMP_NAME_MAX_LENGTH) : name;
 
         CampRecord record = CampManager.createCamp(level, anchor, owner, trimmed, radius);
+        if (record == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "§cУчасток не подходит (неровный, вода, пересечение с другим лагерем) "
+                            + "или шаблоны модулей не найдены"));
+            return 0;
+        }
         ctx.getSource().sendSuccess(() -> Component.literal("§aЛагерь «" + record.getName() + "» создан §7("
-                + record.getShortId() + ", постов " + record.getPosts().size() + ")"), true);
+                + record.getShortId() + ", слотов " + record.getModuleSlotCount()
+                + ", постов " + record.getPosts().size() + ")"), true);
+        return 1;
+    }
+
+    /**
+     * Апгрейд слота фермы: {@code farm_lvl1} → {@code farm_lvl2}.
+     *
+     * <p>Изменённый игроком слот защищён: апгрейд отклоняется с понятным
+     * сообщением, пока не передан {@code force}.
+     *
+     * @param ctx    контекст команды
+     * @param id     короткий id лагеря
+     * @param slotId id слота (ожидается {@code farm})
+     * @param force  принудительный апгрейд с потерей изменений игрока
+     * @return {@code 1} при успехе
+     */
+    private static int upgrade(CommandContext<CommandSourceStack> ctx, String id,
+                               String slotId, boolean force) {
+        ServerLevel level = ctx.getSource().getLevel();
+        CampSavedData data = CampManager.data(level);
+        CampRecord record = data.getCampByShortId(id);
+        if (record == null) {
+            ctx.getSource().sendFailure(Component.literal("§cЛагерь «" + id + "» не найден"));
+            return 0;
+        }
+
+        String refusal = CampGenerator.upgradeFarm(level, data, record, slotId, force);
+        if (refusal != null) {
+            ctx.getSource().sendFailure(Component.literal("§c" + refusal));
+            return 0;
+        }
+
+        CampModuleSlot slot = record.getModuleSlot(slotId);
+        ctx.getSource().sendSuccess(() -> Component.literal("§aСлот §f" + slotId
+                + " §aапгрейден до §f" + (slot == null ? "?" : slot.getModuleId())
+                + " §7(поворот " + (slot == null ? "?" : slot.getRotation()) + "°)"), true);
         return 1;
     }
 
@@ -194,6 +310,11 @@ public class CampDebugCommand {
             ctx.getSource().sendFailure(Component.literal("§cЛагерь «" + id + "» не найден"));
             return 0;
         }
+
+        // Створка ворот не принадлежит слотам модулей, поэтому снимается
+        // отдельно: без этого после удаления лагеря в проёме оставалась бы
+        // висящая в воздухе дверь.
+        CampStructurePlacer.clearGateLeaf(level, record.getGatePos());
 
         data.removeCamp(record.getId());
         ctx.getSource().sendSuccess(() -> Component.literal("§aЛагерь «" + record.getName() + "» удалён"), true);
@@ -237,6 +358,98 @@ public class CampDebugCommand {
         ctx.getSource().sendSuccess(() -> Component.literal("§aГраница лагеря «" + record.getName()
                 + "» показана частицами §7(блоков ещё нет — это волна 2)"), false);
         return 1;
+    }
+
+    /**
+     * Тестовое размещение модуля: проверка «шаблон + маркеры → слот + POI».
+     *
+     * <p>Ставит {@value #TEST_MODULE} в фиксированный слот рядом с игроком,
+     * печатает найденные POI и подсвечивает их частицами. Смысл — убедиться,
+     * что координаты маркеров после поворота совпадают с ожидаемыми: рамка
+     * структуры и точки POI должны лежать в одних и тех же местах.
+     *
+     * @param ctx      контекст команды
+     * @param id       короткий id лагеря
+     * @param rotation поворот в градусах ({@code 0|90|180|270})
+     * @return {@code 1} при успехе
+     */
+    private static int testModule(CommandContext<CommandSourceStack> ctx, String id, int rotation) {
+        ServerLevel level = ctx.getSource().getLevel();
+        CampSavedData data = CampManager.data(level);
+        CampRecord record = data.getCampByShortId(id);
+        if (record == null) {
+            ctx.getSource().sendFailure(Component.literal("§cЛагерь «" + id + "» не найден"));
+            return 0;
+        }
+        if (rotation != 0 && rotation != 90 && rotation != 180 && rotation != 270) {
+            ctx.getSource().sendFailure(Component.literal("§cПоворот должен быть 0, 90, 180 или 270"));
+            return 0;
+        }
+
+        Vec3 pos = ctx.getSource().getPosition();
+        // Точка строго перед игроком по направлению взгляда. Раньше смещение
+        // задавалось как (+3, +3) по мировым X и Z — это всегда «на юго-восток»
+        // от игрока, поэтому структура появлялась справа-впереди независимо от
+        // того, куда он смотрит. Направление берём у игрока; для не-игрового
+        // источника (консоль) остаётся SOUTH как детерминированное значение.
+        Direction facing = Direction.SOUTH;
+        if (ctx.getSource().getEntity() instanceof LivingEntity living) {
+            facing = Direction.fromYRot(living.getYRot());
+        }
+        BlockPos target = new BlockPos(
+                Mth.floor(pos.x) + facing.getStepX() * TEST_SLOT_DISTANCE,
+                Mth.floor(pos.y) - TEST_SLOT_Y_OFFSET,
+                Mth.floor(pos.z) + facing.getStepZ() * TEST_SLOT_DISTANCE);
+
+        CampStructurePlacer.PlacementResult result = CampStructurePlacer.placeModule(
+                level, data, record, TEST_SLOT_ID, ResourceLocation.parse(TEST_MODULE),
+                0, target, CampStructurePlacer.rotationFromDegrees(rotation));
+
+        if (!result.isSuccess()) {
+            ctx.getSource().sendFailure(Component.literal("§c" + result.getMessage()));
+            return 0;
+        }
+
+        ctx.getSource().sendSuccess(() -> Component.literal("§aМодуль §f" + TEST_MODULE
+                + " §aразмещён §7(слот " + TEST_SLOT_ID + ", поворот " + rotation
+                + "°, центр " + target.toShortString() + ")"), true);
+
+        List<CampPoi> pois = result.getPois();
+        ctx.getSource().sendSuccess(() -> Component.literal("§7POI слота (" + pois.size() + "):"), false);
+        for (CampPoi poi : pois) {
+            ctx.getSource().sendSuccess(() -> Component.literal(" §f" + poi.getType()
+                    + " §7→ §f" + poi.getPos().toShortString()), false);
+        }
+
+        highlight(level, pois);
+        return 1;
+    }
+
+    /**
+     * Подсветить точки частицами на пару секунд.
+     *
+     * <p>Повторяется несколько раз через {@code MinecraftServer.execute}: POI —
+     * точки в мире, и однократная вспышка не даёт времени посмотреть на
+     * совпадение координат с блоками структуры.
+     */
+    private static void highlight(ServerLevel level, List<CampPoi> pois) {
+        if (pois.isEmpty()) {
+            return;
+        }
+        MinecraftServer server = level.getServer();
+        int now = server.getTickCount();
+        for (int step = 0; step < HIGHLIGHT_STEPS; step++) {
+            // TickTask запускается на указанном тике, а не «как можно скорее»:
+            // вспышки идут с паузой, и точки видно, а не одну слитую строку.
+            server.tell(new TickTask(now + step * HIGHLIGHT_INTERVAL_TICKS, () -> {
+                for (CampPoi poi : pois) {
+                    BlockPos pos = poi.getPos();
+                    level.sendParticles(ParticleTypes.END_ROD,
+                            pos.getX() + 0.5D, pos.getY() + 1.0D, pos.getZ() + 0.5D,
+                            3, 0.1D, 0.1D, 0.1D, 0.0D);
+                }
+            }));
+        }
     }
 
     private static void drawCamp(ServerLevel level, CampRecord record) {

@@ -7,14 +7,17 @@ import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.RenderLayerParent;
 import net.minecraft.client.renderer.entity.layers.RenderLayer;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.resources.model.ModelManager;
 import net.minecraft.client.resources.model.ModelResourceLocation;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
-import com.phian404.survivalpoints.entity.BaseGuardianEntity;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.SwordItem;
+import com.phian404.survivalpoints.entity.BaseGuardianEntity;
 
 public class CustomWeaponLayer<T extends LivingEntity, M extends HumanoidModel<T>> extends RenderLayer<T, M> {
 
@@ -32,7 +35,7 @@ public class CustomWeaponLayer<T extends LivingEntity, M extends HumanoidModel<T
             poseStack.pushPose();
             model.rightArm.translateAndRotate(poseStack);
 
-            boolean isSword = itemstack.getItem() instanceof net.minecraft.world.item.SwordItem;
+            boolean isSword = itemstack.getItem() instanceof SwordItem;
             if (isSword) {
                 // МЕЧ: Смещаем вниз к кисти (увеличиваем Y) и центрируем
                 poseStack.translate(-0.05D, 0.4D, -0.10D); // <-- ИЗМЕНЕНО ЗДЕСЬ
@@ -63,6 +66,10 @@ public class CustomWeaponLayer<T extends LivingEntity, M extends HumanoidModel<T
                 poseStack.scale(0.8F, 0.8F, 0.8F);
             }
 
+            // Контекст отображения фиксирован: оружие всегда в правой руке.
+            // Один и тот же контекст нужен и для выборки модели, и для seed.
+            ItemDisplayContext displayContext = ItemDisplayContext.THIRD_PERSON_RIGHT_HAND;
+
             // Во время зарядки рисуем ТОЛЬКО ванильную pulling-модель арбалета
             // (crossbow_pulling_0/1/2): в ней тетива уже натянута. Стадию
             // выбираем по синхронизированному прогрессу. Обычную модель
@@ -70,7 +77,7 @@ public class CustomWeaponLayer<T extends LivingEntity, M extends HumanoidModel<T
             boolean charging = entity instanceof BaseGuardianEntity guardianEntity
                     && guardianEntity.isCharging();
             if (charging) {
-                float progress = net.minecraft.util.Mth.clamp(
+                float progress = Mth.clamp(
                         ((BaseGuardianEntity) entity).getCrossbowChargeProgress(), 0.0F, 1.0F);
                 String stage;
                 if (progress < 0.33F) {
@@ -84,28 +91,34 @@ public class CustomWeaponLayer<T extends LivingEntity, M extends HumanoidModel<T
                 ModelManager modelManager = Minecraft.getInstance().getModelManager();
                 BakedModel pullingModel = modelManager.getModel(
                         ModelResourceLocation.vanilla(stage, "inventory"));
+                // Overlay: NO_OVERLAY, а не FULL_BRIGHT. FULL_BRIGHT — это
+                // координаты света, а не overlay; в слоте overlay он даёт
+                // u=15, v=15 и попадает в полупрозрачную строку текстуры
+                // урона. Шейдерпаки (Oculus/Iris) читают overlay как данные
+                // эффектов, поэтому оружие начинало мигать/чернеть.
                 Minecraft.getInstance().getItemRenderer().render(
                         itemstack,
-                        ItemDisplayContext.THIRD_PERSON_RIGHT_HAND,
+                        displayContext,
                         false,
                         poseStack,
                         buffer,
                         packedLight,
-                        net.minecraft.client.renderer.LightTexture.FULL_BRIGHT,
+                        OverlayTexture.NO_OVERLAY,
                         pullingModel
                 );
             } else {
                 // Обычная модель арбалета (или меча) вне зарядки.
-                Minecraft.getInstance().getItemRenderer().renderStatic(
-                        itemstack,
-                        ItemDisplayContext.THIRD_PERSON_RIGHT_HAND,
-                        packedLight,
-                        net.minecraft.client.renderer.LightTexture.FULL_BRIGHT,
-                        poseStack,
-                        buffer,
-                        entity.level(),
-                        0
-                );
+                //
+                // Ванильный ItemInHandRenderer.renderItem — единственный путь,
+                // который сам подставляет OverlayTexture.NO_OVERLAY и seed
+                // entity.getId() + displayContext.ordinal(), а также передаёт
+                // сущность в ItemRenderer.getModel. Любая ручная комбинация
+                // аргументов renderStatic расходится с этим контрактом и
+                // ломает слой шейдеров Oculus.
+                Minecraft.getInstance().getEntityRenderDispatcher()
+                        .getItemInHandRenderer()
+                        .renderItem(entity, itemstack, displayContext, false,
+                                poseStack, buffer, packedLight);
             }
 
             poseStack.popPose();

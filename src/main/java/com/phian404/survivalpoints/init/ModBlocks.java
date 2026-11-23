@@ -4,8 +4,8 @@ import com.phian404.survivalpoints.SurvivalPointsMod;
 import com.phian404.survivalpoints.camp.block.CampGateBlock;
 import com.phian404.survivalpoints.camp.block.CampRadioBlock;
 import com.phian404.survivalpoints.camp.block.fence.MeshSectionBlock;
+import com.phian404.survivalpoints.camp.block.fence.PlankSectionBlock;
 import com.phian404.survivalpoints.camp.block.fence.PostBlock;
-import com.phian404.survivalpoints.camp.block.fence.SectionBlock;
 import com.phian404.survivalpoints.camp.block.fence.SheetSectionBlock;
 import com.phian404.survivalpoints.camp.block.fence.WireSectionBlock;
 import com.phian404.survivalpoints.camp.blockentity.CampRadioBlockEntity;
@@ -37,9 +37,9 @@ public class ModBlocks {
     public static final net.minecraftforge.registries.RegistryObject<Block> POST =
             BLOCKS.register("post", PostBlock::new);
 
-    /** Секция из досок: две доски с просветом. */
+    /** Секция из досок: две доски с просветом, коллизия — забор 1.5 блока. */
     public static final net.minecraftforge.registries.RegistryObject<Block> PLANK_SECTION =
-            BLOCKS.register("plank_section", () -> new SectionBlock(SoundType.WOOD));
+            BLOCKS.register("plank_section", PlankSectionBlock::new);
 
     /** Секция колючей проволоки: две нити на высотах 4..6 и 12..14. */
     public static final net.minecraftforge.registries.RegistryObject<Block> WIRE_SECTION =

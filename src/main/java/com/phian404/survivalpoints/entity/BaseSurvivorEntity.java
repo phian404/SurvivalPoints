@@ -62,7 +62,7 @@ public abstract class BaseSurvivorEntity extends PathfinderMob {
 
     /** Диапазон роста для мужского NPC. */
     public static final float SCALE_MALE_MIN = 0.95F;
-    public static final float SCALE_MALE_MAX = 1.06F;
+    public static final float SCALE_MALE_MAX = 1.02F;
 
     /**
      * Показывать ли имя NPC над головой.

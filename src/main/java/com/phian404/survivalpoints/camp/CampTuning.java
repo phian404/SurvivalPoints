@@ -15,13 +15,15 @@ public final class CampTuning {
 
     // ==================== Размеры лагеря ====================
 
+    /** Компактный аванпост 21×21 (периметр 0..20 по локальным координатам). */
+    public static final int CAMP_RADIUS_COMPACT = 10;
     /** Малый лагерь (аванпост). */
     public static final int CAMP_RADIUS_SMALL = 16;
-    /** Средний лагерь (крепость) — размер по умолчанию. */
+    /** Средний лагерь (крепость). */
     public static final int CAMP_RADIUS_MEDIUM = 24;
     /** Большой лагерь (посёлок). */
     public static final int CAMP_RADIUS_LARGE = 32;
-    public static final int CAMP_DEFAULT_RADIUS = CAMP_RADIUS_MEDIUM;
+    public static final int CAMP_DEFAULT_RADIUS = CAMP_RADIUS_COMPACT;
 
     // ==================== Посты и вышки ====================
 
@@ -35,6 +37,23 @@ public final class CampTuning {
 
     /** Отступ постов от края периметра (чтобы страж не стоял вплотную к забору). */
     public static final int CAMP_POST_INSET = 2;
+
+    /** Высота периметра в ярусах секций над полом двора. */
+    public static final int CAMP_WALL_HEIGHT = 3;
+
+    // ==================== Участок ====================
+
+    /**
+     * Допустимый перепад высот по площадке лагеря (в блоках).
+     *
+     * <p>1 блок, а не больше: модули имеют собственный нижний слой (трава,
+     * тропинка, пашня), который должен лечь вровень с двором. При перепаде в
+     * 2+ блока выравнивание потребовало бы насыпи выше человеческого роста.
+     */
+    public static final int CAMP_MAX_HEIGHT_STEP = 1;
+
+    /** Минимальный зазор между краями двух лагерей. */
+    public static final int CAMP_MIN_GAP_BETWEEN = 8;
 
     // ==================== Штат ====================
 
