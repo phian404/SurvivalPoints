@@ -205,8 +205,10 @@ public class CampGenerator {
         int side = plan.getSide();
         int clearTop = floorY + CampTuning.CAMP_CLEAR_HEADROOM;
 
-        // Деревья — до любого выравнивания: см. javadoc метода.
-        removeObstructingTrees(level, plan, anchor);
+        // Деревья — до любого выравнивания: см. javadoc метода. Решение
+        // используется всей остальной подготовкой: снесённые блоки уже
+        // удалены, а сохранённые деревья нельзя задевать очисткой.
+        TreeDecision trees = removeObstructingTrees(level, plan, anchor);
 
         for (int lx = 0; lx < side; lx++) {
             for (int lz = 0; lz < side; lz++) {
@@ -223,17 +225,22 @@ public class CampGenerator {
                     continue;
                 }
 
-                // 1. Расчистка: деревья, цветы и прочая мягкая растительность.
+                // 1. Расчистка: цветы и прочая мягкая растительность.
                 //    Цветы в 1.20.1 возвращают canBeReplaced() == false, поэтому
                 //    без проверки blocksMotion() они пережили бы выравнивание.
+                //    Брёвна и листва здесь не трогаются: судьбу деревьев решает
+                //    removeObstructingTrees, и сохранённое дерево не должно
+                //    терять часть кроны от границы двора.
                 for (int y = groundY + 1; y <= clearTop; y++) {
                     BlockPos pos = new BlockPos(column.getX(), y, column.getZ());
                     BlockState state = level.getBlockState(pos);
                     if (state.isAir()) {
                         continue;
                     }
-                    if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)
-                            || state.canBeReplaced() || !state.blocksMotion()) {
+                    if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)) {
+                        continue;
+                    }
+                    if (state.canBeReplaced() || !state.blocksMotion()) {
                         level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
                     }
                 }
@@ -260,11 +267,11 @@ public class CampGenerator {
             }
         }
 
-        prepareEdges(level, plan, anchor);
+        prepareEdges(level, plan, anchor, trees);
     }
 
     /**
-     * Удалить деревья, чей ствол пересекает зону подготовки площадки.
+     * Разобрать деревья зоны подготовки и снести те, чей ствол её пересекает.
      *
      * <p>Признак принадлежности дерева к зоне — ствол, а не листва. Крона
      * широкого дерева может накрыть площадку, стоя при этом в стороне: такое
@@ -276,16 +283,23 @@ public class CampGenerator {
      * <p>Правило «всё или ничего» принципиально: при упоре в лимит обхода
      * частичный снос оставлял в воздухе обрубок ствола или одинокую листву.
      *
+     * <p>Возвращённое решение — единственный источник правды о деревьях для
+     * остальной подготовки: очистка клеток и коридор ворот удаляют только
+     * блоки из набора сноса, а блоки сохранённых деревьев не трогают даже
+     * внутри двора.
+     *
      * @param level  серверный уровень
      * @param plan   план застройки
      * @param anchor точка якоря (её колонка не трогается)
+     * @return решение по деревьям: что снесено и что сохраняется
      */
-    private static void removeObstructingTrees(ServerLevel level, CampSitePlanner.Plan plan,
-                                               BlockPos anchor) {
+    private static TreeDecision removeObstructingTrees(ServerLevel level, CampSitePlanner.Plan plan,
+                                                       BlockPos anchor) {
+        TreeDecision decision = new TreeDecision();
         Set<BlockPos> zoneLogs = new HashSet<>();
         collectZoneLogs(level, plan, zoneLogs);
         if (zoneLogs.isEmpty()) {
-            return;
+            return decision;
         }
         // Сюда попадают только стволы, у которых хотя бы одно бревно лежало
         // внутри зоны. Дерево, накрывшее площадку одной кроной, в этом
@@ -299,9 +313,15 @@ public class CampGenerator {
             // Бревна помечаются обработанными независимо от полноты: второе
             // бревно того же дерева уже не нужно обходить заново.
             handled.addAll(tree.trunk);
+            // Спорная листва копится независимо от полноты дерева: после
+            // сноса стволов именно она может остаться висеть в воздухе.
+            decision.collectSpare(tree);
             if (!tree.complete) {
+                // Сохранение — это отсутствие дерева в наборе сноса: оно
+                // остаётся целиком, включая нависающую над лагерем крону.
                 continue;
             }
+            decision.remove(tree);
             for (BlockPos pos : tree.trunk) {
                 clearTreeBlock(level, pos, anchor);
             }
@@ -309,6 +329,44 @@ public class CampGenerator {
                 clearTreeBlock(level, pos, anchor);
             }
         }
+        // Стволы уже снесены, поэтому листва без единого бревна рядом не
+        // принадлежит ни одному оставшемуся дереву и висела бы в воздухе.
+        for (BlockPos pos : decision.spare) {
+            if (!level.getBlockState(pos).is(BlockTags.LEAVES)) {
+                continue;
+            }
+            if (hasLogNear(level, pos)) {
+                continue;
+            }
+            clearTreeBlock(level, pos, anchor);
+        }
+        return decision;
+    }
+
+    /**
+     * Проверить, есть ли рядом бревно оставшегося дерева.
+     *
+     * <p>Область проверки — куб {@link #CANOPY_SCAN_RADIUS}: листва, у
+     * которой в этом радиусе нет ни одного бревна, не принадлежит ни одному
+     * стволу и должна быть удалена.
+     *
+     * @param level серверный уровень
+     * @param pos   координата блока листвы
+     * @return {@code true}, если поблизости осталось бревно
+     */
+    private static boolean hasLogNear(ServerLevel level, BlockPos pos) {
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int dx = -CANOPY_SCAN_RADIUS; dx <= CANOPY_SCAN_RADIUS; dx++) {
+            for (int dy = -CANOPY_SCAN_RADIUS; dy <= CANOPY_SCAN_RADIUS; dy++) {
+                for (int dz = -CANOPY_SCAN_RADIUS; dz <= CANOPY_SCAN_RADIUS; dz++) {
+                    cursor.set(pos.getX() + dx, pos.getY() + dy, pos.getZ() + dz);
+                    if (level.getBlockState(cursor).is(BlockTags.LOGS)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -428,18 +486,27 @@ public class CampGenerator {
      * Собрать крону вокруг ствола.
      *
      * <p>Обход начинается сразу со всех блоков ствола и идёт по связности
-     * листвы: так в крону попадают только блоки этого дерева, а листва
-     * соседнего остаётся. Блоки, уже лежащие в кроне, не прерывают обход —
-     * они лишь не добавляются повторно; раньше выход из обхода на таком
-     * блоке оставлял за ним необработанную часть кроны.
+     * листвы. Одной связности недостаточно: у соприкасающихся деревьев кроны
+     * образуют общий объём, и обход перетекал на листву соседа — её сносили,
+     * а ствол соседа оставался голым. Поэтому каждый найденный блок листвы
+     * дополнительно проверяется на принадлежность по расстоянию до стволов
+     * ({@link #ownership}).
      *
-     * <p>Допустимая область считается от ствола: куб
-     * {@link #CANOPY_SCAN_RADIUS} вокруг габарита ствола. Сравнение по кубу,
-     * а не по сфере, потому что крона в Minecraft строится кубическими
-     * слоями и сферическая отсечка срезала бы её углы.
+     * <p>Допустимая область — расстояние до ближайшего бревна ствола не
+     * больше {@link #CANOPY_SCAN_RADIUS}. Метрика кубическая, потому что
+     * крона в Minecraft строится кубическими слоями. Куб вокруг габарита
+     * ствола здесь не подходит: у высокого дерева он отсекал верхние слои
+     * кроны, и после сноса ствола они оставались висеть.
+     *
+     * <p>Блок с неоднозначной принадлежностью просто не удаляется и не
+     * продолжает обход: спорный участок остаётся у соседа. Дерево при этом
+     * считается собранным — иначе в сомкнутом лесу, где чужие стволы стоят
+     * на равном расстоянии почти от каждой листвы, не сносилось бы ни одно
+     * дерево.
      *
      * <p>Если обход упёрся в {@link #CANOPY_BLOCK_LIMIT}, дерево помечается
-     * неполным: обрезанная крона не должна остаться висеть в воздухе.
+     * неполным и не удаляется вовсе: частично снесённая крона оставила бы
+     * висеть обрубок.
      *
      * @param level серверный уровень
      * @param tree  дерево с уже собранным стволом (крона дописывается сюда)
@@ -449,32 +516,12 @@ public class CampGenerator {
             tree.complete = false;
             return;
         }
-        int minX = Integer.MAX_VALUE;
-        int minY = Integer.MAX_VALUE;
-        int minZ = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE;
-        int maxY = Integer.MIN_VALUE;
-        int maxZ = Integer.MIN_VALUE;
         Deque<BlockPos> queue = new ArrayDeque<>();
         Set<BlockPos> visited = new HashSet<>(tree.trunk);
-        for (BlockPos log : tree.trunk) {
-            minX = Math.min(minX, log.getX());
-            minY = Math.min(minY, log.getY());
-            minZ = Math.min(minZ, log.getZ());
-            maxX = Math.max(maxX, log.getX());
-            maxY = Math.max(maxY, log.getY());
-            maxZ = Math.max(maxZ, log.getZ());
-            queue.add(log);
-        }
-        minX -= CANOPY_SCAN_RADIUS;
-        minY -= CANOPY_SCAN_RADIUS;
-        minZ -= CANOPY_SCAN_RADIUS;
-        maxX += CANOPY_SCAN_RADIUS;
-        maxY += CANOPY_SCAN_RADIUS;
-        maxZ += CANOPY_SCAN_RADIUS;
+        queue.addAll(tree.trunk);
 
         while (!queue.isEmpty()) {
-            if (tree.canopy.size() >= CANOPY_BLOCK_LIMIT) {
+            if (visited.size() >= CANOPY_BLOCK_LIMIT) {
                 tree.complete = false;
                 return;
             }
@@ -489,10 +536,23 @@ public class CampGenerator {
                         if (visited.contains(next)) {
                             continue;
                         }
-                        if (!withinCanopyRadius(next, minX, minY, minZ, maxX, maxY, maxZ)) {
+                        int ownDistance = trunkDistance(next, tree.trunk);
+                        if (ownDistance > CANOPY_SCAN_RADIUS) {
                             continue;
                         }
                         if (!level.getBlockState(next).is(BlockTags.LEAVES)) {
+                            continue;
+                        }
+                        Ownership owner = ownership(level, next, tree.trunk, ownDistance);
+                        if (owner != Ownership.OWN) {
+                            // Крона соседнего дерева либо спорный блок: его не
+                            // удаляем вместе с этим деревом, но обход через
+                            // него продолжается. Иначе листва за спорным
+                            // блоком оставалась непосещённой и висела в
+                            // воздухе после сноса стволов.
+                            tree.spare.add(next);
+                            visited.add(next);
+                            queue.add(next);
                             continue;
                         }
                         visited.add(next);
@@ -505,22 +565,143 @@ public class CampGenerator {
     }
 
     /**
-     * Проверить, попадает ли блок кроны в допустимую область вокруг ствола.
+     * Решение по деревьям зоны подготовки.
      *
-     * @param pos  проверяемый блок
-     * @param minX западная граница области включительно
-     * @param minY нижняя граница области включительно
-     * @param minZ северная граница области включительно
-     * @param maxX восточная граница области включительно
-     * @param maxY верхняя граница области включительно
-     * @param maxZ южная граница области включительно
-     * @return {@code true}, если блок внутри области
+     * <p>Единственный источник правды: остальная подготовка удаляет только
+     * блоки из набора сноса и не трогает блоки сохранённых деревьев. Так
+     * сохранённое дерево не теряет часть кроны от границы двора, а снесённое
+     * удаляется целиком — включая листву за пределами зоны.
      */
-    private static boolean withinCanopyRadius(BlockPos pos, int minX, int minY, int minZ,
-                                              int maxX, int maxY, int maxZ) {
-        return pos.getX() >= minX && pos.getX() <= maxX
-                && pos.getY() >= minY && pos.getY() <= maxY
-                && pos.getZ() >= minZ && pos.getZ() <= maxZ;
+    private static final class TreeDecision {
+
+        /** Блоки деревьев, признанных подлежащими сносу. */
+        private final Set<BlockPos> removeBlocks = new HashSet<>();
+
+        /**
+         * Листва, отброшенная при обходе как чужая или спорная.
+         *
+         * <p>Проверяется после сноса стволов: если рядом не осталось ни
+         * одного бревна, листва никому не принадлежит и удаляется.
+         */
+        private final Set<BlockPos> spare = new HashSet<>();
+
+        /**
+         * Запомнить дерево как подлежащее сносу.
+         *
+         * @param tree дерево с полным обходом
+         */
+        private void remove(TreeBlocks tree) {
+            this.removeBlocks.addAll(tree.trunk);
+            this.removeBlocks.addAll(tree.canopy);
+        }
+
+        /**
+         * Накопить листву, не попавшую в крону дерева.
+         *
+         * @param tree разобранное дерево
+         */
+        private void collectSpare(TreeBlocks tree) {
+            this.spare.addAll(tree.spare);
+        }
+
+        /**
+         * Проверить, можно ли удалять блок дерева.
+         *
+         * @param pos координата блока
+         * @return {@code true}, если блок принадлежит снесённому дереву
+         */
+        private boolean canClear(BlockPos pos) {
+            return this.removeBlocks.contains(pos);
+        }
+    }
+
+    /**
+     * Расстояние от блока до ближайшего бревна ствола.
+     *
+     * <p>Метрика кубическая (максимум из трёх разностей), как и отсечка
+     * кроны: крона строится кубическими слоями, и евклидово расстояние
+     * срезало бы её углы.
+     *
+     * @param pos   проверяемый блок
+     * @param trunk бревна ствола
+     * @return расстояние до ближайшего бревна, либо {@link Integer#MAX_VALUE},
+     *         если ствол пуст
+     */
+    private static int trunkDistance(BlockPos pos, Set<BlockPos> trunk) {
+        int best = Integer.MAX_VALUE;
+        for (BlockPos log : trunk) {
+            int distance = Math.max(Math.abs(pos.getX() - log.getX()),
+                    Math.max(Math.abs(pos.getY() - log.getY()),
+                            Math.abs(pos.getZ() - log.getZ())));
+            if (distance < best) {
+                best = distance;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Определить, принадлежит ли блок листвы обрабатываемому дереву.
+     *
+     * <p>Одна связность листвы ненадёжна: у соприкасающихся деревьев кроны
+     * образуют общий объём, и обход перетекал на листву соседа. Поэтому блок
+     * сравнивается по расстоянию до своего ствола и до ближайшего чужого
+     * бревна. Поиск чужого ограничен кубом радиуса {@code ownDistance}:
+     * бревно дальше этого расстояния не может оказаться ближе своего.
+     *
+     * <p>Равное расстояние означает, что листва одинаково удалена от двух
+     * стволов, и принадлежность не установлена — такой блок остаётся на
+     * месте, но снос дерева не отменяет.
+     *
+     * @param level       серверный уровень
+     * @param pos         проверяемый блок листвы
+     * @param trunk       бревна обрабатываемого ствола
+     * @param ownDistance расстояние от блока до своего ствола
+     * @return принадлежность блока
+     */
+    private static Ownership ownership(ServerLevel level, BlockPos pos, Set<BlockPos> trunk,
+                                       int ownDistance) {
+        int radius = Math.min(ownDistance, CANOPY_SCAN_RADIUS);
+        int bestForeign = Integer.MAX_VALUE;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    BlockPos candidate = pos.offset(dx, dy, dz);
+                    if (trunk.contains(candidate)) {
+                        continue;
+                    }
+                    if (!level.getBlockState(candidate).is(BlockTags.LOGS)) {
+                        continue;
+                    }
+                    int distance = Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
+                    if (distance < bestForeign) {
+                        bestForeign = distance;
+                    }
+                }
+            }
+        }
+        if (bestForeign > ownDistance) {
+            return Ownership.OWN;
+        }
+        if (bestForeign == ownDistance) {
+            return Ownership.AMBIGUOUS;
+        }
+        return Ownership.FOREIGN;
+    }
+
+    /**
+     * Принадлежность блока листвы обрабатываемому дереву.
+     */
+    private enum Ownership {
+
+        /** Блок ближе к своему стволу — его можно удалять. */
+        OWN,
+
+        /** Блок ближе к чужому стволу — это крона соседа, её не трогаем. */
+        FOREIGN,
+
+        /** Расстояния равны — блок спорный, его не трогаем. */
+        AMBIGUOUS
     }
 
     /**
@@ -528,13 +709,23 @@ public class CampGenerator {
      *
      * <p>Коллекции принадлежат ровно одному дереву: так обход соседей не
      * обрывается на уже найденных блоках. {@code complete == false} означает,
-     * что обход упёрся в лимит, и дерево нельзя удалять — иначе в мире
-     * остался бы обрубок.
+     * что обход упёрся в лимит или встретил спорную принадлежность, и дерево
+     * нельзя удалять — иначе в мире остался бы обрубок.
      */
     private static final class TreeBlocks {
 
         private final Set<BlockPos> trunk = new HashSet<>();
         private final Set<BlockPos> canopy = new HashSet<>();
+
+        /**
+         * Листва рядом со стволом, отброшенная как чужая или спорная.
+         *
+         * <p>Хранится отдельно от {@link #canopy}: она не принадлежит этому
+         * дереву и не удаляется вместе с ним, но её нужно проверить после
+         * сноса всех стволов.
+         */
+        private final Set<BlockPos> spare = new HashSet<>();
+
         private boolean complete = true;
     }
 
@@ -620,7 +811,8 @@ public class CampGenerator {
      * @param plan   план
      * @param anchor точка якоря (её колонка исключается)
      */
-    private static void prepareEdges(ServerLevel level, CampSitePlanner.Plan plan, BlockPos anchor) {
+    private static void prepareEdges(ServerLevel level, CampSitePlanner.Plan plan, BlockPos anchor,
+                                     TreeDecision trees) {
         int floorY = plan.getFloorY();
         int margin = CampTuning.CAMP_CLEAR_MARGIN;
         int half = plan.getRadius();
@@ -645,7 +837,7 @@ public class CampGenerator {
         // Подход к воротам: поверхность ведётся от порога двора наружу с
         // перепадом не более блока на клетку. Высокие выступы срезаются,
         // провалы подсыпаются ровно настолько, чтобы шаг остался проходимым.
-        prepareApproachCorridor(level, gate, floorY, halfWidth, margin, anchor);
+        prepareApproachCorridor(level, gate, floorY, halfWidth, margin, anchor, trees);
     }
 
     /**
@@ -668,9 +860,11 @@ public class CampGenerator {
      * @param halfWidth половина ширины коридора
      * @param margin    глубина коридора в клетках
      * @param anchor    точка якоря (её колонка исключается)
+     * @param trees     решение по деревьям
      */
     private static void prepareApproachCorridor(ServerLevel level, BlockPos gate, int floorY,
-                                                int halfWidth, int margin, BlockPos anchor) {
+                                                int halfWidth, int margin, BlockPos anchor,
+                                                TreeDecision trees) {
         int courtyardY = floorY - 1;
         int[] previous = new int[halfWidth * 2 + 1];
         Arrays.fill(previous, courtyardY);
@@ -684,7 +878,7 @@ public class CampGenerator {
                 int index = dx + halfWidth;
                 int surfaceY = approachSurfaceY(level, x, z, previous[index], courtyardY);
                 previous[index] = surfaceY;
-                clearApproachHeadroom(level, x, z, surfaceY);
+                clearApproachHeadroom(level, x, z, surfaceY, trees);
             }
         }
     }
@@ -942,15 +1136,21 @@ public class CampGenerator {
      * Освободить место над поверхностью прохода.
      *
      * <p>Игрок занимает почти два блока, поэтому над поверхностью
-     * расчищаются стволы, листва и мягкая растительность. Твёрдый
-     * рукотворный блок остаётся: коридор не должен сносить постройки.
+     * расчищается мягкая растительность. Твёрдый рукотворный блок остаётся:
+     * коридор не должен сносить постройки.
+     *
+     * <p>Брёвна и листва удаляются только по решению
+     * {@link #removeObstructingTrees}: сохранённое дерево у ворот не должно
+     * терять часть ствола от расчистки коридора.
      *
      * @param level    серверный уровень
      * @param x        координата
      * @param z        координата
      * @param surfaceY уровень поверхности, от которого считается высота
+     * @param trees    решение по деревьям
      */
-    private static void clearApproachHeadroom(ServerLevel level, int x, int z, int surfaceY) {
+    private static void clearApproachHeadroom(ServerLevel level, int x, int z, int surfaceY,
+                                              TreeDecision trees) {
         int top = surfaceY + GATE_ACCESS_HEIGHT;
         for (int y = surfaceY + 1; y <= top; y++) {
             BlockPos pos = new BlockPos(x, y, z);
@@ -958,8 +1158,13 @@ public class CampGenerator {
             if (state.isAir()) {
                 continue;
             }
-            if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)
-                    || isReplaceableSoft(state)) {
+            if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)) {
+                if (trees.canClear(pos)) {
+                    level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+                }
+                continue;
+            }
+            if (isReplaceableSoft(state)) {
                 level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
             }
         }
