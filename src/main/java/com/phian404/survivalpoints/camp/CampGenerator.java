@@ -81,6 +81,17 @@ public class CampGenerator {
     private static final int GATE_ACCESS_HEIGHT = 2;
 
     /**
+     * Дополнительный запас области поиска стволов в блоках.
+     *
+     * <p>Область обнаружения стволов шире зоны подготовки на эту величину.
+     * Ствол, стоящий вплотную к зоне выравнивания, приподнял бы крону прямо
+     * над двором и оставил бы её висеть после среза склона. Запас решает эту
+     * проблему, не расширяя саму зону выравнивания грунта: константа
+     * {@link CampTuning#CAMP_CLEAR_MARGIN} остаётся прежней.
+     */
+    private static final int TREE_DETECT_EXTRA = 3;
+
+    /**
      * Горизонтальный радиус поиска ствола вокруг брёвен, найденных в зоне.
      *
      * <p>2 блока покрывают двуствольные породы (дуб 2×2) и стволы, которые
@@ -283,9 +294,19 @@ public class CampGenerator {
     /**
      * Найти все брёвна внутри зоны подготовки.
      *
-     * <p>Зона — квадрат площадки плюс полоса {@link CampTuning#CAMP_CLEAR_MARGIN}
-     * наружу и по высоте от грунта до {@link CampTuning#CAMP_CLEAR_HEADROOM}
-     * над двором. Колонка якоря пропускается.
+     * <p>Зона подготовки — квадрат площадки плюс полоса
+     * {@link CampTuning#CAMP_CLEAR_MARGIN} наружу. Область поиска стволов
+     * шире неё ещё на {@link #TREE_DETECT_EXTRA} блоков: ствол, стоящий
+     * вплотную к зоне, всё равно оставил бы крону над двором. Саму зону
+     * выравнивания это не расширяет — грунт обрабатывается ровно по прежней
+     * площади.
+     *
+     * <p>По высоте поиск идёт от минимальной высоты мира до
+     * {@link CampTuning#CAMP_CLEAR_HEADROOM} над двором: ствол не может
+     * начинаться ниже бедрока и не тянеся выше этой границы в зоне лагеря.
+     * Колонка якоря пропускается при удалении, а не при поиске: если в
+     * колонке якоря окажется бревно, его принадлежность дереву всё равно
+     * нужно восстановить.
      *
      * @param level  серверный уровень
      * @param plan   план застройки
@@ -293,7 +314,7 @@ public class CampGenerator {
      */
     private static void collectZoneLogs(ServerLevel level, CampSitePlanner.Plan plan,
                                         Set<BlockPos> out) {
-        int margin = CampTuning.CAMP_CLEAR_MARGIN;
+        int margin = CampTuning.CAMP_CLEAR_MARGIN + TREE_DETECT_EXTRA;
         int floorY = plan.getFloorY();
         int minY = level.getMinBuildHeight();
         int maxY = floorY + CampTuning.CAMP_CLEAR_HEADROOM;
@@ -322,8 +343,12 @@ public class CampGenerator {
      * соседством: обход идёт по брёвнам, у которых смещение по X и Z не
      * превышает {@link #TRUNK_SCAN_RADIUS} блоков. Это покрывает наклонные
      * стволы и двуствольные породы (дуб 2×2), но не склеивает два отдельных
-     * дерева, стоящих рядом. Ограничение {@link #TRUNK_BLOCK_LIMIT} не даёт
-     * обходу уйти в бесконечность на повреждённых данных.
+     * дерева, стоящих рядом.
+     *
+     * <p>Лимит {@link #TRUNK_BLOCK_LIMIT} считается по счётчику этого обхода,
+     * а не по размеру {@code out}. Общая коллекция копится между вызовами,
+     * и проверка по ней обрывала обработку всех деревьев после первого
+     * исчерпания лимита — часть стволов оставалась висеть в воздухе.
      *
      * @param level серверный уровень
      * @param start бревно, с которого начинается обход
@@ -331,17 +356,27 @@ public class CampGenerator {
      */
     private static void collectTrunk(ServerLevel level, BlockPos start, Set<BlockPos> out) {
         Deque<BlockPos> queue = new ArrayDeque<>();
+        // Счётчик обхода отдельный от out: общая коллекция копится между
+        // деревьями, и проверка по её размеру обрывала обработку после
+        // первого исчерпания лимита.
+        Set<BlockPos> seen = new HashSet<>();
         queue.add(start);
-        while (!queue.isEmpty() && out.size() < TRUNK_BLOCK_LIMIT) {
+        while (!queue.isEmpty() && seen.size() < TRUNK_BLOCK_LIMIT) {
             BlockPos current = queue.poll();
-            if (!out.add(current)) {
+            if (!seen.add(current)) {
                 continue;
             }
+            if (out.contains(current)) {
+                // Блок уже собран другим деревом: расширяться отсюда не
+                // нужно, ветка ствола уже покрыта.
+                continue;
+            }
+            out.add(current);
             for (int dx = -TRUNK_SCAN_RADIUS; dx <= TRUNK_SCAN_RADIUS; dx++) {
                 for (int dz = -TRUNK_SCAN_RADIUS; dz <= TRUNK_SCAN_RADIUS; dz++) {
                     for (int dy = -1; dy <= 1; dy++) {
                         BlockPos next = current.offset(dx, dy, dz);
-                        if (out.contains(next)) {
+                        if (seen.contains(next)) {
                             continue;
                         }
                         if (level.getBlockState(next).is(BlockTags.LOGS)) {
@@ -525,9 +560,8 @@ public class CampGenerator {
                     ringMinZ, ringMaxZ, gate, halfWidth, anchor);
         }
 
-        // Подход к воротам: проход держится на уровне порога, чтобы игрок
-        // входил с площадки, а не спрыгивал в яму. Срез снимает только то,
-        // что физически перекрывает вход.
+        // Подход к воротам: низкий рельеф не подсыпается вообще, снимается
+        // только естественный выступ, перекрывающий вход.
         for (int step = 1; step <= margin; step++) {
             int z = gate.getZ() + step;
             for (int dx = -halfWidth; dx <= halfWidth; dx++) {
@@ -535,7 +569,6 @@ public class CampGenerator {
                 if (x == anchor.getX() && z == anchor.getZ()) {
                     continue;
                 }
-                fillEdgeColumn(level, x, z, floorY - 1);
                 carveApproachColumn(level, x, z, floorY);
             }
         }
@@ -637,18 +670,21 @@ public class CampGenerator {
     /**
      * Снять естественный выступ, перекрывающий проход.
      *
-     * <p>Естественная высота сохраняется: клетка не получает расчётной
-     * ступени. Срез нужен только там, где грунт поднялся строго выше уровня
-     * пола двора, — такую стенку игрок не переступит в воротах. Грунт на
-     * уровне пола и ниже остаётся как есть.
+     * <p>Поверхность двора лежит на {@code floorY - 1}. Грунт на этом ярусе
+     * и ниже проходу не мешает и остаётся без изменений: подсыпки здесь нет,
+     * поэтому подход сохраняет естественную высоту рельефа.
      *
-     * <p>После среза над поверхностью освобождается
+     * <p>Срез нужен только там, где грунт поднялся до {@code floorY} или
+     * выше: такую стенку игрок не переступит в воротах. Снимается всё строго
+     * выше {@code floorY - 1}, и этот ярус остаётся поверхностью прохода.
+     *
+     * <p>После обработки над фактической поверхностью освобождаются
      * {@link #GATE_ACCESS_HEIGHT} блока под рост игрока.
      *
      * @param level  серверный уровень
      * @param x      координата
      * @param z      координата
-     * @param floorY уровень пола двора (верхняя граница допустимого грунта)
+     * @param floorY уровень пола двора (поверхность двора — {@code floorY - 1})
      */
     private static void carveApproachColumn(ServerLevel level, int x, int z, int floorY) {
         int groundY = CampSitePlanner.findGroundY(level, x, z);
@@ -656,13 +692,13 @@ public class CampGenerator {
             return;
         }
         int surfaceY = groundY;
-        if (groundY > floorY) {
-            surfaceY = cutDownTo(level, x, z, groundY, floorY);
+        if (groundY >= floorY) {
+            // Ярус floorY - 1 сохраняется как поверхность прохода.
+            surfaceY = cutDownTo(level, x, z, groundY, floorY - 1);
         }
-        // Высота прохода считается от поверхности, но не ниже пола двора:
-        // в низине над головой всё равно должны оставаться свободными те же
-        // два блока, что и на пороге ворот.
-        clearApproachHeadroom(level, x, z, Math.max(surfaceY, floorY - 1));
+        // Пространство освобождается от фактической поверхности: в низине
+        // это её собственный уровень, а не уровень двора.
+        clearApproachHeadroom(level, x, z, surfaceY);
     }
 
     /**
