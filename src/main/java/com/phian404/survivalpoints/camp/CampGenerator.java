@@ -838,16 +838,32 @@ public class CampGenerator {
                 int distZ = z - plan.getCenter().getZ();
                 int naturalY = probeOuterTerrainY(level, plan.getCenter(), distX, distZ,
                         plan.getRadius(), margin);
-                if (naturalY > maxOuterY) {
-                    // Внешний рельеф не ниже стены: без среза земля подходила
-                    // бы к периметру на высоту, с которой игрок запрыгивает
+                // Фактическая высота именно этой колонки. Проба снаружи
+                // описывает местность на удалении и локальный выступ из дёрна
+                // не видит: при низких пробах колонка считалась «нормальной»
+                // и не обрабатывалась вовсе.
+                int localGroundY = CampSitePlanner.findGroundY(level, x, z);
+                boolean localKnown = localGroundY != CampSitePlanner.FLUID_FOUND
+                        && localGroundY != CampSitePlanner.NO_GROUND;
+                // Для решения о срезе берётся более высокая из двух оценок:
+                // локальный выступ срезается независимо от того, что проба
+                // показала низкую местность.
+                int outerY = localKnown ? Math.max(naturalY, localGroundY) : naturalY;
+                if (outerY > maxOuterY) {
+                    // Рельеф не ниже стены: без среза земля подходила бы
+                    // к периметру на высоту, с которой игрок запрыгивает
                     // внутрь. Снимается только естественный грунт и только
                     // в полосе перехода — за ней рельеф не меняется.
-                    int targetY = blendedSurfaceY(courtyardY, naturalY, t);
+                    int targetY = blendedSurfaceY(courtyardY, outerY, t);
                     // Не более блока на кольцо: срез не образует стенку у
                     // самого периметра, а уходит вверх ступенями по полосе.
                     targetY = Math.min(targetY, courtyardY + step - 1);
-                    cutEdgeColumn(level, x, z, targetY);
+                    int resultY = cutEdgeColumn(level, x, z, targetY);
+                    // ВРЕМЕННО: локальное возвышение, которое не видно пробе.
+                    if (localKnown && localGroundY > maxOuterY && naturalY <= maxOuterY) {
+                        FarmDiagnostics.logEdgeCut("localBump", new BlockPos(x, localGroundY, z),
+                                courtyardY, naturalY, localGroundY, targetY, resultY);
+                    }
                     continue;
                 }
                 // Перепад в один блок игрок переступает сам: переход только
@@ -878,16 +894,17 @@ public class CampGenerator {
      * @param x       координата
      * @param z       координата
      * @param targetY уровень, который остаётся поверхностью
+     * @return фактический уровень поверхности после среза
      */
-    private static void cutEdgeColumn(ServerLevel level, int x, int z, int targetY) {
+    private static int cutEdgeColumn(ServerLevel level, int x, int z, int targetY) {
         int groundY = CampSitePlanner.findGroundY(level, x, z);
         if (groundY == CampSitePlanner.FLUID_FOUND || groundY == CampSitePlanner.NO_GROUND) {
-            return;
+            return groundY;
         }
         if (groundY <= targetY) {
-            return;
+            return groundY;
         }
-        cutDownTo(level, x, z, groundY, targetY);
+        return cutDownTo(level, x, z, groundY, targetY);
     }
 
     /**

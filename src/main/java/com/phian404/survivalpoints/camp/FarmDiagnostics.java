@@ -202,6 +202,27 @@ public final class FarmDiagnostics {
         return "none";
     }
 
+    /**
+     * ВРЕМЕННО: записать результат среза локального возвышения.
+     *
+     * <p>Строка показывает, что высокая колонка внутри полосы подготовки была
+     * обнаружена по собственной высоте, а не по внешней пробе, и до какого
+     * яруса её удалось срезать.
+     *
+     * @param label      метка случая
+     * @param pos        координата колонки
+     * @param courtyardY уровень поверхности двора
+     * @param probeY     высота внешней пробы
+     * @param localY     фактическая высота колонки
+     * @param targetY    расчётный уровень среза
+     * @param resultY    фактический уровень поверхности после среза
+     */
+    public static void logEdgeCut(String label, BlockPos pos, int courtyardY, int probeY,
+                                  int localY, int targetY, int resultY) {
+        LOGGER.info("[SP][EDGE] {} at {} courtyard={} probe={} local={} target={} result={}",
+                label, pos.toShortString(), courtyardY, probeY, localY, targetY, resultY);
+    }
+
     private static String ageOf(BlockState state) {
         if (state.getBlock() instanceof CropBlock crop) {
             return String.valueOf(crop.getAge(state));
