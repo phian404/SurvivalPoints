@@ -60,12 +60,20 @@ public final class CampManager {
     }
 
     /**
-     * Атомарно создать лагерь: проверка участка → запись → застройка.
+     * Атомарно создать лагерь: проверки → подготовка площадки → запись → застройка.
      *
-     * <p>При отказе в {@link CampSavedData} ничего не остаётся, блоки не
-     * ставятся — вся причина отказа возвращается в сообщении. Запись лагеря
-     * появляется только после успешного {@link CampSitePlanner#plan}: иначе
-     * прерывание застройки оставляло бы лагерь-призрак без стен и слотов.
+     * <p>Порядок важен и держит отказ атомарным:
+     * <ol>
+     *     <li>наличие NBT-шаблонов модулей;</li>
+     *     <li>план участка и проверка рельефа (перепад, жидкости, пересечения);</li>
+     *     <li>проверка зоны подготовки — отсутствие {@code BlockEntity};</li>
+     *     <li>подготовка площадки (расчистка, подсыпка, срез, край);</li>
+     *     <li>запись лагеря в {@link CampSavedData};</li>
+     *     <li>застройка периметра, модулей и дорожек.</li>
+     * </ol>
+     *
+     * <p>Все проверки идут до первого изменения мира: при отказе не остаётся
+     * ни частично выровненной площадки, ни записи-призрака без стен.
      *
      * <p>Виртуальная расстановка постов по кругу удалена: посты создаются
      * из POI модулей в {@link CampGenerator#createPostsFromPois} — они
@@ -90,6 +98,15 @@ public final class CampManager {
             return null;
         }
         CampSitePlanner.Plan plan = outcome.getPlan();
+
+        String blocked = CampSitePlanner.checkPreparationZone(level, plan, anchor);
+        if (blocked != null) {
+            return null;
+        }
+
+        // Подготовка участка — единственный вызов, до записи лагеря: если
+        // выравнивание не удалось, в CampSavedData не остаётся следа.
+        CampGenerator.prepareTerrain(level, plan, anchor);
 
         CampRecord record = new CampRecord(name, anchor, radius, owner);
         record.setCenter(anchor);

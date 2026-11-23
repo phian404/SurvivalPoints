@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
@@ -14,6 +15,7 @@ import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoorHingeSide;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+import net.minecraft.world.level.levelgen.Heightmap;
 
 import javax.annotation.Nullable;
 
@@ -78,11 +80,171 @@ public class CampGenerator {
     }
 
     /**
+     * Подготовить площадку под застройку: выровнять рельеф по плану.
+     *
+     * <p>Вызывается ровно один раз — из {@code CampManager.createCamp} до
+     * записи лагеря. Здесь уже нет причин отказа: план рассчитан, зона
+     * подготовки проверена на {@code BlockEntity}.
+     *
+     * <p>Порядок по клетке: расчистка → подсыпка → поверхность → срез.
+     * Расчистка идёт первой, иначе ствол оказался бы внутри подсыпаемого
+     * столбца и остался бы торчать из нового пола.
+     *
+     * <p>Колонка якоря не трогается: блок {@code camp_radio} и его координаты
+     * в {@link CampRecord} должны остаться неизменными, иначе распад лагеря
+     * при сносе якоря перестанет работать.
+     *
+     * @param level  серверный уровень
+     * @param plan   план застройки
+     * @param anchor точка якоря (её колонка исключается)
+     */
+    public static void prepareTerrain(ServerLevel level, CampSitePlanner.Plan plan, BlockPos anchor) {
+        int floorY = plan.getFloorY();
+        int side = plan.getSide();
+        int clearTop = floorY + CampTuning.CAMP_CLEAR_HEADROOM;
+
+        for (int lx = 0; lx < side; lx++) {
+            for (int lz = 0; lz < side; lz++) {
+                BlockPos column = plan.localToWorld(lx, lz, floorY);
+                if (column.getX() == anchor.getX() && column.getZ() == anchor.getZ()) {
+                    continue;
+                }
+                int surfaceY = plan.cellSurfaceY(lx, lz);
+                int groundY = surfaceY - 1;
+
+                // 1. Расчистка: деревья и заменяемая растительность над грунтом.
+                for (int y = groundY + 1; y <= clearTop; y++) {
+                    BlockPos pos = new BlockPos(column.getX(), y, column.getZ());
+                    BlockState state = level.getBlockState(pos);
+                    if (state.isAir()) {
+                        continue;
+                    }
+                    if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)
+                            || state.canBeReplaced()) {
+                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+                    }
+                }
+
+                // 2. Подсыпка: низкие клетки поднимаются до уровня двора.
+                for (int y = groundY + 1; y <= floorY - 2; y++) {
+                    level.setBlock(new BlockPos(column.getX(), y, column.getZ()),
+                            Blocks.DIRT.defaultBlockState(), Block.UPDATE_CLIENTS);
+                }
+
+                // 3. Срез: возвышенности снимаются до уровня двора.
+                for (int y = floorY; y <= groundY; y++) {
+                    level.setBlock(new BlockPos(column.getX(), y, column.getZ()),
+                            Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+                }
+
+                // 4. Поверхность: возвращаем исходный блок (трава, песок) на
+                //    floorY - 1, чтобы двор не выглядел голой насыпью.
+                BlockState surface = plan.cellSurfaceState(lx, lz);
+                if (surface != null && !surface.isAir()) {
+                    level.setBlock(new BlockPos(column.getX(), floorY - 1, column.getZ()),
+                            surface, Block.UPDATE_CLIENTS);
+                }
+            }
+        }
+
+        prepareEdges(level, plan, anchor);
+    }
+
+    /**
+     * Подсыпать край площадки и подход к воротам.
+     *
+     * <p>Если двор оказался выше соседнего грунта на 1–2 блока, по краю
+     * остался бы обрыв. В полосе {@link CampTuning#CAMP_CLEAR_MARGIN} снаружи
+     * периметра грунт поднимается до {@code floorY - 1} — ровно до уровня
+     * поверхности двора. Срез наружу не выходит: снаружи рельеф только
+     * поднимается.
+     *
+     * <p>Подход к воротам — плавный спуск от двора к окружающему уровню:
+     * каждая следующая клетка южнее ворот опускается не более чем на блок,
+     * поэтому обрыв не образуется.
+     *
+     * @param level  серверный уровень
+     * @param plan   план
+     * @param anchor точка якоря (её колонка исключается)
+     */
+    private static void prepareEdges(ServerLevel level, CampSitePlanner.Plan plan, BlockPos anchor) {
+        int floorY = plan.getFloorY();
+        int margin = CampTuning.CAMP_CLEAR_MARGIN;
+        int innerMinX = plan.getCenter().getX() - plan.getRadius();
+        int innerMaxX = plan.getCenter().getX() + plan.getRadius();
+        int innerMinZ = plan.getCenter().getZ() - plan.getRadius();
+        int innerMaxZ = plan.getCenter().getZ() + plan.getRadius();
+        int minX = innerMinX - margin;
+        int maxX = innerMaxX + margin;
+        int minZ = innerMinZ - margin;
+        int maxZ = innerMaxZ + margin;
+
+        // Только внешнее кольцо: внутри периметра рельеф уже выровнен, и
+        // повторная подсыпка затёрла бы восстановленный поверхностный блок.
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                boolean inside = x >= innerMinX && x <= innerMaxX
+                        && z >= innerMinZ && z <= innerMaxZ;
+                if (inside) {
+                    continue;
+                }
+                if (x == anchor.getX() && z == anchor.getZ()) {
+                    continue;
+                }
+                fillEdgeColumn(level, x, z, floorY - 1);
+            }
+        }
+
+        // Подход к воротам: спуск на блок за клетку от уровня двора.
+        BlockPos gate = plan.getGatePos();
+        for (int step = 1; step <= margin; step++) {
+            int targetY = floorY - 1 - step;
+            int z = gate.getZ() + step;
+            for (int dx = -1; dx <= 1; dx++) {
+                int x = gate.getX() + dx;
+                if (x == anchor.getX() && z == anchor.getZ()) {
+                    continue;
+                }
+                fillEdgeColumn(level, x, z, targetY);
+            }
+        }
+    }
+
+    /**
+     * Подсыпать одну клетку наружной полосы до заданного уровня.
+     *
+     * <p>Поднимается только воздух и заменяемое: уже стоящий грунт не
+     * трогается, поэтому подсыпка не срезает естественный рельеф и не
+     * заваливает растительность. Верхний блок ставится исходным
+     * поверхностным блоком клетки, если он известен.
+     *
+     * @param level   серверный уровень
+     * @param x       координата
+     * @param z       координата
+     * @param targetY уровень поверхности, до которого поднимается клетка
+     */
+    private static void fillEdgeColumn(ServerLevel level, int x, int z, int targetY) {
+        int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        if (top - 1 >= targetY) {
+            return;
+        }
+        for (int y = top; y < targetY; y++) {
+            level.setBlock(new BlockPos(x, y, z), Blocks.DIRT.defaultBlockState(),
+                    Block.UPDATE_CLIENTS);
+        }
+        level.setBlock(new BlockPos(x, targetY, z), Blocks.GRASS_BLOCK.defaultBlockState(),
+                Block.UPDATE_CLIENTS);
+    }
+
+    /**
      * Построить материальную часть лагеря по плану.
      *
      * <p>Порядок: пол двора (дорожки и подсыпка), периметр, модули, якорь.
      * Модули ставятся последними: у вышки собственный пол на {@code y=0}, и
      * подсыпка двора не должна лечь поверх него.
+     *
+     * <p>Выравнивание рельефа здесь не выполняется: площадка уже подготовлена
+     * в {@link #prepareTerrain} до записи лагеря.
      *
      * @param level  серверный уровень
      * @param plan   план застройки (проверка участка уже прошла)

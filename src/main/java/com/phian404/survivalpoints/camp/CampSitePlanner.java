@@ -4,13 +4,13 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.tags.FluidTags;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.level.material.FluidState;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
 
 /**
  * План лагеря и предпроверка участка.
@@ -23,12 +23,20 @@ import javax.annotation.Nullable;
  *
  * <p>Проверки участка:
  * <ul>
- *     <li>перепад высот по площадке не больше {@link CampTuning#CAMP_MAX_HEIGHT_STEP};</li>
+ *     <li>перепад высот по площадке не больше {@link CampTuning#CAMP_MAX_HEIGHT_DELTA};</li>
  *     <li>нет воды и лавы на площадке — периметр на воде утонул бы, а пашня
  *     фермы в затопленной низине превратилась бы в болото;</li>
  *     <li>площадка не пересекается с уже существующими лагерями — иначе два
- *     периметра встанут друг в друге.</li>
+ *     периметра встанут друг в друге;</li>
+ *     <li>в зоне подготовки нет {@code BlockEntity} — выравнивание снесло бы
+ *     их вместе с содержимым.</li>
  * </ul>
+ *
+ * <p>Высота клетки — первый воздушный блок над настоящим грунтом
+ * ({@code surfaceAirY = groundBlockY + 1}). Стволы, листва и заменяемая
+ * растительность при съёме высот пропускаются, поэтому перепад считается по
+ * рельефу, а не по деревьям. Пол двора — медиана этих высот: выравнивание и
+ * подсыпает низины, и срезает бугры, поэтому ярус выбирается по середине.
  *
  * <p>План — данные, а не блоки: {@link CampGenerator} использует его как
  * единственный источник решений «где ворота», «куда смотрят слоты»,
@@ -95,10 +103,13 @@ public final class CampSitePlanner {
         private final BlockPos watchtowerPos;
         private final BlockPos farmPos;
         private final BlockPos radioPos;
+        private final int[] surfaceAirY;
+        private final BlockState[] surfaceStates;
 
         private Plan(BlockPos center, int radius, int floorY, Rotation watchtowerRotation,
                      Rotation farmRotation, BlockPos gatePos,
-                     BlockPos watchtowerPos, BlockPos farmPos, BlockPos radioPos) {
+                     BlockPos watchtowerPos, BlockPos farmPos, BlockPos radioPos,
+                     int[] surfaceAirY, BlockState[] surfaceStates) {
             this.center = center;
             this.radius = radius;
             this.floorY = floorY;
@@ -108,6 +119,8 @@ public final class CampSitePlanner {
             this.watchtowerPos = watchtowerPos;
             this.farmPos = farmPos;
             this.radioPos = radioPos;
+            this.surfaceAirY = surfaceAirY;
+            this.surfaceStates = surfaceStates;
         }
 
         /**
@@ -183,6 +196,41 @@ public final class CampSitePlanner {
         public BlockPos getRadioPos() {
             return this.radioPos;
         }
+
+        /**
+         * Фактическая высота свободного блока над грунтом в клетке площадки.
+         *
+         * <p>Генератор выравнивает каждую клетку относительно
+         * {@link #getFloorY()}: разница между этой высотой и полом двора —
+         * столько блоков нужно подсыпать или срезать.
+         *
+         * @param localX клетка по X ({@code 0..2*radius})
+         * @param localZ клетка по Z ({@code 0..2*radius})
+         * @return первый воздушный ярус над грунтом этой клетки
+         */
+        public int cellSurfaceY(int localX, int localZ) {
+            return this.surfaceAirY[indexOf(localX, localZ)];
+        }
+
+        /**
+         * Блок, лежавший на поверхности клетки до выравнивания.
+         *
+         * <p>Сохраняется, чтобы вернуть на {@code floorY - 1} именно
+         * {@code grass_block} или {@code sand}, а не голый {@code dirt}:
+         * иначе выровненный двор выглядел бы искусственной насыпью.
+         *
+         * @param localX клетка по X ({@code 0..2*radius})
+         * @param localZ клетка по Z ({@code 0..2*radius})
+         * @return состояние поверхностного блока клетки
+         */
+        public BlockState cellSurfaceState(int localX, int localZ) {
+            return this.surfaceStates[indexOf(localX, localZ)];
+        }
+
+        private int indexOf(int localX, int localZ) {
+            int cells = getSide();
+            return localX * cells + localZ;
+        }
     }
 
     /**
@@ -234,29 +282,63 @@ public final class CampSitePlanner {
             return new Outcome(null, conflict);
         }
 
+        // === Съём высот площадки ===
+        // Клетки сетки 0..side по X и Z. Высота каждой клетки — первый
+        // воздушный блок над настоящим грунтом, поэтому стволы, листва и
+        // заменяемая растительность при определении поверхности пропускаются:
+        // иначе клетка с деревом дала бы высоту кроны, и перепад по площадке
+        // считался бы по деревьям, а не по рельефу.
+        int cells = radius * 2 + 1;
+        int[] surfaceAirY = new int[cells * cells];
+        BlockState[] surfaceStates = new BlockState[cells * cells];
         int minSurface = Integer.MAX_VALUE;
         int maxSurface = Integer.MIN_VALUE;
-        for (int x = minX; x <= maxX; x++) {
-            for (int z = minZ; z <= maxZ; z++) {
-                int surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-                minSurface = Math.min(minSurface, surface);
-                maxSurface = Math.max(maxSurface, surface);
-                String fluid = fluidAt(level, x, surface, z);
-                if (fluid != null) {
-                    return new Outcome(null, fluid + " на площадке у " + x + "," + z);
+
+        for (int lx = 0; lx < cells; lx++) {
+            for (int lz = 0; lz < cells; lz++) {
+                int x = minX + lx;
+                int z = minZ + lz;
+                int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                int groundY = Integer.MIN_VALUE;
+                BlockState ground = null;
+                for (int y = top; y >= level.getMinBuildHeight(); y--) {
+                    BlockState state = level.getBlockState(new BlockPos(x, y, z));
+                    // Жидкость проверяется раньше canBeReplaced(): вода и лава
+                    // сами являются заменяемыми, и без этой проверки затопленная
+                    // низина считалась бы обычным воздухом над грунтом.
+                    if (!state.getFluidState().isEmpty()) {
+                        return new Outcome(null, "Вода или лава на площадке у " + x + "," + z);
+                    }
+                    if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)
+                            || state.canBeReplaced()) {
+                        continue;
+                    }
+                    groundY = y;
+                    ground = state;
+                    break;
                 }
+                if (ground == null) {
+                    return new Outcome(null, "Нет грунта на площадке у " + x + "," + z);
+                }
+                int cell = lx * cells + lz;
+                surfaceAirY[cell] = groundY + 1;
+                surfaceStates[cell] = ground;
+                minSurface = Math.min(minSurface, groundY + 1);
+                maxSurface = Math.max(maxSurface, groundY + 1);
             }
         }
 
-        if (maxSurface - minSurface > CampTuning.CAMP_MAX_HEIGHT_STEP) {
+        int delta = maxSurface - minSurface;
+        if (delta > CampTuning.CAMP_MAX_HEIGHT_DELTA) {
             return new Outcome(null, "Слишком неровная площадка: перепад "
-                    + (maxSurface - minSurface) + " блоков, допустимо "
-                    + CampTuning.CAMP_MAX_HEIGHT_STEP);
+                    + delta + " блоков, допустимо " + CampTuning.CAMP_MAX_HEIGHT_DELTA);
         }
 
-        // Пол двора — самый высокий уровень площадки: подсыпка нужна только
-        // там, где земля ниже. Обратный выбор (по низу) закапывал бы модули.
-        int floorY = maxSurface;
+        // Пол двора — медиана высот, а не максимум: при перепаде до двух
+        // блоков выравнивание и подсыпает низины, и срезает бугры, поэтому
+        // ярус выбирается по середине рельефа. Значение передаётся в генератор
+        // как есть: floorY — первый воздушный ярус над грунтом.
+        int floorY = median(surfaceAirY);
 
         // === Локальная сетка ===
         // Планировка описана в клетках 0..2*radius: (0,0) — северо-запад,
@@ -301,7 +383,27 @@ public final class CampSitePlanner {
         Rotation farmRotation = rotationForFacing(Direction.SOUTH, FARM_ENTRANCE);
 
         return new Outcome(new Plan(anchor, radius, floorY, watchtowerRotation, farmRotation,
-                gatePos, watchtowerPos, farmPos, radioPos), null);
+                gatePos, watchtowerPos, farmPos, radioPos, surfaceAirY, surfaceStates), null);
+    }
+
+    /**
+     * Медиана высот клеток площадки.
+     *
+     * <p>При чётном количестве клеток медиана — среднее двух центральных
+     * значений, округлённое до целого яруса: пол двора обязан быть целым
+     * блоком, а дробный результат сдвинул бы выравнивание на полблока.
+     *
+     * @param values высоты клеток ({@code surfaceAirY})
+     * @return целый ярус пола двора
+     */
+    private static int median(int[] values) {
+        int[] sorted = values.clone();
+        Arrays.sort(sorted);
+        int mid = sorted.length / 2;
+        if (sorted.length % 2 == 1) {
+            return sorted[mid];
+        }
+        return (int) Math.round((sorted[mid - 1] + sorted[mid]) / 2.0D);
     }
 
     /**
@@ -363,6 +465,55 @@ public final class CampSitePlanner {
     }
 
     /**
+     * Проверить, что в зоне подготовки площадки нет чужих объектов.
+     *
+     * <p>Зона — периметр плюс {@link CampTuning#CAMP_CLEAR_MARGIN} блоков
+     * наружу: там подсыпается край и подход к воротам, поэтому объекты в этой
+     * полосе тоже попадут под изменения. По вертикали проверка идёт от
+     * {@code minY - 1} (грунт под самой низкой клеткой) до
+     * {@code floorY + CAMP_CLEAR_HEADROOM} (верх расчистки деревьев).
+     *
+     * <p>Достаточно любого {@code BlockEntity} — сундук, печь, спавнер:
+     * выравнивание снесло бы их вместе с содержимым. Полноценная защита
+     * построек игрока здесь не делается — это отдельная задача ручного
+     * создания лагерей.
+     *
+     * <p>Колонка якоря пропускается: при установке радио-вышки в игре её
+     * собственный {@code CampRadioBlockEntity} уже стоит в мире и иначе
+     * блокировал бы создание лагеря.
+     *
+     * @param level  серверный уровень
+     * @param plan   рассчитанный план
+     * @param anchor точка якоря (её колонка исключается)
+     * @return причина отказа или {@code null}
+     */
+    @Nullable
+    public static String checkPreparationZone(ServerLevel level, Plan plan, BlockPos anchor) {
+        int margin = CampTuning.CAMP_CLEAR_MARGIN;
+        int minX = plan.getCenter().getX() - plan.getRadius() - margin;
+        int maxX = plan.getCenter().getX() + plan.getRadius() + margin;
+        int minZ = plan.getCenter().getZ() - plan.getRadius() - margin;
+        int maxZ = plan.getCenter().getZ() + plan.getRadius() + margin;
+        int minY = plan.getFloorY() - 1 - CampTuning.CAMP_MAX_HEIGHT_DELTA;
+        int maxY = plan.getFloorY() + CampTuning.CAMP_CLEAR_HEADROOM;
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                if (x == anchor.getX() && z == anchor.getZ()) {
+                    continue;
+                }
+                for (int y = minY; y <= maxY; y++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    if (level.getBlockEntity(pos) != null) {
+                        return "В зоне подготовки найден объект у " + x + "," + y + "," + z;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Пересечение с существующим лагерем.
      *
      * <p>Сравнение по горизонтали с запасом в один радиус: два периметра
@@ -382,28 +533,4 @@ public final class CampSitePlanner {
         return null;
     }
 
-    /**
-     * Жидкость на поверхности столбца.
-     *
-     * <p>Проверяются сам поверхностный блок и два блока под ним: вода в
-     * низине и лава в яме одинаково делают площадку непригодной, а
-     * {@code getHeight} над жидкостью возвращает уровень жидкости.
-     *
-     * @return описание жидкости или {@code null}
-     */
-    @Nullable
-    private static String fluidAt(ServerLevel level, int x, int surface, int z) {
-        for (int y = surface; y >= surface - 2; y--) {
-            BlockPos pos = new BlockPos(x, y, z);
-            BlockState state = level.getBlockState(pos);
-            FluidState fluid = state.getFluidState();
-            if (fluid.is(FluidTags.WATER)) {
-                return "Вода";
-            }
-            if (fluid.is(FluidTags.LAVA)) {
-                return "Лава";
-            }
-        }
-        return null;
-    }
 }
