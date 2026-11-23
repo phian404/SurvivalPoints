@@ -16,6 +16,12 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoorHingeSide;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.HashSet;
+import java.util.Set;
+
 import javax.annotation.Nullable;
 
 /**
@@ -58,6 +64,75 @@ public class CampGenerator {
     private static final int POST_STEP = 4;
 
     /**
+     * Ширина коридора подхода к воротам в клетках.
+     *
+     * <p>3 блока: центральная клетка проёма и по одной соседней слева и
+     * справа. Совпадает с проёмом ворот, поэтому коридор не упирается в
+     * створки и не шире самого входа.
+     */
+    private static final int GATE_ACCESS_WIDTH = 3;
+
+    /**
+     * Требуемая свободная высота коридора в блоках.
+     *
+     * <p>2 блока — минимум, при котором игрок ростом 1.8 проходит пешком,
+     * не пригибаясь и не задевая головой блок над поверхностью.
+     */
+    private static final int GATE_ACCESS_HEIGHT = 2;
+
+    /**
+     * Горизонтальный радиус поиска ствола вокруг брёвен, найденных в зоне.
+     *
+     * <p>2 блока покрывают двуствольные породы (дуб 2×2) и стволы, которые
+     * отклоняются от вертикали. Больший радиус рискую склеить соседние
+     * деревья в одно.
+     */
+    private static final int TRUNK_SCAN_RADIUS = 2;
+
+    /**
+     * Предел блоков ствола при обходе одного дерева.
+     *
+     * <p>Страховка от патологий: обход не должен уходить в бесконечность на
+     * повреждённом чанке или нестандартном моде.
+     */
+    private static final int TRUNK_BLOCK_LIMIT = 256;
+
+    /**
+     * Радиус поиска кроны вокруг ствола.
+     *
+     * <p>8 блоков — с запасом на крупные породы: крона обычного дуба уходит
+     * от ствола не дальше 4 блоков, у большой ели — до 6.
+     */
+    private static final int CANOPY_SCAN_RADIUS = 8;
+
+    /**
+     * Предел блоков кроны при обходе одного дерева.
+     *
+     * <p>Страховка от бесконечного обхода: крупное дерево редко превышает
+     * несколько сотен блоков листвы.
+     */
+    private static final int CANOPY_BLOCK_LIMIT = 2048;
+
+    /**
+     * Глубина пробы окружающего рельефа в клетках.
+     *
+     * <p>Высота перехода у внешней границы полосы берётся не из одной
+     * клетки, а из медианы нескольких проб вдоль направления «от лагеря
+     * наружу». Одиночная проба попадала бы на ствол, яму или выступ и
+     * давала бы рваный край.
+     */
+    private static final int EDGE_PROBE_STEPS = 3;
+
+    /**
+     * Минимальный перепад, при котором вообще строится переход.
+     *
+     * <p>Один блок игрок переступает без всякой подготовки. Если строить
+     * интерполяцию при перепаде в 1 блок, округление поднимает первое кольцо
+     * на уровень двора и добавляет уступ там, где местность была ровной.
+     */
+    private static final int EDGE_MIN_TRANSITION_DROP = 1;
+
+    /**
      * Высота периметра в блоках над полом двора.
      *
      * <p>4 = два яруса панелей (0, 1), ярус проволоки (2) и проволока над
@@ -79,15 +154,20 @@ public class CampGenerator {
     }
 
     /**
-     * Подготовить площадку под застройку: выровнять рельеф по плану.
+     * Подготовить площадку под застройку: выровнять рельеф о плану.
      *
      * <p>Вызывается ровно один раз — из {@code CampManager.createCamp} до
      * записи лагеря. Здесь уже нет причин отказа: план рассчитан, зона
      * подготовки проверена на {@code BlockEntity}.
      *
-     * <p>Порядок по клетке: расчистка → подсыпка → поверхность → срез.
-     * Расчистка идёт первой, иначе ствол оказался бы внутри подсыпаемого
-     * столбца и остался бы торчать из нового пола.
+     * <p>Порядок: удаление деревьев → по клеткам расчистка → подсыпка →
+     * поверхность → срез.
+     *
+     * <p>Деревья удаляются до выравнивания, иначе крона осталась бы висеть
+     * после среза холма, а ствол оказался бы внутри подсыпаемого столбца и
+     * торчал из нового пола. Признак «дерево в зоне» — ствол, а не листва:
+     * крона соседнего дерева может накрыть площадку, не касаясь её стволом,
+     * и такое дерево остаётся.
      *
      * <p>Колонка якоря не трогается: блок {@code camp_radio} и его координаты
      * в {@link CampRecord} должны остаться неизменными, иначе распад лагеря
@@ -102,14 +182,23 @@ public class CampGenerator {
         int side = plan.getSide();
         int clearTop = floorY + CampTuning.CAMP_CLEAR_HEADROOM;
 
+        // Деревья — до любого выравнивания: см. javadoc метода.
+        removeObstructingTrees(level, plan, anchor);
+
         for (int lx = 0; lx < side; lx++) {
             for (int lz = 0; lz < side; lz++) {
                 BlockPos column = plan.localToWorld(lx, lz, floorY);
-                if (column.getX() == anchor.getX() && column.getZ() == anchor.getZ()) {
-                    continue;
-                }
                 int surfaceY = plan.cellSurfaceY(lx, lz);
                 int groundY = surfaceY - 1;
+
+                if (column.getX() == anchor.getX() && column.getZ() == anchor.getZ()) {
+                    // Колонка якоря: сам блок camp_radio на floorY и его
+                    // BlockEntity остаются нетронутыми, расчистка и срез здесь
+                    // не выполняются. Выравнивается только грунт под якорем —
+                    // иначе на месте закреплённого якоря остался бы провал.
+                    fillUnderAnchor(level, column.getX(), column.getZ(), groundY, floorY);
+                    continue;
+                }
 
                 // 1. Расчистка: деревья, цветы и прочая мягкая растительность.
                 //    Цветы в 1.20.1 возвращают canBeReplaced() == false, поэтому
@@ -152,17 +241,258 @@ public class CampGenerator {
     }
 
     /**
-     * Подсыпать край площадки и подход к воротам.
+     * Удалить деревья, чей ствол пересекает зону подготовки площадки.
      *
-     * <p>Если двор оказался выше соседнего грунта на 1–2 блока, по краю
-     * остался бы обрыв. В полосе {@link CampTuning#CAMP_CLEAR_MARGIN} снаружи
-     * периметра грунт поднимается до {@code floorY - 1} — ровно до уровня
-     * поверхности двора. Срез наружу не выходит: снаружи рельеф только
-     * поднимается.
+     * <p>Признак принадлежности дерева к зоне — ствол, а не листва. Крона
+     * широкого дерева может накрыть площадку, стоя при этом в стороне: такое
+     * дерево не мешает застройке, и его нельзя сносить. Поэтому сначала
+     * ищутся брёвна внутри зоны, затем от каждого бревна обходом по связности
+     * восстанавливается весь ствол, и только если ствол действительно входит
+     * в зону, дерево удаляется целиком — вместе с кроной за границами зоны.
      *
-     * <p>Подход к воротам — плавный спуск от двора к окружающему уровню:
-     * каждая следующая клетка южнее ворот опускается не более чем на блок,
-     * поэтому обрыв не образуется.
+     * @param level  серверный уровень
+     * @param plan   план застройки
+     * @param anchor точка якоря (её колонка не трогается)
+     */
+    private static void removeObstructingTrees(ServerLevel level, CampSitePlanner.Plan plan,
+                                               BlockPos anchor) {
+        Set<BlockPos> trunks = new HashSet<>();
+        collectZoneLogs(level, plan, trunks);
+        if (trunks.isEmpty()) {
+            return;
+        }
+        // Сюда попадают только стволы, у которых хотя бы одно бревно лежало
+        // внутри зоны. Дерево, накрывшее площадку одной кроной, в этом
+        // множестве отсутствует — его не трогаем.
+        Set<BlockPos> wholeTrees = new HashSet<>();
+        for (BlockPos log : trunks) {
+            collectTrunk(level, log, wholeTrees);
+        }
+        Set<BlockPos> canopy = new HashSet<>();
+        for (BlockPos log : wholeTrees) {
+            collectCanopy(level, log, canopy);
+        }
+        for (BlockPos pos : wholeTrees) {
+            clearTreeBlock(level, pos, anchor);
+        }
+        for (BlockPos pos : canopy) {
+            clearTreeBlock(level, pos, anchor);
+        }
+    }
+
+    /**
+     * Найти все брёвна внутри зоны подготовки.
+     *
+     * <p>Зона — квадрат площадки плюс полоса {@link CampTuning#CAMP_CLEAR_MARGIN}
+     * наружу и по высоте от грунта до {@link CampTuning#CAMP_CLEAR_HEADROOM}
+     * над двором. Колонка якоря пропускается.
+     *
+     * @param level  серверный уровень
+     * @param plan   план застройки
+     * @param out    множество, куда складываются найденные брёвна
+     */
+    private static void collectZoneLogs(ServerLevel level, CampSitePlanner.Plan plan,
+                                        Set<BlockPos> out) {
+        int margin = CampTuning.CAMP_CLEAR_MARGIN;
+        int floorY = plan.getFloorY();
+        int minY = level.getMinBuildHeight();
+        int maxY = floorY + CampTuning.CAMP_CLEAR_HEADROOM;
+        int minX = plan.getCenter().getX() - plan.getRadius() - margin;
+        int maxX = plan.getCenter().getX() + plan.getRadius() + margin;
+        int minZ = plan.getCenter().getZ() - plan.getRadius() - margin;
+        int maxZ = plan.getCenter().getZ() + plan.getRadius() + margin;
+
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                for (int y = minY; y <= maxY; y++) {
+                    cursor.set(x, y, z);
+                    if (level.getBlockState(cursor).is(BlockTags.LOGS)) {
+                        out.add(cursor.immutable());
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Восстановить ствол по связности от одного бревна.
+     *
+     * <p>Принадлежность блоку ствола определяется не расстоянием, а
+     * соседством: обход идёт по брёвнам, у которых смещение по X и Z не
+     * превышает {@link #TRUNK_SCAN_RADIUS} блоков. Это покрывает наклонные
+     * стволы и двуствольные породы (дуб 2×2), но не склеивает два отдельных
+     * дерева, стоящих рядом. Ограничение {@link #TRUNK_BLOCK_LIMIT} не даёт
+     * обходу уйти в бесконечность на повреждённых данных.
+     *
+     * @param level серверный уровень
+     * @param start бревно, с которого начинается обход
+     * @param out   множество, куда складывается весь ствол
+     */
+    private static void collectTrunk(ServerLevel level, BlockPos start, Set<BlockPos> out) {
+        Deque<BlockPos> queue = new ArrayDeque<>();
+        queue.add(start);
+        while (!queue.isEmpty() && out.size() < TRUNK_BLOCK_LIMIT) {
+            BlockPos current = queue.poll();
+            if (!out.add(current)) {
+                continue;
+            }
+            for (int dx = -TRUNK_SCAN_RADIUS; dx <= TRUNK_SCAN_RADIUS; dx++) {
+                for (int dz = -TRUNK_SCAN_RADIUS; dz <= TRUNK_SCAN_RADIUS; dz++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        BlockPos next = current.offset(dx, dy, dz);
+                        if (out.contains(next)) {
+                            continue;
+                        }
+                        if (level.getBlockState(next).is(BlockTags.LOGS)) {
+                            queue.add(next);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Собрать крону вокруг ствола.
+     *
+     * <p>Крона ищется в кубе {@link #CANOPY_SCAN_RADIUS} вокруг каждого блока
+     * ствола и тоже обходится по связности: так в неё попадают только блоки
+     * этого дерева, а листва соседнего дерева остаётся. Ограничение
+     * {@link #CANOPY_BLOCK_LIMIT} страхует от бесконечного обхода.
+     *
+     * @param level серверный уровень
+     * @param trunk блок ствола, вокруг которого ищется крона
+     * @param out   множество, куда складываются блоки кроны
+     */
+    private static void collectCanopy(ServerLevel level, BlockPos trunk, Set<BlockPos> out) {
+        Deque<BlockPos> queue = new ArrayDeque<>();
+        queue.add(trunk);
+        Set<BlockPos> visited = new HashSet<>();
+        int collected = 0;
+        while (!queue.isEmpty() && collected < CANOPY_BLOCK_LIMIT) {
+            BlockPos current = queue.poll();
+            if (!visited.add(current)) {
+                continue;
+            }
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dy == 0 && dz == 0) {
+                            continue;
+                        }
+                        BlockPos next = current.offset(dx, dy, dz);
+                        if (visited.contains(next) || out.contains(next)) {
+                            continue;
+                        }
+                        if (!withinCanopyRadius(next, trunk)) {
+                            continue;
+                        }
+                        BlockState state = level.getBlockState(next);
+                        if (state.is(BlockTags.LEAVES)) {
+                            out.add(next);
+                            collected++;
+                            queue.add(next);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Проверить, попадает ли блок кроны в допустимый радиус от ствола.
+     *
+     * <p>Сравнение по кубу, а не по сфере: крона в Minecraft строится
+     * кубическими слоями, и сферическая отсечка срезала бы её углы.
+     *
+     * @param pos   проверяемый блок
+     * @param trunk блок ствола
+     * @return {@code true}, если блок не дальше {@link #CANOPY_SCAN_RADIUS}
+     */
+    private static boolean withinCanopyRadius(BlockPos pos, BlockPos trunk) {
+        return Math.abs(pos.getX() - trunk.getX()) <= CANOPY_SCAN_RADIUS
+                && Math.abs(pos.getY() - trunk.getY()) <= CANOPY_SCAN_RADIUS
+                && Math.abs(pos.getZ() - trunk.getZ()) <= CANOPY_SCAN_RADIUS;
+    }
+
+    /**
+     * Убрать один блок дерева, не задевая якорь и чужие объекты.
+     *
+     * <p>Колонка якоря неприкосновенна: там стоит {@code camp_radio} со своим
+     * {@code BlockEntity}. Твёрдые рукотворные блоки тоже не трогаются —
+     * снос дерева не должен разрушать постройки, случайно оказавшиеся в
+     * кроне.
+     *
+     * @param level  серверный уровень
+     * @param pos    координата блока
+     * @param anchor точка якоря
+     */
+    private static void clearTreeBlock(ServerLevel level, BlockPos pos, BlockPos anchor) {
+        if (pos.getX() == anchor.getX() && pos.getZ() == anchor.getZ()) {
+            return;
+        }
+        if (level.getBlockEntity(pos) != null) {
+            return;
+        }
+        BlockState state = level.getBlockState(pos);
+        if (!state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)) {
+            return;
+        }
+        level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+    }
+
+    /**
+     * Выровнять грунт под блоком якоря до уровня двора.
+     *
+     * <p>Якорь закреплён на {@code floorY}, поэтому трогать сам блок и всё
+     * выше нельзя: {@code camp_radio} стоит на верхней грани грунта, и срез
+     * оставил бы его висеть в воздухе. Подсыпается только пустота ниже
+     * {@code floorY - 1}: при нормальной установке грунт под якорем уже на
+     * этом ярусе, и метод ничего не делает.
+     *
+     * @param level  серверный уровень
+     * @param x      координата
+     * @param z      координата
+     * @param groundY реальный ярус грунта под якорем
+     * @param floorY ярус пола двора (он же ярус блока якоря)
+     */
+    private static void fillUnderAnchor(ServerLevel level, int x, int z, int groundY, int floorY) {
+        for (int y = groundY + 1; y <= floorY - 2; y++) {
+            BlockPos pos = new BlockPos(x, y, z);
+            if (!isReplaceableSoft(level.getBlockState(pos))) {
+                continue;
+            }
+            level.setBlock(pos, Blocks.DIRT.defaultBlockState(), Block.UPDATE_CLIENTS);
+        }
+        BlockPos surface = new BlockPos(x, floorY - 1, z);
+        if (isReplaceableSoft(level.getBlockState(surface))) {
+            level.setBlock(surface, Blocks.GRASS_BLOCK.defaultBlockState(),
+                    Block.UPDATE_CLIENTS);
+        }
+    }
+
+    /**
+     * Подготовить край площадки и подход к воротам.
+     *
+     * <p>Задача перехода — не дать двору обрываться ступенькой в поле.
+     * Плоский вал по всему контуру не подходит: он превращает окрестность в
+     * насыпную платформу с резкой квадратной границей. Вместо этого высота
+     * каждой внешней клетки считается отдельно: чем дальше клетка от
+     * периметра, тем ближе её поверхность к настоящему рельефу этой
+     * местности. На самом периметре поверхность равна двору, у внешней
+     * границы полосы — медиане проб окружающего рельефа, между ними —
+     * линейная интерполяция и потолок в один блок на клетку.
+     *
+     * <p>Ширина полосы тоже не постоянна: клетка, чей собственный рельеф уже
+     * лежит на уровне двора, не требует перехода и не обрабатывается. Для
+     * клеток внутри периметра ничего не меняется — там рельеф выровнен
+     * заранее в {@link #prepareTerrain}.
+     *
+     * <p>Подход к воротам — коридор шириной {@link #GATE_ACCESS_WIDTH} блока
+     * южнее ворот. Его рельеф не перестраивается: срезается только грунт,
+     * физически перекрывающий вход, и над поверхностью освобождается
+     * {@link #GATE_ACCESS_HEIGHT} блока под рост игрока.
      *
      * @param level  серверный уровень
      * @param plan   план
@@ -171,44 +501,295 @@ public class CampGenerator {
     private static void prepareEdges(ServerLevel level, CampSitePlanner.Plan plan, BlockPos anchor) {
         int floorY = plan.getFloorY();
         int margin = CampTuning.CAMP_CLEAR_MARGIN;
-        int innerMinX = plan.getCenter().getX() - plan.getRadius();
-        int innerMaxX = plan.getCenter().getX() + plan.getRadius();
-        int innerMinZ = plan.getCenter().getZ() - plan.getRadius();
-        int innerMaxZ = plan.getCenter().getZ() + plan.getRadius();
-        int minX = innerMinX - margin;
-        int maxX = innerMaxX + margin;
-        int minZ = innerMinZ - margin;
-        int maxZ = innerMaxZ + margin;
+        int half = plan.getRadius();
+        int minX = plan.getCenter().getX() - half - margin;
+        int maxX = plan.getCenter().getX() + half + margin;
+        int minZ = plan.getCenter().getZ() - half - margin;
+        int maxZ = plan.getCenter().getZ() + half + margin;
 
-        // Только внешнее кольцо: внутри периметра рельеф уже выровнен, и
-        // повторная подсыпка затёрла бы восстановленный поверхностный блок.
-        for (int x = minX; x <= maxX; x++) {
-            for (int z = minZ; z <= maxZ; z++) {
-                boolean inside = x >= innerMinX && x <= innerMaxX
-                        && z >= innerMinZ && z <= innerMaxZ;
-                if (inside) {
-                    continue;
-                }
-                if (x == anchor.getX() && z == anchor.getZ()) {
-                    continue;
-                }
-                fillEdgeColumn(level, x, z, floorY - 1);
-            }
+        BlockPos gate = plan.getGatePos();
+        int halfWidth = GATE_ACCESS_WIDTH / 2;
+
+        // Переход строится по шагам от периметра наружу: первое кольцо
+        // почти повторяет двор, последнее совпадает с рельефом местности.
+        // Клетки коридора у ворот пропускаются: у них своя обработка ниже,
+        // иначе проход начал бы проседать вместе с пологим склоном.
+        for (int step = 1; step <= margin; step++) {
+            double t = (double) step / margin;
+            int ringMinX = plan.getCenter().getX() - half - step;
+            int ringMaxX = plan.getCenter().getX() + half + step;
+            int ringMinZ = plan.getCenter().getZ() - half - step;
+            int ringMaxZ = plan.getCenter().getZ() + half + step;
+
+            blendRing(level, plan, floorY, t, margin, ringMinX, ringMaxX,
+                    ringMinZ, ringMaxZ, gate, halfWidth, anchor);
         }
 
-        // Подход к воротам: спуск на блок за клетку от уровня двора.
-        BlockPos gate = plan.getGatePos();
+        // Подход к воротам: проход держится на уровне порога, чтобы игрок
+        // входил с площадки, а не спрыгивал в яму. Срез снимает только то,
+        // что физически перекрывает вход.
         for (int step = 1; step <= margin; step++) {
-            int targetY = floorY - 1 - step;
             int z = gate.getZ() + step;
-            for (int dx = -1; dx <= 1; dx++) {
+            for (int dx = -halfWidth; dx <= halfWidth; dx++) {
                 int x = gate.getX() + dx;
                 if (x == anchor.getX() && z == anchor.getZ()) {
                     continue;
                 }
+                fillEdgeColumn(level, x, z, floorY - 1);
+                carveApproachColumn(level, x, z, floorY);
+            }
+        }
+    }
+
+    /**
+     * Клетка, принадлежащая коридору подхода к воротам.
+     *
+     * <p>Коридор начинается сразу за плоскостью ворот и уходит на юг на
+     * ширину полосы перехода, по ширине равнясь проёму ворот. Такие клетки
+     * нельзя вести по общему склону: перед входом нужен ровный участок на
+     * уровне порога.
+     *
+     * @param gate      центральная клетка ворот
+     * @param halfWidth половина ширины коридора
+     * @param margin    глубина коридора в клетках
+     * @param x         проверяемая координата
+     * @param z         проверяемая координата
+     * @return {@code true}, если клетка входит в коридор
+     */
+    private static boolean isGateAccessCell(BlockPos gate, int halfWidth, int margin,
+                                            int x, int z) {
+        if (x < gate.getX() - halfWidth || x > gate.getX() + halfWidth) {
+            return false;
+        }
+        int offset = z - gate.getZ();
+        return offset >= 1 && offset <= margin;
+    }
+
+    /**
+     * Обрабоать одно кольцо перехода вокруг площадки.
+     *
+     * <p>Кольцо — это рамка на расстоянии {@code step} от периметра. Переход
+     * нужен только там, где местность НИЖЕ двора: иначе у лагеря появился бы
+     * обрыв. Если рельеф снаружи не ниже двора, кольцо не трогается вообще —
+     * именно подсыпка «на всякий случай» и создавала насыпи на ровном месте.
+     *
+     * <p>Высота считается в уровнях блоков: и двор, и местность задаются
+     * ярусом грунта, а не ярусом воздуха над ним. Смешение этих систем давало
+     * постоянный лишний блок на внешнем кольце.
+     *
+     * @param level  серверный уровень
+     * @param plan   план застройки
+     * @param floorY уровень пола двора
+     * @param t      доля удаления от периметра (0..1)
+     * @param margin ширина полосы перехода в клетках
+     * @param minX   минимальная координата рамки
+     * @param maxX   максимальная координата рамки
+     * @param minZ   минимальная координата рамки
+     * @param maxZ   максимальная координата рамки
+     * @param gate   центральная клетка ворот
+     * @param halfWidth половина ширины коридора подхода
+     * @param anchor точка якоря (её колонка исключается)
+     */
+    private static void blendRing(ServerLevel level, CampSitePlanner.Plan plan, int floorY,
+                                  double t, int margin, int minX, int maxX,
+                                  int minZ, int maxZ, BlockPos gate, int halfWidth,
+                                  BlockPos anchor) {
+        // Уровень грунта двора. Блок поверхности лежит на floorY - 1, и все
+        // дальнейшие сравнения ведутся именно в этих координатах.
+        int courtyardY = floorY - 1;
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                // Внутри рамки рельеф уже выровнен в prepareTerrain, повторно
+                // его трогать нельзя: затёрся бы восстановленный дёрн.
+                boolean onRing = x == minX || x == maxX || z == minZ || z == maxZ;
+                if (!onRing) {
+                    continue;
+                }
+                if (x == anchor.getX() && z == anchor.getZ()) {
+                    continue;
+                }
+                if (isGateAccessCell(gate, halfWidth, margin, x, z)) {
+                    continue;
+                }
+
+                int distX = x - plan.getCenter().getX();
+                int distZ = z - plan.getCenter().getZ();
+                int naturalY = probeOuterTerrainY(level, plan.getCenter(), distX, distZ,
+                        plan.getRadius(), margin);
+                // Перепад в один блок игрок переступает сам: переход только
+                // добавил бы уступ там, где местность была ровной.
+                if (courtyardY - naturalY <= EDGE_MIN_TRANSITION_DROP) {
+                    continue;
+                }
+                int targetY = blendedSurfaceY(courtyardY, naturalY, t);
+
+                // Потолок в один блок на кольцо: даже при крутом рельефе
+                // переход остаётся пологим, а не превращается в стену.
+                double previousT = Math.max(0.0D, t - 1.0D / margin);
+                int previousY = blendedSurfaceY(courtyardY, naturalY, previousT);
+                targetY = Math.min(targetY, previousY + 1);
                 fillEdgeColumn(level, x, z, targetY);
             }
         }
+    }
+
+    /**
+     * Снять естественный выступ, перекрывающий проход.
+     *
+     * <p>Естественная высота сохраняется: клетка не получает расчётной
+     * ступени. Срез нужен только там, где грунт поднялся строго выше уровня
+     * пола двора, — такую стенку игрок не переступит в воротах. Грунт на
+     * уровне пола и ниже остаётся как есть.
+     *
+     * <p>После среза над поверхностью освобождается
+     * {@link #GATE_ACCESS_HEIGHT} блока под рост игрока.
+     *
+     * @param level  серверный уровень
+     * @param x      координата
+     * @param z      координата
+     * @param floorY уровень пола двора (верхняя граница допустимого грунта)
+     */
+    private static void carveApproachColumn(ServerLevel level, int x, int z, int floorY) {
+        int groundY = CampSitePlanner.findGroundY(level, x, z);
+        if (groundY == CampSitePlanner.FLUID_FOUND || groundY == CampSitePlanner.NO_GROUND) {
+            return;
+        }
+        int surfaceY = groundY;
+        if (groundY > floorY) {
+            surfaceY = cutDownTo(level, x, z, groundY, floorY);
+        }
+        // Высота прохода считается от поверхности, но не ниже пола двора:
+        // в низине над головой всё равно должны оставаться свободными те же
+        // два блока, что и на пороге ворот.
+        clearApproachHeadroom(level, x, z, Math.max(surfaceY, floorY - 1));
+    }
+
+    /**
+     * Срезать грунт до допустимого уровня.
+     *
+     * <p>Сверху вниз снимается только природный материал
+     * ({@link #isNaturalTerrain}): рукотворный блок обрывает срез, чтобы
+     * подготовка подхода не разрушила чужую постройку.
+     *
+     * <p>Уровень {@code limitY} остаётся занятым: цикл снимает блоки строго
+     * выше него. Именно этот оставшийся блок служит поверхностью прохода,
+     * поэтому срез не оставляет провала на лишний блок.
+     *
+     * @param level   серверный уровень
+     * @param x       координата
+     * @param z       координата
+     * @param groundY текущий ярус поверхности
+     * @param limitY  уровень, который сохраняется как поверхность
+     * @return фактический уровень поверхности после среза
+     */
+    private static int cutDownTo(ServerLevel level, int x, int z, int groundY, int limitY) {
+        int surfaceY = groundY;
+        for (int y = groundY; y > limitY; y--) {
+            BlockPos pos = new BlockPos(x, y, z);
+            if (!isNaturalTerrain(level.getBlockState(pos))) {
+                break;
+            }
+            level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+            surfaceY = y - 1;
+        }
+        return surfaceY;
+    }
+
+    /**
+     * Освободить место над поверхностью прохода.
+     *
+     * <p>Игрок занимает почти два блока, поэтому над поверхностью
+     * расчищаются стволы, листва и мягкая растительность. Твёрдый
+     * рукотворный блок остаётся: коридор не должен сносить постройки.
+     *
+     * @param level    серверный уровень
+     * @param x        координата
+     * @param z        координата
+     * @param surfaceY уровень поверхности, от которого считается высота
+     */
+    private static void clearApproachHeadroom(ServerLevel level, int x, int z, int surfaceY) {
+        int top = surfaceY + GATE_ACCESS_HEIGHT;
+        for (int y = surfaceY + 1; y <= top; y++) {
+            BlockPos pos = new BlockPos(x, y, z);
+            BlockState state = level.getBlockState(pos);
+            if (state.isAir()) {
+                continue;
+            }
+            if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)
+                    || isReplaceableSoft(state)) {
+                level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+            }
+        }
+    }
+
+    /**
+     * Замерить настоящий рельеф снаружи площадки по направлению от центра.
+     *
+     * <p>Проба берётся за внешней границей полосы перехода, а не в самой
+     * клетке кольца: полосу мы меняем сами, и её текущее состояние уже не
+     * описывает местность. Точка пробы зависит только от направления и
+     * ширины полосы, но не от номера кольца — иначе одна и та же местность
+     * давала бы разную высоту на разных кольцах и переход шёл бы уступами.
+     *
+     * <p>Из нескольких проб берётся нижняя медиана: она устойчива к стволу,
+     * кусту и одиночному выступу, но не завышает результат.
+     *
+     * @param level  серверный уровень
+     * @param center центр площадки
+     * @param distX  смещение клетки от центра по X
+     * @param distZ  смещение клетки от центра по Z
+     * @param radius радиус площадки
+     * @param margin ширина полосы перехода в клетках
+     * @return медиана ярусов грунта снаружи или {@code center.getY() - 1},
+     *         если рельеф замерить не удалось
+     */
+    private static int probeOuterTerrainY(ServerLevel level, BlockPos center, int distX, int distZ,
+                                          int radius, int margin) {
+        int dirX = Integer.signum(distX);
+        int dirZ = Integer.signum(distZ);
+        if (dirX == 0 && dirZ == 0) {
+            return center.getY() - 1;
+        }
+        // Проба строго за полосой перехода, в неизменённой местности.
+        int baseOffset = radius + margin + 1;
+        int[] samples = new int[EDGE_PROBE_STEPS];
+        int count = 0;
+        for (int probe = 0; probe < EDGE_PROBE_STEPS; probe++) {
+            int offset = baseOffset + probe;
+            int x = center.getX() + dirX * offset;
+            int z = center.getZ() + dirZ * offset;
+            int groundY = CampSitePlanner.findGroundY(level, x, z);
+            if (groundY == CampSitePlanner.FLUID_FOUND
+                    || groundY == CampSitePlanner.NO_GROUND) {
+                continue;
+            }
+            // Ярус грунта, а не ярус воздуха над ним: двор тоже считается
+            // ярусом блока поверхности (floorY - 1).
+            samples[count++] = groundY;
+        }
+        if (count == 0) {
+            return center.getY() - 1;
+        }
+        int[] sorted = Arrays.copyOf(samples, count);
+        Arrays.sort(sorted);
+        return sorted[count / 2];
+    }
+
+    /**
+     * Высота перехода между двором и рельефом местности.
+     *
+     * <p>{@code t = 0} даёт уровень двора, {@code t = 1} — уровень местности.
+     * Между ними высота меняется плавно, поэтому резкой квадратной границы
+     * не возникает.
+     *
+     * @param courtyardY уровень поверхности двора
+     * @param naturalY   уровень поверхности местности
+     * @param t          доля удаления от периметра (0..1)
+     * @return расчётный уровень поверхности перехода
+     */
+    private static int blendedSurfaceY(int courtyardY, int naturalY, double t) {
+        return (int) Math.round(courtyardY + (naturalY - courtyardY) * t);
     }
 
     /**
@@ -265,6 +846,29 @@ public class CampGenerator {
             return false;
         }
         return state.isAir() || state.canBeReplaced() || !state.blocksMotion();
+    }
+
+    /**
+     * Блок, который считается естественным рельефом.
+     *
+     * <p>Срез подхода вправе убирать только природный материал: почвы, песок,
+     * гравий, глину, мох и базовые породы. Рукотворные блоки (булыжник,
+     * кирпичи, доски) в эти теги не входят, поэтому постройка перед воротами
+     * останется нетронутой.
+     *
+     * @param state состояние проверяемой клетки
+     * @return {@code true}, если блок можно срезать как рельеф
+     */
+    private static boolean isNaturalTerrain(BlockState state) {
+        if (!state.getFluidState().isEmpty()) {
+            return false;
+        }
+        return state.is(BlockTags.DIRT)
+                || state.is(BlockTags.SAND)
+                || state.is(BlockTags.BASE_STONE_OVERWORLD)
+                || state.is(Blocks.GRAVEL)
+                || state.is(Blocks.CLAY)
+                || state.is(Blocks.MOSS_BLOCK);
     }
 
     /**

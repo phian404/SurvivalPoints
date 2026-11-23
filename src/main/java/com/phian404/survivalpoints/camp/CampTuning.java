@@ -89,7 +89,7 @@ public final class CampTuning {
     // ==================== Потолки ====================
 
     /** Сколько лагерей может быть в одном мире. */
-    public static final int CAMP_MAX_PER_WORLD = 4;
+    public static final int CAMP_MAX_PER_WORLD = 16;
     /** Сколько личных лагерей может быть у одного игрока. */
     public static final int CAMP_MAX_PER_PLAYER = 1;
 

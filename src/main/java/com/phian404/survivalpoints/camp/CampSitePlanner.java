@@ -103,6 +103,7 @@ public final class CampSitePlanner {
         private final BlockPos center;
         private final int radius;
         private final int floorY;
+        private final int medianY;
         private final Rotation watchtowerRotation;
         private final Rotation farmRotation;
         private final BlockPos gatePos;
@@ -112,13 +113,14 @@ public final class CampSitePlanner {
         private final int[] surfaceAirY;
         private final BlockState[] surfaceStates;
 
-        private Plan(BlockPos center, int radius, int floorY, Rotation watchtowerRotation,
-                     Rotation farmRotation, BlockPos gatePos,
+        private Plan(BlockPos center, int radius, int floorY, int medianY,
+                     Rotation watchtowerRotation, Rotation farmRotation, BlockPos gatePos,
                      BlockPos watchtowerPos, BlockPos farmPos, BlockPos radioPos,
                      int[] surfaceAirY, BlockState[] surfaceStates) {
             this.center = center;
             this.radius = radius;
             this.floorY = floorY;
+            this.medianY = medianY;
             this.watchtowerRotation = watchtowerRotation;
             this.farmRotation = farmRotation;
             this.gatePos = gatePos;
@@ -166,6 +168,18 @@ public final class CampSitePlanner {
         /** Ярус пола двора: на нём стоят посты, секции и модули. */
         public int getFloorY() {
             return this.floorY;
+        }
+
+        /**
+         * Медиана высот клеток — статистический ориентир рельефа.
+         *
+         * <p>Не равен {@link #getFloorY()}: пол задаётся ярусом якоря, потому
+         * что закреплённый блок радио обязан совпасть с плоскостью двора.
+         * Медиана показывает средний уровень участка и используется только в
+         * сообщениях об отказе.
+         */
+        public int getMedianY() {
+            return this.medianY;
         }
 
         /**
@@ -298,18 +312,20 @@ public final class CampSitePlanner {
         int cells = radius * 2 + 1;
         int[] surfaceAirY = new int[cells * cells];
         BlockState[] surfaceStates = new BlockState[cells * cells];
-        // Высоты для статистики — без колонки якоря: там стоит блок
-        // camp_radio, и он не должен попадать в медиану как «поверхность».
         int[] stats = new int[cells * cells];
         int statsCount = 0;
-        int minSurface = Integer.MAX_VALUE;
-        int maxSurface = Integer.MIN_VALUE;
 
         for (int lx = 0; lx < cells; lx++) {
             for (int lz = 0; lz < cells; lz++) {
                 int x = minX + lx;
                 int z = minZ + lz;
-                int groundY = findGroundY(level, x, z);
+                // В колонке якоря блок camp_radio не является грунтом: его
+                // нужно пропустить, иначе поверхностью считался бы сам якорь,
+                // а настоящий грунт под ним остался бы неучтённым.
+                boolean isAnchorColumn = x == anchor.getX() && z == anchor.getZ();
+                int groundY = isAnchorColumn
+                        ? findGroundY(level, x, z, anchor.getY())
+                        : findGroundY(level, x, z);
                 if (groundY == FLUID_FOUND) {
                     return new Outcome(null, "Вода или лава на площадке у " + x + "," + z);
                 }
@@ -319,26 +335,33 @@ public final class CampSitePlanner {
                 int cell = lx * cells + lz;
                 surfaceAirY[cell] = groundY + 1;
                 surfaceStates[cell] = level.getBlockState(new BlockPos(x, groundY, z));
-                if (x == anchor.getX() && z == anchor.getZ()) {
-                    continue;
-                }
                 stats[statsCount++] = groundY + 1;
-                minSurface = Math.min(minSurface, groundY + 1);
-                maxSurface = Math.max(maxSurface, groundY + 1);
             }
         }
 
-        int delta = maxSurface - minSurface;
-        if (delta > CampTuning.CAMP_MAX_HEIGHT_DELTA) {
-            return new Outcome(null, "Слишком неровная площадка: перепад "
-                    + delta + " блоков, допустимо " + CampTuning.CAMP_MAX_HEIGHT_DELTA);
-        }
+        // Пол двора — ярус самого якоря. Якорь закреплён: его блок и
+        // BlockEntity остаются на исходных координатах, поэтому плоскость
+        // двора обязана совпасть с ним. Иначе колонка якоря либо выступала бы
+        // над выровненной площадкой, либо давала провал, либо подсыпка
+        // закопала бы радио.
+        int floorY = anchor.getY();
 
-        // Пол двора — медиана высот, а не максимум: при перепаде до двух
-        // блоков выравнивание и подсыпает низины, и срезает бугры, поэтому
-        // ярус выбирается по середине рельефа. Значение передаётся в генератор
-        // как есть: floorY — первый воздушный ярус над грунтом.
-        int floorY = median(stats, statsCount);
+        // Медиана остаётся статистическим ориентиром рельефа: она показывает
+        // средний уровень участка и используется в сообщениях об отказе.
+        int medianY = median(stats, statsCount);
+
+        // Перепад проверяется как максимальное отклонение клетки от якоря:
+        // выравнивание подсыпает низины и срезает бугры относительно floorY,
+        // поэтому допустимо ровно CAMP_MAX_HEIGHT_DELTA в обе стороны.
+        int maxDeviation = 0;
+        for (int i = 0; i < statsCount; i++) {
+            maxDeviation = Math.max(maxDeviation, Math.abs(stats[i] - floorY));
+        }
+        if (maxDeviation > CampTuning.CAMP_MAX_HEIGHT_DELTA) {
+            return new Outcome(null, "Слишком неровная площадка: отклонение от якоря "
+                    + maxDeviation + " блоков, допустимо " + CampTuning.CAMP_MAX_HEIGHT_DELTA
+                    + " (средний уровень участка " + medianY + ")");
+        }
 
         // === Локальная сетка ===
         // Планировка описана в клетках 0..2*radius: (0,0) — северо-запад,
@@ -382,8 +405,9 @@ public final class CampSitePlanner {
         Rotation watchtowerRotation = rotationForFacing(Direction.NORTH, WATCHTOWER_ENTRANCE);
         Rotation farmRotation = rotationForFacing(Direction.SOUTH, FARM_ENTRANCE);
 
-        return new Outcome(new Plan(anchor, radius, floorY, watchtowerRotation, farmRotation,
-                gatePos, watchtowerPos, farmPos, radioPos, surfaceAirY, surfaceStates), null);
+        return new Outcome(new Plan(anchor, radius, floorY, medianY, watchtowerRotation,
+                farmRotation, gatePos, watchtowerPos, farmPos, radioPos,
+                surfaceAirY, surfaceStates), null);
     }
 
     /**
@@ -426,8 +450,30 @@ public final class CampSitePlanner {
      * @return Y грунта, либо {@link #FLUID_FOUND}, либо {@link #NO_GROUND}
      */
     public static int findGroundY(ServerLevel level, int x, int z) {
+        return findGroundY(level, x, z, Integer.MIN_VALUE);
+    }
+
+    /**
+     * Найти грунт колонки, пропустив блок на заданном ярусе.
+     *
+     * <p>Нужно для колонки якоря: блок {@code camp_radio} — полноценный
+     * твёрдый блок и по всем признакам выглядит как поверхность, но грунтом
+     * не является. Пропуск по ярусу (а не по типу блока) не тянет в
+     * планировщик зависимость от реестра блоков и работает для любого
+     * якорного блока.
+     *
+     * @param level серверный уровень
+     * @param x     координата
+     * @param z     координата
+     * @param skipY ярус, который нужно пропустить ({@code Integer.MIN_VALUE} — не пропускать)
+     * @return Y грунта, либо {@link #FLUID_FOUND}, либо {@link #NO_GROUND}
+     */
+    public static int findGroundY(ServerLevel level, int x, int z, int skipY) {
         int top = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
         for (int y = top; y >= level.getMinBuildHeight(); y--) {
+            if (y == skipY) {
+                continue;
+            }
             BlockState state = level.getBlockState(new BlockPos(x, y, z));
             if (!state.getFluidState().isEmpty()) {
                 return FLUID_FOUND;
