@@ -8,6 +8,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -106,7 +107,12 @@ public final class CampManager {
 
         // Подготовка участка — единственный вызов, до записи лагеря: если
         // выравнивание не удалось, в CampSavedData не остаётся следа.
+        //
+        // Снимок культур берётся до расчистки: по нему видно, какие
+        // существующие посевы удаляются условием !blocksMotion().
+        Map<BlockPos, BlockState> cropsBefore = FarmDiagnostics.snapshotCrops(level, plan);
         CampGenerator.prepareTerrain(level, plan, anchor);
+        FarmDiagnostics.reportTerrainClear(level, plan, cropsBefore);
 
         CampRecord record = new CampRecord(name, anchor, radius, owner);
         record.setCenter(anchor);

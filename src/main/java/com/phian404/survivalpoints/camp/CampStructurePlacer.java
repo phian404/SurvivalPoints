@@ -176,7 +176,22 @@ public final class CampStructurePlacer {
         }
 
         BoundingBox box = template.getBoundingBox(settings, placedAt);
+
+        // ВРЕМЕННАЯ диагностика: состояние посевов сразу после NBT-вставки,
+        // до внутреннего updateShapes. Удалить вместе с FarmDiagnostics.
+        FarmDiagnostics.describeRange("placeModule/" + slotId, "nbtBox",
+                new BlockPos(box.minX(), box.minY(), box.minZ()),
+                new BlockPos(box.maxX(), box.maxY(), box.maxZ()));
+        FarmDiagnostics.scan(level, "placeModule/" + slotId + "/beforeUpdateShapes",
+                box.minX(), box.minY() - 1, box.minZ(),
+                box.maxX(), box.maxY(), box.maxZ());
+
         updateShapes(level, box);
+
+        FarmDiagnostics.scan(level, "placeModule/" + slotId + "/afterUpdateShapes",
+                box.minX(), box.minY() - 1, box.minZ(),
+                box.maxX(), box.maxY(), box.maxZ());
+
         clearMarkers(level, markers);
         CampModuleSlot.SlotBounds bounds = new CampModuleSlot.SlotBounds(
                 box.minX(), box.minY(), box.minZ(), box.maxX(), box.maxY(), box.maxZ());
