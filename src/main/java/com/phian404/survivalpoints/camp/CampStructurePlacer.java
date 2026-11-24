@@ -7,6 +7,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
@@ -169,28 +170,26 @@ public final class CampStructurePlacer {
         StructurePlaceSettings placement = settings.copy()
                 .setKnownShape(true)
                 .addProcessor(BlockIgnoreProcessor.STRUCTURE_BLOCK);
+        // Флаг UPDATE_KNOWN_SHAPE (16) нужен ВМЕСТЕ с setKnownShape(true).
+        // setKnownShape отключает только финальную постобработку placeInWorld,
+        // а каждый setBlock внутри цикла вставки при отсутствии бита 16 сам
+        // выполняет updateNeighbourShapes (см. Level.setBlock: ветка под
+        // `(flags & 16) == 0`). Сосед-культура получает updateShape раньше,
+        // чем секция увидит актуальный sky light: публикация значений идёт
+        // только в LightEngine.runLightUpdates через swapSectionMap, то есть
+        // асинхронно, а getLightValue до этого читает visibleSectionData с
+        // нулями. CropBlock.canSurvive при getRawBrightness < 8 и
+        // !canSeeSky даёт false, BushBlock.updateShape возвращает AIR — посев
+        // исчезает прямо внутри placeInWorld.
         boolean placed = template.placeInWorld(level, placedAt, placedAt, placement,
-                level.getRandom(), Block.UPDATE_CLIENTS);
+                level.getRandom(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
         if (!placed) {
             return PlacementResult.failure("Не удалось разместить " + moduleId);
         }
 
         BoundingBox box = template.getBoundingBox(settings, placedAt);
 
-        // ВРЕМЕННАЯ диагностика: состояние посевов сразу после NBT-вставки,
-        // до внутреннего updateShapes. Удалить вместе с FarmDiagnostics.
-        FarmDiagnostics.describeRange("placeModule/" + slotId, "nbtBox",
-                new BlockPos(box.minX(), box.minY(), box.minZ()),
-                new BlockPos(box.maxX(), box.maxY(), box.maxZ()));
-        FarmDiagnostics.scan(level, "placeModule/" + slotId + "/beforeUpdateShapes",
-                box.minX(), box.minY() - 1, box.minZ(),
-                box.maxX(), box.maxY(), box.maxZ());
-
         updateShapes(level, box);
-
-        FarmDiagnostics.scan(level, "placeModule/" + slotId + "/afterUpdateShapes",
-                box.minX(), box.minY() - 1, box.minZ(),
-                box.maxX(), box.maxY(), box.maxZ());
 
         clearMarkers(level, markers);
         CampModuleSlot.SlotBounds bounds = new CampModuleSlot.SlotBounds(
@@ -364,6 +363,16 @@ public final class CampStructurePlacer {
                     BlockPos pos = new BlockPos(x, y, z);
                     BlockState state = level.getBlockState(pos);
                     if (state.isAir()) {
+                        continue;
+                    }
+                    // Культуры пропускаются: единственное их свойство — AGE,
+                    // «сшивать» нечего, а canSurvive зависит от освещения.
+                    // Во время генерации sky light секции ещё не опубликован
+                    // (visibleSectionData обновляется только в
+                    // LightEngine.runLightUpdates), поэтому updateShape снёс бы
+                    // и жизнеспособный посев. Выживание проверит ванильный
+                    // neighborChanged/randomTick, когда свет станет актуальным.
+                    if (state.getBlock() instanceof CropBlock) {
                         continue;
                     }
                     // Соседей НЕ оповещаем: каждый блок области всё равно

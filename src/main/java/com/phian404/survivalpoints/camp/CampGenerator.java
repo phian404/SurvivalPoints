@@ -13,6 +13,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
 import net.minecraft.world.level.block.state.properties.DoorHingeSide;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 
@@ -1052,12 +1053,7 @@ public class CampGenerator {
                     // Не более блока на кольцо: срез не образует стенку у
                     // самого периметра, а уходит вверх ступенями по полосе.
                     targetY = Math.min(targetY, courtyardY + step - 1);
-                    int resultY = cutEdgeColumn(level, x, z, targetY);
-                    // ВРЕМЕННО: локальное возвышение, которое не видно пробе.
-                    if (localKnown && localGroundY > maxOuterY && naturalY <= maxOuterY) {
-                        FarmDiagnostics.logEdgeCut("localBump", new BlockPos(x, localGroundY, z),
-                                courtyardY, naturalY, localGroundY, targetY, resultY);
-                    }
+                    cutEdgeColumn(level, x, z, targetY);
                     continue;
                 }
                 // Перепад в один блок игрок переступает сам: переход только
@@ -1346,20 +1342,7 @@ public class CampGenerator {
         // в углу площадки, поэтому проход идёт после размещения модулей.
         refreshAllShapes(level, plan);
 
-        // ВРЕМЕННАЯ диагностика: закрывает четвёртый этап (дорожки).
-        // Удалить вместе с FarmDiagnostics.
-        BlockPos diagMin = plan.localToWorld(0, 0, plan.getFloorY() - 1);
-        BlockPos diagMax = plan.localToWorld(plan.getSide() - 1, plan.getSide() - 1,
-                plan.getFloorY() + PERIMETER_HEIGHT);
-        FarmDiagnostics.scan(level, "generatePaths/before",
-                diagMin.getX(), diagMin.getY(), diagMin.getZ(),
-                diagMax.getX(), diagMax.getY(), diagMax.getZ());
-
         generatePaths(level, plan, record);
-
-        FarmDiagnostics.scan(level, "generatePaths/after",
-                diagMin.getX(), diagMin.getY(), diagMin.getZ(),
-                diagMax.getX(), diagMax.getY(), diagMax.getZ());
 
         placeRadio(level, plan, record);
     }
@@ -1381,17 +1364,7 @@ public class CampGenerator {
         BlockPos max = plan.localToWorld(plan.getSide() - 1, plan.getSide() - 1,
                 plan.getFloorY() + PERIMETER_HEIGHT);
 
-        // ВРЕМЕННАЯ диагностика: снимок посевов до общего пересчёта форм.
-        // Удалить вместе с FarmDiagnostics.
-        FarmDiagnostics.scan(level, "refreshAllShapes/before",
-                min.getX() - 1, min.getY(), min.getZ() - 1,
-                max.getX() + 1, max.getY(), max.getZ() + 1);
-
         CampStructurePlacer.refreshShapes(level,
-                min.getX() - 1, min.getY(), min.getZ() - 1,
-                max.getX() + 1, max.getY(), max.getZ() + 1);
-
-        FarmDiagnostics.scan(level, "refreshAllShapes/after",
                 min.getX() - 1, min.getY(), min.getZ() - 1,
                 max.getX() + 1, max.getY(), max.getZ() + 1);
     }
@@ -1856,44 +1829,10 @@ public class CampGenerator {
         // у фермы {@code y=0} — слой грунта, и он должен лечь вровень с двором.
         BlockPos base = plan.getFarmPos();
 
-        // ВРЕМЕННАЯ диагностика: где именно работает подсыпка основания.
-        // Удалить вместе с FarmDiagnostics.
-        logFarmBaseRange(level, base, FARM_LVL1_ID, plan.getFarmRotation());
-
         fillFarmBase(level, base, FARM_LVL1_ID, plan.getFarmRotation());
 
         CampStructurePlacer.placeModule(level, data, record, FARM_SLOT, FARM_LVL1_ID,
                 0, base, plan.getFarmRotation());
-    }
-
-    /**
-     * ВРЕМЕННО: записать границы, которые использует {@link #fillFarmBase}.
-     *
-     * <p>Повторяет расчёт подсыпки, не меняя мир: нужно только сравнить эти
-     * границы с фактическим габаритом размещённого шаблона.
-     *
-     * @param level    серверный уровень
-     * @param base     точка размещения
-     * @param moduleId шаблон фермы
-     * @param rotation поворот
-     */
-    private static void logFarmBaseRange(ServerLevel level, BlockPos base,
-                                         ResourceLocation moduleId, Rotation rotation) {
-        var templateOpt = level.getStructureManager().get(moduleId);
-        if (templateOpt.isEmpty()) {
-            return;
-        }
-        net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings settings =
-                new net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings()
-                        .setRotation(rotation);
-        var probe = templateOpt.get().getBoundingBox(settings, BlockPos.ZERO);
-        int minX = base.getX() - (probe.maxX() - probe.minX()) / 2;
-        int maxX = base.getX() + (probe.maxX() - probe.minX() + 1) / 2;
-        int minZ = base.getZ() - (probe.maxZ() - probe.minZ()) / 2;
-        int maxZ = base.getZ() + (probe.maxZ() - probe.minZ() + 1) / 2;
-        FarmDiagnostics.describeRange("placeFarm", "fillFarmBaseRange",
-                new BlockPos(minX, base.getY(), minZ),
-                new BlockPos(maxX, base.getY(), maxZ));
     }
 
     /**
@@ -1920,9 +1859,7 @@ public class CampGenerator {
         if (templateOpt.isEmpty()) {
             return;
         }
-        net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings settings =
-                new net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings()
-                        .setRotation(rotation);
+        StructurePlaceSettings settings = new StructurePlaceSettings().setRotation(rotation);
         var probe = templateOpt.get().getBoundingBox(settings, BlockPos.ZERO);
         int minX = base.getX() - (probe.maxX() - probe.minX()) / 2;
         int maxX = base.getX() + (probe.maxX() - probe.minX() + 1) / 2;
