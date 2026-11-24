@@ -241,7 +241,8 @@ public class CampGenerator {
                     if (state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)) {
                         continue;
                     }
-                    if (state.canBeReplaced() || !state.blocksMotion()) {
+                    if (!state.getFluidState().isEmpty()
+                            || state.canBeReplaced() || !state.blocksMotion()) {
                         level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
                     }
                 }

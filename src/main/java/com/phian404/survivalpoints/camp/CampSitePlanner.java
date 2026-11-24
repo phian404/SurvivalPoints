@@ -7,21 +7,27 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.StructurePiece;
 
 import javax.annotation.Nullable;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
 
 /**
  * План лагеря и предпроверка участка.
@@ -148,6 +154,33 @@ public final class CampSitePlanner {
      * в выборе, а незагруженные точки не расходуют бюджет.
      */
     public static final int SITE_SEARCH_MAX_CANDIDATES = 49;
+
+    /**
+     * Максимальная глубина микролужи в блоках.
+     *
+     * <p>Глубина считается от нижнего водного блока до твёрдого грунта. Один
+     * блок — обычная лужа после дождя: её можно снять расчисткой и засыпать
+     * подсыпкой двора. Два и более — уже водоём, который проще обойти.
+     */
+    private static final int PUDDLE_MAX_DEPTH = 1;
+
+    /**
+     * Максимальное число водных блоков в одной связной микролуже.
+     *
+     * <p>Ограничение по объёму не даёт принять за лужу протяжённую речку или
+     * край пруда. Четыре блока — несколько соседних клеток глубиной в один
+     * слой; всё больше считается крупной водой.
+     */
+    private static final int PUDDLE_MAX_BLOCKS = 4;
+
+    /**
+     * Предел обхода связной воды за пределами площадки.
+     *
+     * <p>Лужа у края площадки может продолжаться наружу. Обход проверяет её
+     * до этого лимита, чтобы не сканировать неограниченную территорию; если
+     * лимит исчерпан, вода считается крупной и кандидат отклоняется.
+     */
+    private static final int PUDDLE_SCAN_LIMIT = PUDDLE_MAX_BLOCKS + 1;
 
     private CampSitePlanner() {
     }
@@ -602,7 +635,10 @@ public final class CampSitePlanner {
                         ? findGroundY(level, x, z, requestPos.getY())
                         : findGroundY(level, x, z);
                 if (groundY == FLUID_FOUND) {
-                    return SiteCandidate.refused("Вода или лава на площадке у " + x + "," + z);
+                    groundY = resolvePuddleGroundY(level, x, z, requestPos, isRequestColumn);
+                    if (groundY == FLUID_FOUND) {
+                        return SiteCandidate.refused("Вода или лава на площадке у " + x + "," + z);
+                    }
                 }
                 if (groundY == NO_GROUND) {
                     return SiteCandidate.refused("Нет грунта на площадке у " + x + "," + z);
@@ -922,6 +958,87 @@ public final class CampSitePlanner {
             return sorted[mid];
         }
         return (int) Math.round((sorted[mid - 1] + sorted[mid]) / 2.0D);
+    }
+
+    /**
+     * Определить грунт под водой, если это безопасная микролужа.
+     *
+     * <p>Лава отклоняется сразу. Для воды проверяется глубина в стартовой
+     * колонке и связная область по шести направлениям с жёстким лимитом
+     * {@link #PUDDLE_SCAN_LIMIT}. Если область укладывается в лимит и под ней
+     * есть твёрдый грунт, возвращается его Y — именно он становится
+     * поверхностью клетки, а вода будет снята подготовкой площадки.
+     *
+     * @return Y грунта под водой или {@link #FLUID_FOUND}, если вода крупная
+     */
+    private static int resolvePuddleGroundY(ServerLevel level, int x, int z,
+                                            BlockPos requestPos, boolean isRequestColumn) {
+        int skipY = isRequestColumn ? requestPos.getY() : Integer.MIN_VALUE;
+        int top = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
+        int waterTop = -1;
+        for (int y = top; y >= level.getMinBuildHeight(); y--) {
+            if (y == skipY) {
+                continue;
+            }
+            FluidState fluid = level.getBlockState(new BlockPos(x, y, z)).getFluidState();
+            if (fluid.is(FluidTags.LAVA)) {
+                return FLUID_FOUND;
+            }
+            if (!fluid.is(FluidTags.WATER)) {
+                continue;
+            }
+            if (waterTop < 0) {
+                waterTop = y;
+            }
+        }
+        if (waterTop < 0) {
+            return FLUID_FOUND;
+        }
+
+        int groundY = waterTop - 1;
+        while (groundY >= level.getMinBuildHeight()) {
+            if (groundY == skipY) {
+                groundY--;
+                continue;
+            }
+            BlockState state = level.getBlockState(new BlockPos(x, groundY, z));
+            if (!state.getFluidState().is(FluidTags.WATER)) {
+                break;
+            }
+            groundY--;
+        }
+        if (groundY < level.getMinBuildHeight()
+                || waterTop - groundY > PUDDLE_MAX_DEPTH) {
+            return FLUID_FOUND;
+        }
+
+        Queue<BlockPos> queue = new ArrayDeque<>();
+        Set<BlockPos> visited = new HashSet<>();
+        BlockPos start = new BlockPos(x, waterTop, z);
+        queue.add(start);
+        visited.add(start);
+        int waterBlocks = 1;
+        while (!queue.isEmpty()) {
+            BlockPos pos = queue.poll();
+            for (BlockPos next : new BlockPos[]{pos.above(), pos.below(), pos.north(),
+                    pos.south(), pos.west(), pos.east()}) {
+                if (!visited.add(next)) {
+                    continue;
+                }
+                FluidState fluid = level.getBlockState(next).getFluidState();
+                if (fluid.is(FluidTags.LAVA)) {
+                    return FLUID_FOUND;
+                }
+                if (!fluid.is(FluidTags.WATER)) {
+                    continue;
+                }
+                if (++waterBlocks > PUDDLE_SCAN_LIMIT) {
+                    return FLUID_FOUND;
+                }
+                queue.add(next);
+            }
+        }
+        return groundY;
     }
 
     /**
