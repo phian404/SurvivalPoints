@@ -1,18 +1,27 @@
 package com.phian404.survivalpoints.camp;
 
+import it.unimi.dsi.fastutil.longs.LongSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
+import net.minecraft.world.level.levelgen.structure.StructurePiece;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /**
  * План лагеря и предпроверка участка.
@@ -617,6 +626,11 @@ public final class CampSitePlanner {
                     + " (медианный уровень участка " + medianY + ")");
         }
 
+        String structureConflict = findStructureConflict(level, center, radius, floorY);
+        if (structureConflict != null) {
+            return SiteCandidate.refused(structureConflict);
+        }
+
         OrientationScore orientation = chooseOrientation(level, center, radius, floorY);
         Plan plan = buildPlan(requestPos, center, radius, floorY, medianY,
                 orientation.rotation, surfaceAirY, surfaceStates);
@@ -1025,6 +1039,115 @@ public final class CampSitePlanner {
     }
 
     /**
+     * Пересечение площадки с уже сгенерированными структурами мира.
+     *
+     * <p>Источник — {@link LevelChunk#getAllStarts()} и
+     * {@link LevelChunk#getAllReferences()} уже загруженных чанков. Старт
+     * структуры хранится в её стартовом чанке, который может лежать за пределами
+     * площадки, поэтому дополнительно проверяются ссылки из чанков площадки.
+     * Карты содержат все ванильные и модифицированные {@link StructureStart};
+     * поиск и генерация структур не вызываются, чанки принудительно не
+     * загружаются.
+     *
+     * <p>Сравниваются не общие габариты старта, а границы отдельных
+     * {@link StructurePiece}: у крупных структур общий bounding box может
+     * накрывать пустые чанки, и площадку не следует отбрасывать из-за них.
+     * Зона лагеря — периметр плюс {@link CampTuning#CAMP_CLEAR_MARGIN}, по
+     * высоте — диапазон реально изменяемых блоков (грунт под полом и верх
+     * расчистки деревьев), тот же, что в {@link #checkPreparationZone}.
+     *
+     * @param level  серверный уровень
+     * @param center центр кандидата
+     * @param radius радиус лагеря
+     * @param floorY выбранный ярус пола
+     * @return причина отказа или {@code null}
+     */
+    @Nullable
+    private static String findStructureConflict(ServerLevel level, BlockPos center,
+                                                int radius, int floorY) {
+        int margin = CampTuning.CAMP_CLEAR_MARGIN;
+        int minX = center.getX() - radius - margin;
+        int maxX = center.getX() + radius + margin;
+        int minZ = center.getZ() - radius - margin;
+        int maxZ = center.getZ() + radius + margin;
+        int minY = floorY - 1 - CampTuning.CAMP_MAX_HEIGHT_DELTA;
+        int maxY = floorY + CampTuning.CAMP_CLEAR_HEADROOM;
+
+        int minChunkX = minX >> 4;
+        int maxChunkX = maxX >> 4;
+        int minChunkZ = minZ >> 4;
+        int maxChunkZ = maxZ >> 4;
+
+        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
+            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
+                if (chunk == null) {
+                    continue;
+                }
+
+                for (Map.Entry<Structure, StructureStart> entry : chunk.getAllStarts().entrySet()) {
+                    String conflict = checkStructureStart(level, entry.getKey(), entry.getValue(),
+                            minX, maxX, minY, maxY, minZ, maxZ);
+                    if (conflict != null) {
+                        return conflict;
+                    }
+                }
+
+                for (Map.Entry<Structure, LongSet> entry : chunk.getAllReferences().entrySet()) {
+                    Structure structure = entry.getKey();
+                    for (long reference : entry.getValue()) {
+                        int startX = ChunkPos.getX(reference);
+                        int startZ = ChunkPos.getZ(reference);
+                        LevelChunk startChunk = level.getChunkSource().getChunkNow(startX, startZ);
+                        if (startChunk == null) {
+                            ResourceLocation id = level.registryAccess()
+                                    .registryOrThrow(Registries.STRUCTURE)
+                                    .getKey(structure);
+                            return "Структура " + (id != null ? id : "?")
+                                    + " не проверена: стартовый чанк " + startX + "," + startZ
+                                    + " не загружен";
+                        }
+                        String conflict = checkStructureStart(level, structure,
+                                startChunk.getStartForStructure(structure),
+                                minX, maxX, minY, maxY, minZ, maxZ);
+                        if (conflict != null) {
+                            return conflict;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Проверить отдельные части одного старта на пересечение с зоной лагеря.
+     */
+    @Nullable
+    private static String checkStructureStart(ServerLevel level, Structure structure,
+                                              @Nullable StructureStart start,
+                                              int minX, int maxX, int minY, int maxY,
+                                              int minZ, int maxZ) {
+        if (start == null || !start.isValid()) {
+            return null;
+        }
+        for (StructurePiece piece : start.getPieces()) {
+            BoundingBox box = piece.getBoundingBox();
+            if (box.maxX() < minX || box.minX() > maxX
+                    || box.maxZ() < minZ || box.minZ() > maxZ
+                    || box.maxY() < minY || box.minY() > maxY) {
+                continue;
+            }
+            ResourceLocation id = level.registryAccess()
+                    .registryOrThrow(Registries.STRUCTURE)
+                    .getKey(structure);
+            return "Структура " + (id != null ? id : "?") + " у "
+                    + box.minX() + "," + box.minY() + "," + box.minZ();
+        }
+        return null;
+    }
+
+    /**
      * Проверить, что в зоне подготовки площадки нет чужих объектов.
      *
      * <p>Зона — периметр плюс {@link CampTuning#CAMP_CLEAR_MARGIN} блоков
@@ -1076,8 +1199,11 @@ public final class CampSitePlanner {
     /**
      * Пересечение с существующим лагерем.
      *
-     * <p>Сравнение по горизонтали с запасом в один радиус: два периметра
-     * вплотную тоже недопустимы — между ними не останется прохода.
+     * <p>Площадка лагеря — квадрат {@code center ± radius} по X и Z, поэтому
+     * проверяются две проекции раздельно. Конфликт есть, если по обеим осям
+     * расстояние между центрами меньше суммы радиусов плюс
+     * {@link CampTuning#CAMP_MIN_GAP_BETWEEN}. Это покрывает и диагональное
+     * пересечение углами, и лагеря разных размеров.
      *
      * @param level  серверный уровень
      * @param center центр рассчитываемой площадки
@@ -1088,10 +1214,10 @@ public final class CampSitePlanner {
     private static String findCampConflict(ServerLevel level, BlockPos center, int radius) {
         CampSavedData data = CampManager.data(level);
         for (CampRecord other : data.getCamps()) {
-            double dx = other.getCenter().getX() - center.getX();
-            double dz = other.getCenter().getZ() - center.getZ();
-            double minDistance = radius + other.getRadius() + CampTuning.CAMP_MIN_GAP_BETWEEN;
-            if (dx * dx + dz * dz < minDistance * minDistance) {
+            int minDistance = radius + other.getRadius() + CampTuning.CAMP_MIN_GAP_BETWEEN;
+            int dx = Math.abs(other.getCenter().getX() - center.getX());
+            int dz = Math.abs(other.getCenter().getZ() - center.getZ());
+            if (dx < minDistance && dz < minDistance) {
                 return "Слишком близко к лагерю «" + other.getName() + "»";
             }
         }
