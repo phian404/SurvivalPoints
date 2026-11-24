@@ -135,7 +135,7 @@ public class CampGenerator {
      * наружу». Одиночная проба попадала бы на ствол, яму или выступ и
      * давала бы рваный край.
      */
-    private static final int EDGE_PROBE_STEPS = 3;
+    public static final int EDGE_PROBE_STEPS = 3;
 
     /**
      * Минимальный перепад, при котором вообще строится переход.

@@ -10,7 +10,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * План лагеря и предпроверка участка.
@@ -117,6 +119,26 @@ public final class CampSitePlanner {
      */
     private static final Direction[] ORIENTATIONS = {
             Direction.SOUTH, Direction.WEST, Direction.NORTH, Direction.EAST};
+
+    /**
+     * Максимальное смещение центра кандидата от запроса (в блоках).
+     *
+     * <p>Ограничение по горизонтали: поиск не уходит в неизвестные далёкие
+     * чанки и остаётся предсказуемым для игрока, поставившего радио.
+     */
+    public static final int SITE_SEARCH_RADIUS = 6;
+
+    /** Шаг сетки кандидатов (в блоках). */
+    public static final int SITE_SEARCH_STEP = 2;
+
+    /**
+     * Предел числа проверенных кандидатов.
+     *
+     * <p>Бюджет фиксирован и покрывает всю сетку радиуса 6 с шагом 2:
+     * {@code (2 * 6 / 2 + 1)^2 = 49} точек. Внешнее кольцо также участвует
+     * в выборе, а незагруженные точки не расходуют бюджет.
+     */
+    public static final int SITE_SEARCH_MAX_CANDIDATES = 49;
 
     private CampSitePlanner() {
     }
@@ -418,10 +440,11 @@ public final class CampSitePlanner {
     /**
      * Проверить участок и построить план.
      *
-     * <p>Кандидат один: центр площадки прежний, ярус пола выбирается по
-     * медиане высот, а из четырёх сторон ворот берётся та, где подход удобнее
-     * по фактическому рельефу. Исходная точка запроса задаёт только центр и
-     * колонку установленного радио, которое нужно исключить из съёма рельефа.
+     * <p>Перебирается ограниченная сетка центров вокруг {@code requestPos}.
+     * Для каждого центра проверяются рельеф, жидкости, пересечения, зона
+     * подготовки и четыре ориентации. Все чтения идут по уже загруженным
+     * чанкам: поиск не вызывает генерацию и не меняет мир. После выбора
+     * {@link CampManager} выполняет подготовку и перенос радио.
      *
      * @param level      серверный уровень
      * @param requestPos исходная точка запроса (где игрок поставил радио)
@@ -429,29 +452,130 @@ public final class CampSitePlanner {
      * @return план или причина отказа
      */
     public static Outcome plan(ServerLevel level, BlockPos requestPos, int radius) {
-        // Единственный кандидат: прежняя площадка вокруг запроса. Её Y не
-        // задаёт пол — тот выбирается после съёма высот по медиане.
-        BlockPos center = requestPos;
+        SiteScore best = null;
+        String lastRefusal = null;
+        int checked = 0;
 
-        // Периметр занимает клетки 0..2*radius: сторона 2*radius+1 блок.
-        int half = radius;
-        int minX = center.getX() - half;
-        int maxX = center.getX() + half;
-        int minZ = center.getZ() - half;
-        int maxZ = center.getZ() + half;
+        for (BlockPos center : candidateCenters(requestPos)) {
+            if (checked >= SITE_SEARCH_MAX_CANDIDATES) {
+                break;
+            }
+            if (!isAreaLoaded(level, center, radius)) {
+                continue;
+            }
+            checked++;
 
-        String conflict = findCampConflict(level, center, radius);
-        if (conflict != null) {
-            return new Outcome(null, conflict);
+            SiteCandidate candidate = evaluateSite(level, requestPos, center, radius);
+            if (candidate.plan != null) {
+                SiteScore score = new SiteScore(candidate.plan, candidate.orientation);
+                if (best == null || score.isBetterThan(best)) {
+                    best = score;
+                }
+            } else if (lastRefusal == null) {
+                lastRefusal = candidate.refusal;
+            }
         }
 
-        // === Съём высот площадки ===
-        // Клетки сетки 0..side по X и Z. Высота каждой клетки — первый
-        // воздушный блок над настоящим грунтом. Стволы, листва, заменяемая
-        // растительность и всё неблокирующее (цветы, трава) при определении
-        // поверхности пропускаются: цветок в 1.20.1 возвращает
-        // canBeReplaced() == false, и без проверки blocksMotion() он был бы
-        // принят за грунт — отсюда ложные высоты и оставшиеся цветы во дворе.
+        if (best != null) {
+            return new Outcome(best.plan, null);
+        }
+        return new Outcome(null, lastRefusal != null
+                ? lastRefusal : "Подходящая площадка не найдена");
+    }
+
+    /**
+     * Детерминированная сетка центров вокруг запроса.
+     *
+     * <p>Первым всегда идёт сам {@code requestPos}: на ровной площадке он
+     * выигрывает по нулевому смещению. Затем кандидаты сортируются по
+     * расстоянию до запроса, а при равном — по координатам. Это убирает
+     * зависимость от порядка обхода чанков и от случайных чисел.
+     *
+     * @param requestPos исходная точка
+     * @return список центров в порядке приоритета
+     */
+    private static List<BlockPos> candidateCenters(BlockPos requestPos) {
+        List<BlockPos> centers = new ArrayList<>();
+        for (int dx = -SITE_SEARCH_RADIUS; dx <= SITE_SEARCH_RADIUS; dx += SITE_SEARCH_STEP) {
+            for (int dz = -SITE_SEARCH_RADIUS; dz <= SITE_SEARCH_RADIUS; dz += SITE_SEARCH_STEP) {
+                centers.add(new BlockPos(requestPos.getX() + dx, requestPos.getY(),
+                        requestPos.getZ() + dz));
+            }
+        }
+        centers.sort((a, b) -> {
+            int da = squareDistance(a, requestPos);
+            int db = squareDistance(b, requestPos);
+            if (da != db) {
+                return Integer.compare(da, db);
+            }
+            if (a.getX() != b.getX()) {
+                return Integer.compare(a.getX(), b.getX());
+            }
+            return Integer.compare(a.getZ(), b.getZ());
+        });
+        return centers;
+    }
+
+    /** Квадрат горизонтального расстояния между точками. */
+    private static int squareDistance(BlockPos a, BlockPos b) {
+        int dx = a.getX() - b.getX();
+        int dz = a.getZ() - b.getZ();
+        return dx * dx + dz * dz;
+    }
+
+    /**
+     * Проверить, что все чтения создания лагеря покрыты загруженными чанками.
+     *
+     * <p>Площадка и зона подготовки занимают {@code radius + CAMP_CLEAR_MARGIN}.
+     * Дальше {@link CampGenerator#probeOuterTerrainY} читает рельеф за полосой
+     * перехода: база — {@code radius + margin + 1}, затем ещё
+     * {@code EDGE_PROBE_STEPS - 1} шагов. Поэтому общий радиус равен
+     * {@code radius + margin + EDGE_PROBE_STEPS}; для текущих значений это
+     * {@code 10 + 3 + 3 = 16}.
+     *
+     * <p>Используется только {@code hasChunk}: метод не запрашивает чанк и не
+     * запускает генерацию. Незагруженный кандидат пропускается без ошибки.
+     *
+     * @param level  серверный уровень
+     * @param center центр кандидата
+     * @param radius радиус лагеря
+     * @return {@code true}, если все нужные чанки уже есть
+     */
+    private static boolean isAreaLoaded(ServerLevel level, BlockPos center, int radius) {
+        int extent = radius + CampTuning.CAMP_CLEAR_MARGIN + CampGenerator.EDGE_PROBE_STEPS;
+        int minX = (center.getX() - extent) >> 4;
+        int maxX = (center.getX() + extent) >> 4;
+        int minZ = (center.getZ() - extent) >> 4;
+        int maxZ = (center.getZ() + extent) >> 4;
+        for (int cx = minX; cx <= maxX; cx++) {
+            for (int cz = minZ; cz <= maxZ; cz++) {
+                if (!level.getChunkSource().hasChunk(cx, cz)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Полностью оценить один центр: рельеф, высоту, ориентацию и зону подготовки.
+     *
+     * @param level      серверный уровень
+     * @param requestPos исходная точка запроса
+     * @param center     центр кандидата
+     * @param radius     радиус лагеря
+     * @return план либо причина отказа
+     */
+    private static SiteCandidate evaluateSite(ServerLevel level, BlockPos requestPos,
+                                              BlockPos center, int radius) {
+        String conflict = findCampConflict(level, center, radius);
+        if (conflict != null) {
+            return SiteCandidate.refused(conflict);
+        }
+
+        int half = radius;
+        int minX = center.getX() - half;
+        int minZ = center.getZ() - half;
         int cells = radius * 2 + 1;
         int[] surfaceAirY = new int[cells * cells];
         BlockState[] surfaceStates = new BlockState[cells * cells];
@@ -462,19 +586,17 @@ public final class CampSitePlanner {
             for (int lz = 0; lz < cells; lz++) {
                 int x = minX + lx;
                 int z = minZ + lz;
-                // В колонке исходного радио блок camp_radio не является
-                // грунтом: его нужно пропустить, иначе поверхностью считался
-                // бы сам якорь, а настоящий грунт под ним остался бы неучтённым.
-                // Пропускается именно запрос, а не рассчитываемая позиция якоря.
+                // Исходное радио исключается по его фактической колонке: блок
+                // стоит в requestPos, а не в центре выбранной площадки.
                 boolean isRequestColumn = x == requestPos.getX() && z == requestPos.getZ();
                 int groundY = isRequestColumn
                         ? findGroundY(level, x, z, requestPos.getY())
                         : findGroundY(level, x, z);
                 if (groundY == FLUID_FOUND) {
-                    return new Outcome(null, "Вода или лава на площадке у " + x + "," + z);
+                    return SiteCandidate.refused("Вода или лава на площадке у " + x + "," + z);
                 }
                 if (groundY == NO_GROUND) {
-                    return new Outcome(null, "Нет грунта на площадке у " + x + "," + z);
+                    return SiteCandidate.refused("Нет грунта на площадке у " + x + "," + z);
                 }
                 int cell = lx * cells + lz;
                 surfaceAirY[cell] = groundY + 1;
@@ -483,70 +605,125 @@ public final class CampSitePlanner {
             }
         }
 
-        // Карта хранит первый воздушный блок над грунтом. Её медиана — уже
-        // ярус floorY, поэтому дополнительное +/-1 здесь не применяется.
         int medianY = median(stats, statsCount);
         int floorY = medianY;
-
-        // Перепад проверяется как максимальное отклонение клетки от пола:
-        // выравнивание подсыпает низины и срезает бугры относительно floorY,
-        // поэтому допустимо ровно CAMP_MAX_HEIGHT_DELTA в обе стороны.
         int maxDeviation = 0;
         for (int i = 0; i < statsCount; i++) {
             maxDeviation = Math.max(maxDeviation, Math.abs(stats[i] - floorY));
         }
         if (maxDeviation > CampTuning.CAMP_MAX_HEIGHT_DELTA) {
-            return new Outcome(null, "Слишком неровная площадка: отклонение от пола "
+            return SiteCandidate.refused("Слишком неровная площадка: отклонение от пола "
                     + maxDeviation + " блоков, допустимо " + CampTuning.CAMP_MAX_HEIGHT_DELTA
                     + " (медианный уровень участка " + medianY + ")");
         }
 
-        // === Ориентация ===
-        // Центр, радиус и floorY уже выбраны, поэтому четыре варианта
-        // отличаются только стороной ворот. Оценка читает натуральный рельеф
-        // перед воротами и ничего не меняет в мире.
-        Rotation layoutRotation = chooseOrientation(level, center, radius, floorY);
+        OrientationScore orientation = chooseOrientation(level, center, radius, floorY);
+        Plan plan = buildPlan(requestPos, center, radius, floorY, medianY,
+                orientation.rotation, surfaceAirY, surfaceStates);
 
-        // === Локальная сетка ===
-        // Планировка описана в клетках 0..2*radius: (0,0) — северо-запад,
-        // (2*radius, 2*radius) — юго-восток. Ворота и вход — на локальной
-        // южной стене, а в мир сетка переносится поворотом layoutRotation.
+        String blocked = checkPreparationZone(level, plan);
+        if (blocked != null) {
+            return SiteCandidate.refused(blocked);
+        }
+        return SiteCandidate.accepted(plan, orientation);
+    }
+
+    /**
+     * Собрать план для уже выбранных центра, высоты и ориентации.
+     *
+     * @param requestPos    исходная точка запроса
+     * @param center        выбранный центр
+     * @param radius        радиус лагеря
+     * @param floorY        выбранный ярус пола
+     * @param medianY       медиана высот площадки
+     * @param layoutRotation поворот локальной сетки
+     * @param surfaceAirY   карта высот
+     * @param surfaceStates карта поверхностных блоков
+     * @return готовый план
+     */
+    private static Plan buildPlan(BlockPos requestPos, BlockPos center, int radius, int floorY,
+                                  int medianY, Rotation layoutRotation, int[] surfaceAirY,
+                                  BlockState[] surfaceStates) {
         int side = radius * 2;
-
-        // Ворота: одна створка ровно в центре стены ворот. Соседние клетки
-        // пролёта — глухие панели: они дают двери раму и симметричную обшивку.
-        BlockPos gatePos = worldFromLocal(center, radius, layoutRotation,
-                radius, side, floorY);
-
-        // Вышка 5×5 стоит в локальном юго-западном углу периметра: её габарит
-        // совпадает с угловым квадратом сетки, её стены продолжают стены
-        // лагеря, а открытые стороны смотрят внутрь двора.
+        BlockPos gatePos = worldFromLocal(center, radius, layoutRotation, radius, side, floorY);
         int watchtowerCenterLocalX = WATCHTOWER_FOOTPRINT / 2;
         int watchtowerCenterLocalZ = side - WATCHTOWER_FOOTPRINT / 2;
         BlockPos watchtowerPos = worldFromLocal(center, radius, layoutRotation,
                 watchtowerCenterLocalX, watchtowerCenterLocalZ, floorY);
-
-        // Ферма 9×9 — в дальнем от ворот углу двора, с отступом от стен.
-        // Локальный поворот на 180° разворачивает её вход во двор.
         BlockPos farmPos = worldFromLocal(center, radius, layoutRotation,
                 side - FARM_INSET_X, FARM_INSET_Z, floorY - 1);
-
-        // Радио-якорь — рядом с центром, но со сдвигом к локальному югу:
-        // в самом центре сходятся дорожки, и якорь перекрыл бы развязку.
         BlockPos radioPos = worldFromLocal(center, radius, layoutRotation,
                 radius, radius + RADIO_OFFSET_Z, floorY);
 
-        // Повороты шаблонов: сторона входа модуля должна смотреть туда же, куда
-        // смотрела её локальная цель после поворота сетки. Так поворот шаблона
-        // вычисляется той же функцией, что и раньше, но уже в мировых осях.
         Rotation watchtowerRotation = rotationForFacing(
                 layoutRotation.rotate(Direction.NORTH), WATCHTOWER_ENTRANCE);
         Rotation farmRotation = rotationForFacing(
                 layoutRotation.rotate(Direction.SOUTH), FARM_ENTRANCE);
 
-        return new Outcome(new Plan(requestPos, center, radius, floorY, medianY,
-                layoutRotation, watchtowerRotation, farmRotation, gatePos, watchtowerPos,
-                farmPos, radioPos, surfaceAirY, surfaceStates), null);
+        return new Plan(requestPos, center, radius, floorY, medianY, layoutRotation,
+                watchtowerRotation, farmRotation, gatePos, watchtowerPos, farmPos, radioPos,
+                surfaceAirY, surfaceStates);
+    }
+
+    /** Результат оценки одного центра. */
+    private static final class SiteCandidate {
+
+        private final Plan plan;
+        private final String refusal;
+        private final OrientationScore orientation;
+
+        private SiteCandidate(Plan plan, String refusal, OrientationScore orientation) {
+            this.plan = plan;
+            this.refusal = refusal;
+            this.orientation = orientation;
+        }
+
+        private static SiteCandidate accepted(Plan plan, OrientationScore orientation) {
+            return new SiteCandidate(plan, null, orientation);
+        }
+
+        private static SiteCandidate refused(String refusal) {
+            return new SiteCandidate(null, refusal, null);
+        }
+    }
+
+    /**
+     * Итоговая оценка допустимого центра.
+     *
+     * <p>Сравнение лексикографическое, без весов: сначала качество подхода к
+     * воротам, затем расстояние центра от запроса, затем координаты. Поэтому
+     * исходная точка выигрывает при равном рельефе, а выбор остаётся
+     * воспроизводимым.
+     */
+    private static final class SiteScore {
+
+        private final Plan plan;
+        private final OrientationScore orientation;
+        private final int distance;
+
+        private SiteScore(Plan plan, OrientationScore orientation) {
+            this.plan = plan;
+            this.orientation = orientation;
+            this.distance = squareDistance(plan.getCenter(), plan.getRequestPos());
+        }
+
+        private boolean isBetterThan(SiteScore other) {
+            if (this.orientation.isBetterThan(other.orientation)) {
+                return true;
+            }
+            if (other.orientation.isBetterThan(this.orientation)) {
+                return false;
+            }
+            if (this.distance != other.distance) {
+                return this.distance < other.distance;
+            }
+            BlockPos a = this.plan.getCenter();
+            BlockPos b = other.plan.getCenter();
+            if (a.getX() != b.getX()) {
+                return a.getX() < b.getX();
+            }
+            return a.getZ() < b.getZ();
+        }
     }
 
     /**
@@ -590,10 +767,10 @@ public final class CampSitePlanner {
      * @param center центр площадки
      * @param radius радиус лагеря
      * @param floorY выбранный ярус пола
-     * @return поворот локальной сетки для лучшей стороны
+     * @return оценка лучшей стороны (вместе с её поворотом)
      */
-    private static Rotation chooseOrientation(ServerLevel level, BlockPos center,
-                                              int radius, int floorY) {
+    private static OrientationScore chooseOrientation(ServerLevel level, BlockPos center,
+                                                      int radius, int floorY) {
         OrientationScore best = null;
         for (Direction facing : ORIENTATIONS) {
             OrientationScore candidate =
@@ -602,7 +779,7 @@ public final class CampSitePlanner {
                 best = candidate;
             }
         }
-        return best.rotation;
+        return best;
     }
 
     /**
