@@ -82,6 +82,42 @@ public final class CampSitePlanner {
     /** Маркер {@link #findGroundY}: грунта в колонке нет. */
     public static final int NO_GROUND = Integer.MIN_VALUE;
 
+    /**
+     * Ширина коридора подхода к воротам в блоках.
+     *
+     * <p>3 блока: клетка проёма и по одной соседней слева и справа. Одно
+     * значение для оценки ориентации и для правки рельефа — иначе оценка и
+     * генерация описывали бы разные коридоры.
+     */
+    public static final int APPROACH_WIDTH = 3;
+
+    /**
+     * Перепад, который игрок переступает без правки рельефа (в блоках).
+     *
+     * <p>Один блок — обычная ступенька. Клетка с большим перепадом требует
+     * среза или подсыпки, поэтому считается неудобной для подхода.
+     */
+    public static final int APPROACH_STEP_LIMIT = 1;
+
+    /** Отступ центра фермы от локального края по X (в клетках). */
+    private static final int FARM_INSET_X = 5;
+
+    /** Отступ центра фермы от локального края по Z (в клетках). */
+    private static final int FARM_INSET_Z = WATCHTOWER_FOOTPRINT;
+
+    /** Сдвиг радио-якоря от центра к локальному югу (в клетках). */
+    private static final int RADIO_OFFSET_Z = 2;
+
+    /**
+     * Порядок перебора ориентаций лагеря.
+     *
+     * <p>Первым идёт юг: на ровной площадке все стороны равноценны, и
+     * прежнее поведение (ворота на юге) сохраняется. Далее — по часовой
+     * стрелке, чтобы порядок был предсказуемым и не зависел от реализации.
+     */
+    private static final Direction[] ORIENTATIONS = {
+            Direction.SOUTH, Direction.WEST, Direction.NORTH, Direction.EAST};
+
     private CampSitePlanner() {
     }
 
@@ -96,8 +132,9 @@ public final class CampSitePlanner {
      * <p>Все позиции хранятся в мировых координатах, но рассчитаны в
      * <b>локальной сетке</b> периметра: клетки {@code 0..2*radius} по X и Z,
      * где {@code 0} — северо-западный угол, {@code 2*radius} — юго-восточный.
-     * Такая сетка позволяет описать планировку «опоры через 4 клетки» и
-     * «ворота в центре южной стены» независимо от исходной точки запроса.
+     * Планировка описана один раз для локального юга и переносится в мир
+     * поворотом {@link #getLayoutRotation()}, поэтому геометрия не зависит от
+     * того, куда в мире смотрят ворота.
      *
      * <p>Повороты модулей отдельные: у шаблонов разные стороны входа
      * (см. константы {@code *_ENTRANCE}), и общий угол разворота всех
@@ -110,6 +147,7 @@ public final class CampSitePlanner {
         private final int radius;
         private final int floorY;
         private final int medianY;
+        private final Rotation layoutRotation;
         private final Rotation watchtowerRotation;
         private final Rotation farmRotation;
         private final BlockPos gatePos;
@@ -120,14 +158,15 @@ public final class CampSitePlanner {
         private final BlockState[] surfaceStates;
 
         private Plan(BlockPos requestPos, BlockPos center, int radius, int floorY, int medianY,
-                     Rotation watchtowerRotation, Rotation farmRotation, BlockPos gatePos,
-                     BlockPos watchtowerPos, BlockPos farmPos, BlockPos radioPos,
+                     Rotation layoutRotation, Rotation watchtowerRotation, Rotation farmRotation,
+                     BlockPos gatePos, BlockPos watchtowerPos, BlockPos farmPos, BlockPos radioPos,
                      int[] surfaceAirY, BlockState[] surfaceStates) {
             this.requestPos = requestPos;
             this.center = center;
             this.radius = radius;
             this.floorY = floorY;
             this.medianY = medianY;
+            this.layoutRotation = layoutRotation;
             this.watchtowerRotation = watchtowerRotation;
             this.farmRotation = farmRotation;
             this.gatePos = gatePos;
@@ -167,14 +206,17 @@ public final class CampSitePlanner {
         /**
          * Перевести локальную клетку сетки в мировую точку.
          *
-         * @param localX клетка по X ({@code 0..2*radius}, {@code 0} — запад)
-         * @param localZ клетка по Z ({@code 0..2*radius}, {@code 0} — север)
+         * <p>Смещение от центра поворачивается на {@link #getLayoutRotation()},
+         * поэтому один и тот же расчёт планировки даёт ворота на любой из
+         * четырёх сторон.
+         *
+         * @param localX клетка по X ({@code 0..2*radius}, {@code 0} — локальный запад)
+         * @param localZ клетка по Z ({@code 0..2*radius}, {@code 0} — локальный север)
          * @param y      ярус в мире
          * @return мировая точка
          */
         public BlockPos localToWorld(int localX, int localZ, int y) {
-            return new BlockPos(this.center.getX() - this.radius + localX, y,
-                    this.center.getZ() - this.radius + localZ);
+            return worldFromLocal(this.center, this.radius, this.layoutRotation, localX, localZ, y);
         }
 
         /**
@@ -198,10 +240,73 @@ public final class CampSitePlanner {
         }
 
         /**
-         * Поворот вышки: вход шаблона смотрит на север, во двор.
+         * Поворот локальной сетки планировки.
          *
-         * <p>Вышка стоит в юго-западном углу периметра, поэтому её северная
-         * и восточная открытые стороны смотрят внутрь двора без поворота.
+         * <p>Локальный юг (сторона ворот) после поворота смотрит в
+         * {@link #getGateFacing()}. Один и тот же угол применяется к сетке,
+         * к поворотам шаблонов модулей и к осям панелей периметра.
+         */
+        public Rotation getLayoutRotation() {
+            return this.layoutRotation;
+        }
+
+        /** Мировое направление, в которое ворота смотрят наружу. */
+        public Direction getGateFacing() {
+            return this.layoutRotation.rotate(Direction.SOUTH);
+        }
+
+        /** Ось стены с воротами в мировых координатах. */
+        public Direction.Axis getGateWallAxis() {
+            return this.getGateFacing().getAxis() == Direction.Axis.Z
+                    ? Direction.Axis.X : Direction.Axis.Z;
+        }
+
+        /**
+         * Ось локальной сетки в мировых координатах.
+         *
+         * <p>Ось выводится из фактического поворота опорного направления:
+         * поворот на 90° меняет оси местами, на 180° оставляет их прежними.
+         * Нужен панелям и проволоке — их ось должна совпасть со стеной.
+         *
+         * @param localAxis ось в локальной сетке
+         * @return та же ось после поворота планировки
+         */
+        public Direction.Axis worldAxis(Direction.Axis localAxis) {
+            Direction anchor = localAxis == Direction.Axis.X ? Direction.EAST : Direction.SOUTH;
+            return this.layoutRotation.rotate(anchor).getAxis();
+        }
+
+        /** Локальная клетка створки ворот по X. */
+        public int getGateLocalX() {
+            return this.radius;
+        }
+
+        /** Локальная клетка радио-якоря по X. */
+        public int getRadioLocalX() {
+            return this.radius;
+        }
+
+        /** Локальная клетка радио-якоря по Z. */
+        public int getRadioLocalZ() {
+            return this.radius + RADIO_OFFSET_Z;
+        }
+
+        /** Локальная клетка центра фермы по X. */
+        public int getFarmLocalX() {
+            return this.radius * 2 - FARM_INSET_X;
+        }
+
+        /** Локальная клетка центра фермы по Z. */
+        public int getFarmLocalZ() {
+            return FARM_INSET_Z;
+        }
+
+        /**
+         * Поворот вышки: вход шаблона смотрит во двор.
+         *
+         * <p>Вышка стоит в локальном юго-западном углу периметра, поэтому при
+         * любом повороте планировки её северная и восточная открытые стороны
+         * остаются обращёнными внутрь двора.
          */
         public Rotation getWatchtowerRotation() {
             return this.watchtowerRotation;
@@ -244,7 +349,7 @@ public final class CampSitePlanner {
          * @return первый воздушный ярус над грунтом этой клетки
          */
         public int cellSurfaceY(int localX, int localZ) {
-            return this.surfaceAirY[indexOf(localX, localZ)];
+            return this.surfaceAirY[sampleIndex(localX, localZ)];
         }
 
         /**
@@ -259,12 +364,26 @@ public final class CampSitePlanner {
          * @return состояние поверхностного блока клетки
          */
         public BlockState cellSurfaceState(int localX, int localZ) {
-            return this.surfaceStates[indexOf(localX, localZ)];
+            return this.surfaceStates[sampleIndex(localX, localZ)];
         }
 
-        private int indexOf(int localX, int localZ) {
+        /**
+         * Индекс карты высот для локальной клетки планировки.
+         *
+         * <p>Карта снята в мировых осях ещё до выбора ориентации, поэтому
+         * локальное смещение клетки переводится в мировое тем же поворотом,
+         * что и {@link #localToWorld}. Без этого после поворота планировки
+         * высоты читались бы из чужих колонок.
+         *
+         * @param localX локальная клетка по X
+         * @param localZ локальная клетка по Z
+         * @return индекс в {@link #surfaceAirY} и {@link #surfaceStates}
+         */
+        private int sampleIndex(int localX, int localZ) {
+            BlockPos world = localToWorld(localX, localZ, 0);
             int cells = getSide();
-            return localX * cells + localZ;
+            return (world.getX() - this.center.getX() + this.radius) * cells
+                    + (world.getZ() - this.center.getZ() + this.radius);
         }
     }
 
@@ -299,9 +418,10 @@ public final class CampSitePlanner {
     /**
      * Проверить участок и построить план.
      *
-     * <p>Кандидат один: центр площадки прежний, а ярус пола выбирается по
-     * медиане высот. Исходная точка запроса задаёт только центр и колонку
-     * установленного радио, которое нужно исключить из съёма рельефа.
+     * <p>Кандидат один: центр площадки прежний, ярус пола выбирается по
+     * медиане высот, а из четырёх сторон ворот берётся та, где подход удобнее
+     * по фактическому рельефу. Исходная точка запроса задаёт только центр и
+     * колонку установленного радио, которое нужно исключить из съёма рельефа.
      *
      * @param level      серверный уровень
      * @param requestPos исходная точка запроса (где игрок поставил радио)
@@ -381,52 +501,215 @@ public final class CampSitePlanner {
                     + " (медианный уровень участка " + medianY + ")");
         }
 
+        // === Ориентация ===
+        // Центр, радиус и floorY уже выбраны, поэтому четыре варианта
+        // отличаются только стороной ворот. Оценка читает натуральный рельеф
+        // перед воротами и ничего не меняет в мире.
+        Rotation layoutRotation = chooseOrientation(level, center, radius, floorY);
+
         // === Локальная сетка ===
         // Планировка описана в клетках 0..2*radius: (0,0) — северо-запад,
-        // (2*radius, 2*radius) — юго-восток. Ворота и вход — на южной стене
-        // (localZ == 2*radius), поэтому направление «на юг» в мировой системе
-        // совпадает с положительным Z при любом положении центра.
+        // (2*radius, 2*radius) — юго-восток. Ворота и вход — на локальной
+        // южной стене, а в мир сетка переносится поворотом layoutRotation.
         int side = radius * 2;
 
-        // Ворота: одна створка ровно в центре южной стены (клетка 10).
-        // Соседние клетки пролёта (9 и 11) — глухие панели: они дают двери
-        // раму и симметричную обшивку с обеих сторон, поэтому проём не
-        // расползается на весь пролёт между опорами 8 и 12.
-        BlockPos gatePos = new BlockPos(center.getX(), floorY, center.getZ() + half);
+        // Ворота: одна створка ровно в центре стены ворот. Соседние клетки
+        // пролёта — глухие панели: они дают двери раму и симметричную обшивку.
+        BlockPos gatePos = worldFromLocal(center, radius, layoutRotation,
+                radius, side, floorY);
 
-        // Вышка 5×5 стоит в юго-западном углу периметра: её габарит точно
-        // совпадает с угловым квадратом сетки (local 0..4 × 16..20), поэтому
-        // стены вышки продолжают стены лагеря, а северная и восточная
-        // открытые стороны смотрят внутрь двора.
+        // Вышка 5×5 стоит в локальном юго-западном углу периметра: её габарит
+        // совпадает с угловым квадратом сетки, её стены продолжают стены
+        // лагеря, а открытые стороны смотрят внутрь двора.
         int watchtowerCenterLocalX = WATCHTOWER_FOOTPRINT / 2;
         int watchtowerCenterLocalZ = side - WATCHTOWER_FOOTPRINT / 2;
-        BlockPos watchtowerPos = new BlockPos(
-                center.getX() - radius + watchtowerCenterLocalX, floorY,
-                center.getZ() - radius + watchtowerCenterLocalZ);
+        BlockPos watchtowerPos = worldFromLocal(center, radius, layoutRotation,
+                watchtowerCenterLocalX, watchtowerCenterLocalZ, floorY);
 
-        // Ферма 9×9 — в дальнем от ворот углу двора (северо-восток), с
-        // отступом в 1 блок от стен: local X 11..19, Z 1..9. Вход фермы
-        // (север шаблона) при повороте на 180° смотрит на юг — на центральную
-        // дорожку, ведущую от ворот, и не упирается в забор.
-        int farmCenterLocalX = side - 5;
-        int farmCenterLocalZ = WATCHTOWER_FOOTPRINT;
-        BlockPos farmPos = new BlockPos(
-                center.getX() - radius + farmCenterLocalX, floorY - 1,
-                center.getZ() - radius + farmCenterLocalZ);
+        // Ферма 9×9 — в дальнем от ворот углу двора, с отступом от стен.
+        // Локальный поворот на 180° разворачивает её вход во двор.
+        BlockPos farmPos = worldFromLocal(center, radius, layoutRotation,
+                side - FARM_INSET_X, FARM_INSET_Z, floorY - 1);
 
-        // Радио-якорь — рядом с центром, но со сдвигом на 2 клетки к югу:
+        // Радио-якорь — рядом с центром, но со сдвигом к локальному югу:
         // в самом центре сходятся дорожки, и якорь перекрыл бы развязку.
-        // Позиция рассчитана отдельно и может отличаться от центра и floorY.
-        BlockPos radioPos = new BlockPos(center.getX(), floorY, center.getZ() + 2);
+        BlockPos radioPos = worldFromLocal(center, radius, layoutRotation,
+                radius, radius + RADIO_OFFSET_Z, floorY);
 
-        // Повороты: вышка стоит без поворота (её север/восток уже смотрят во
-        // двор), ферму разворачиваем так, чтобы её северный вход смотрел на юг.
-        Rotation watchtowerRotation = rotationForFacing(Direction.NORTH, WATCHTOWER_ENTRANCE);
-        Rotation farmRotation = rotationForFacing(Direction.SOUTH, FARM_ENTRANCE);
+        // Повороты шаблонов: сторона входа модуля должна смотреть туда же, куда
+        // смотрела её локальная цель после поворота сетки. Так поворот шаблона
+        // вычисляется той же функцией, что и раньше, но уже в мировых осях.
+        Rotation watchtowerRotation = rotationForFacing(
+                layoutRotation.rotate(Direction.NORTH), WATCHTOWER_ENTRANCE);
+        Rotation farmRotation = rotationForFacing(
+                layoutRotation.rotate(Direction.SOUTH), FARM_ENTRANCE);
 
         return new Outcome(new Plan(requestPos, center, radius, floorY, medianY,
-                watchtowerRotation, farmRotation, gatePos, watchtowerPos, farmPos, radioPos,
-                surfaceAirY, surfaceStates), null);
+                layoutRotation, watchtowerRotation, farmRotation, gatePos, watchtowerPos,
+                farmPos, radioPos, surfaceAirY, surfaceStates), null);
+    }
+
+    /**
+     * Перевести локальную клетку планировки в мировую точку.
+     *
+     * <p>Локальное смещение от центра поворачивается на {@code rotation}.
+     * Направления берутся у {@link Rotation#rotate(Direction)}, поэтому
+     * планировщик использует ровно тот же поворот, что и вставка шаблонов.
+     *
+     * @param center   центр площадки
+     * @param radius   радиус лагеря
+     * @param rotation поворот локальной сетки
+     * @param localX   локальная клетка по X
+     * @param localZ   локальная клетка по Z
+     * @param y        ярус в мире
+     * @return мировая точка
+     */
+    private static BlockPos worldFromLocal(BlockPos center, int radius, Rotation rotation,
+                                           int localX, int localZ, int y) {
+        int worldX = center.getX();
+        int worldZ = center.getZ();
+        int dx = localX - radius;
+        if (dx != 0) {
+            Direction step = rotation.rotate(dx > 0 ? Direction.EAST : Direction.WEST);
+            worldX += step.getStepX() * Math.abs(dx);
+            worldZ += step.getStepZ() * Math.abs(dx);
+        }
+        int dz = localZ - radius;
+        if (dz != 0) {
+            Direction step = rotation.rotate(dz > 0 ? Direction.SOUTH : Direction.NORTH);
+            worldX += step.getStepX() * Math.abs(dz);
+            worldZ += step.getStepZ() * Math.abs(dz);
+        }
+        return new BlockPos(worldX, y, worldZ);
+    }
+
+    /**
+     * Выбрать сторону ворот по удобству подхода.
+     *
+     * @param level  серверный уровень
+     * @param center центр площадки
+     * @param radius радиус лагеря
+     * @param floorY выбранный ярус пола
+     * @return поворот локальной сетки для лучшей стороны
+     */
+    private static Rotation chooseOrientation(ServerLevel level, BlockPos center,
+                                              int radius, int floorY) {
+        OrientationScore best = null;
+        for (Direction facing : ORIENTATIONS) {
+            OrientationScore candidate =
+                    evaluateOrientation(level, center, radius, floorY, facing);
+            if (best == null || candidate.isBetterThan(best)) {
+                best = candidate;
+            }
+        }
+        return best.rotation;
+    }
+
+    /**
+     * Оценить подход к воротам для одной стороны.
+     *
+     * <p>Оценка повторяет правила генератора, но ничего не меняет в мире:
+     * коридор шириной {@link #APPROACH_WIDTH} идёт от стены наружу на
+     * {@link CampTuning#CAMP_CLEAR_MARGIN} клеток, поверхность ведётся от
+     * уровня двора с шагом не более {@link #APPROACH_STEP_LIMIT}, верхняя
+     * граница — уровень поверхности двора.
+     *
+     * <p>Считаются три величины: клетки без подхода (жидкость или пустота),
+     * суммарный объём правок рельефа и суммарное отклонение натурального
+     * грунта от уровня двора. Все клетки коридора равноценны: отдельные веса
+     * не вводятся, а клетка с жидкостью исключает сторону из первого
+     * приоритета.
+     *
+     * @param level  серверный уровень
+     * @param center центр площадки
+     * @param radius радиус лагеря
+     * @param floorY выбранный ярус пола
+     * @param facing сторона ворот (наружу)
+     * @return оценка стороны
+     */
+    private static OrientationScore evaluateOrientation(ServerLevel level, BlockPos center,
+                                                        int radius, int floorY, Direction facing) {
+        int halfWidth = APPROACH_WIDTH / 2;
+        int margin = CampTuning.CAMP_CLEAR_MARGIN;
+        int courtyardY = floorY - 1;
+        Direction lateral = facing.getClockWise();
+        int[] previous = new int[halfWidth * 2 + 1];
+        Arrays.fill(previous, courtyardY);
+
+        int blocked = 0;
+        int rework = 0;
+        int deviation = 0;
+
+        for (int step = 1; step <= margin; step++) {
+            for (int offset = -halfWidth; offset <= halfWidth; offset++) {
+                int distance = radius + step;
+                int x = center.getX() + facing.getStepX() * distance
+                        + lateral.getStepX() * offset;
+                int z = center.getZ() + facing.getStepZ() * distance
+                        + lateral.getStepZ() * offset;
+                int groundY = findGroundY(level, x, z);
+                if (groundY == FLUID_FOUND || groundY == NO_GROUND) {
+                    // Подхода здесь нет: подсыпка жидкость не заменяет, а
+                    // опорой для следующей строки остаётся прежний уровень.
+                    blocked++;
+                    continue;
+                }
+                int index = offset + halfWidth;
+                deviation += Math.abs(groundY - courtyardY);
+                int maxY = Math.min(previous[index] + APPROACH_STEP_LIMIT, courtyardY);
+                int minY = previous[index] - APPROACH_STEP_LIMIT;
+                int result;
+                if (groundY > maxY) {
+                    result = maxY;
+                } else if (groundY < minY) {
+                    result = minY;
+                } else {
+                    result = groundY;
+                }
+                rework += Math.abs(groundY - result);
+                previous[index] = result;
+            }
+        }
+
+        return new OrientationScore(rotationForFacing(facing, Direction.SOUTH),
+                blocked, rework, deviation);
+    }
+
+    /**
+     * Оценка одной ориентации лагеря.
+     *
+     * <p>Сравнение лексикографическое, без весов: сначала отсутствие
+     * непроходимых клеток, затем объём правок рельефа, затем отклонение
+     * натурального грунта. Полное совпадение решает порядок
+     * {@link #ORIENTATIONS} — юг остаётся предпочтительным, как и раньше.
+     */
+    private static final class OrientationScore {
+
+        private final Rotation rotation;
+        private final int blockedCells;
+        private final int reworkBlocks;
+        private final int terrainDeviation;
+
+        private OrientationScore(Rotation rotation, int blockedCells, int reworkBlocks,
+                                 int terrainDeviation) {
+            this.rotation = rotation;
+            this.blockedCells = blockedCells;
+            this.reworkBlocks = reworkBlocks;
+            this.terrainDeviation = terrainDeviation;
+        }
+
+        private boolean isBetterThan(OrientationScore other) {
+            if ((this.blockedCells == 0) != (other.blockedCells == 0)) {
+                return this.blockedCells == 0;
+            }
+            if (this.blockedCells != other.blockedCells) {
+                return this.blockedCells < other.blockedCells;
+            }
+            if (this.reworkBlocks != other.reworkBlocks) {
+                return this.reworkBlocks < other.reworkBlocks;
+            }
+            return this.terrainDeviation < other.terrainDeviation;
+        }
     }
 
     /**
