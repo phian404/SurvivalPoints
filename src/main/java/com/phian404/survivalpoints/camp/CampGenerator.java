@@ -193,15 +193,17 @@ public class CampGenerator {
      * крона соседнего дерева может накрыть площадку, не касаясь её стволом,
      * и такое дерево остаётся.
      *
-     * <p>Колонка якоря не трогается: блок {@code camp_radio} и его координаты
-     * в {@link CampRecord} должны остаться неизменными, иначе распад лагеря
-     * при сносе якоря перестанет работать.
+     * <p>В колонке рассчитанного радио-якоря грунт готовится под выбранный
+     * ярус, а сам блок ставится позже в {@link #placeRadio}. Исходный блок с
+     * BlockEntity находится в {@code requestPos} и может стоять на другом
+     * ярусе; его колонка исключена из предпроверки. После создания записи с
+     * новым якорем исходный блок удаляется, не распуская лагерь.
      *
-     * @param level  серверный уровень
-     * @param plan   план застройки
-     * @param anchor точка якоря (её колонка исключается)
+     * @param level серверный уровень
+     * @param plan  план застройки
      */
-    public static void prepareTerrain(ServerLevel level, CampSitePlanner.Plan plan, BlockPos anchor) {
+    public static void prepareTerrain(ServerLevel level, CampSitePlanner.Plan plan) {
+        BlockPos radio = plan.getRadioPos();
         int floorY = plan.getFloorY();
         int side = plan.getSide();
         int clearTop = floorY + CampTuning.CAMP_CLEAR_HEADROOM;
@@ -209,7 +211,7 @@ public class CampGenerator {
         // Деревья — до любого выравнивания: см. javadoc метода. Решение
         // используется всей остальной подготовкой: снесённые блоки уже
         // удалены, а сохранённые деревья нельзя задевать очисткой.
-        TreeDecision trees = removeObstructingTrees(level, plan, anchor);
+        TreeDecision trees = removeObstructingTrees(level, plan, radio);
 
         for (int lx = 0; lx < side; lx++) {
             for (int lz = 0; lz < side; lz++) {
@@ -217,12 +219,12 @@ public class CampGenerator {
                 int surfaceY = plan.cellSurfaceY(lx, lz);
                 int groundY = surfaceY - 1;
 
-                if (column.getX() == anchor.getX() && column.getZ() == anchor.getZ()) {
-                    // Колонка якоря: сам блок camp_radio на floorY и его
-                    // BlockEntity остаются нетронутыми, расчистка и срез здесь
-                    // не выполняются. Выравнивается только грунт под якорем —
-                    // иначе на месте закреплённого якоря остался бы провал.
-                    fillUnderAnchor(level, column.getX(), column.getZ(), groundY, floorY);
+                if (column.getX() == radio.getX() && column.getZ() == radio.getZ()) {
+                    // Колонка будущего радио: на floorY блока ещё нет,
+                    // поэтому грунт готовится целиком под новым ярусом.
+                    // Поверхность берётся из карты плана (трава, песок), а не
+                    // заменяется на траву. Сам якорь ставится после записи.
+                    prepareFutureRadioColumn(level, plan, lx, lz, groundY, floorY);
                     continue;
                 }
 
@@ -268,7 +270,7 @@ public class CampGenerator {
             }
         }
 
-        prepareEdges(level, plan, anchor, trees);
+        prepareEdges(level, plan, radio, trees);
     }
 
     /**
@@ -291,11 +293,11 @@ public class CampGenerator {
      *
      * @param level  серверный уровень
      * @param plan   план застройки
-     * @param anchor точка якоря (её колонка не трогается)
+     * @param radio  рассчитанная точка якоря (её колонка не трогается)
      * @return решение по деревьям: что снесено и что сохраняется
      */
     private static TreeDecision removeObstructingTrees(ServerLevel level, CampSitePlanner.Plan plan,
-                                                       BlockPos anchor) {
+                                                       BlockPos radio) {
         TreeDecision decision = new TreeDecision();
         Set<BlockPos> zoneLogs = new HashSet<>();
         collectZoneLogs(level, plan, zoneLogs);
@@ -324,10 +326,10 @@ public class CampGenerator {
             }
             decision.remove(tree);
             for (BlockPos pos : tree.trunk) {
-                clearTreeBlock(level, pos, anchor);
+                clearTreeBlock(level, pos, radio);
             }
             for (BlockPos pos : tree.canopy) {
-                clearTreeBlock(level, pos, anchor);
+                clearTreeBlock(level, pos, radio);
             }
         }
         // Стволы уже снесены, поэтому листва без единого бревна рядом не
@@ -339,7 +341,7 @@ public class CampGenerator {
             if (hasLogNear(level, pos)) {
                 continue;
             }
-            clearTreeBlock(level, pos, anchor);
+            clearTreeBlock(level, pos, radio);
         }
         return decision;
     }
@@ -740,10 +742,10 @@ public class CampGenerator {
      *
      * @param level  серверный уровень
      * @param pos    координата блока
-     * @param anchor точка якоря
+     * @param radio  рассчитанная точка якоря
      */
-    private static void clearTreeBlock(ServerLevel level, BlockPos pos, BlockPos anchor) {
-        if (pos.getX() == anchor.getX() && pos.getZ() == anchor.getZ()) {
+    private static void clearTreeBlock(ServerLevel level, BlockPos pos, BlockPos radio) {
+        if (pos.getX() == radio.getX() && pos.getZ() == radio.getZ()) {
             return;
         }
         if (level.getBlockEntity(pos) != null) {
@@ -757,21 +759,25 @@ public class CampGenerator {
     }
 
     /**
-     * Выровнять грунт под блоком якоря до уровня двора.
+     * Подготовить грунт в колонке будущего радио-якоря.
      *
-     * <p>Якорь закреплён на {@code floorY}, поэтому трогать сам блок и всё
-     * выше нельзя: {@code camp_radio} стоит на верхней грани грунта, и срез
-     * оставил бы его висеть в воздухе. Подсыпается только пустота ниже
-     * {@code floorY - 1}: при нормальной установке грунт под якорем уже на
-     * этом ярусе, и метод ничего не делает.
+     * <p>При переносе на другой ярус исходного блока в этой колонке ещё нет:
+     * он стоит в {@code requestPos}. Высотный перепад не превышает
+     * {@link CampTuning#CAMP_MAX_HEIGHT_DELTA}, поэтому грунт ниже якоря
+     * выравнивается подсыпкой; поверхность восстанавливается из карты плана.
      *
-     * @param level  серверный уровень
-     * @param x      координата
-     * @param z      координата
-     * @param groundY реальный ярус грунта под якорем
-     * @param floorY ярус пола двора (он же ярус блока якоря)
+     * @param level   серверный уровень
+     * @param plan    план застройки
+     * @param lx      локальная клетка по X
+     * @param lz      локальная клетка по Z
+     * @param groundY реальный ярус грунта в колонке
+     * @param floorY  выбранный ярус пола двора
      */
-    private static void fillUnderAnchor(ServerLevel level, int x, int z, int groundY, int floorY) {
+    private static void prepareFutureRadioColumn(ServerLevel level, CampSitePlanner.Plan plan,
+                                                 int lx, int lz, int groundY, int floorY) {
+        BlockPos column = plan.localToWorld(lx, lz, floorY);
+        int x = column.getX();
+        int z = column.getZ();
         for (int y = groundY + 1; y <= floorY - 2; y++) {
             BlockPos pos = new BlockPos(x, y, z);
             if (!isReplaceableSoft(level.getBlockState(pos))) {
@@ -780,9 +786,10 @@ public class CampGenerator {
             level.setBlock(pos, Blocks.DIRT.defaultBlockState(), Block.UPDATE_CLIENTS);
         }
         BlockPos surface = new BlockPos(x, floorY - 1, z);
-        if (isReplaceableSoft(level.getBlockState(surface))) {
-            level.setBlock(surface, Blocks.GRASS_BLOCK.defaultBlockState(),
-                    Block.UPDATE_CLIENTS);
+        BlockState surfaceState = plan.cellSurfaceState(lx, lz);
+        if (surfaceState != null && !surfaceState.isAir()
+                && isReplaceableSoft(level.getBlockState(surface))) {
+            level.setBlock(surface, surfaceState, Block.UPDATE_CLIENTS);
         }
     }
 
@@ -810,9 +817,9 @@ public class CampGenerator {
      *
      * @param level  серверный уровень
      * @param plan   план
-     * @param anchor точка якоря (её колонка исключается)
+     * @param radio  рассчитанная точка якоря (её колонка исключается)
      */
-    private static void prepareEdges(ServerLevel level, CampSitePlanner.Plan plan, BlockPos anchor,
+    private static void prepareEdges(ServerLevel level, CampSitePlanner.Plan plan, BlockPos radio,
                                      TreeDecision trees) {
         int floorY = plan.getFloorY();
         int margin = CampTuning.CAMP_CLEAR_MARGIN;
@@ -832,13 +839,13 @@ public class CampGenerator {
             int ringMaxZ = plan.getCenter().getZ() + half + step;
 
             blendRing(level, plan, floorY, step, margin, ringMinX, ringMaxX,
-                    ringMinZ, ringMaxZ, gate, halfWidth, anchor);
+                    ringMinZ, ringMaxZ, gate, halfWidth, radio);
         }
 
         // Подход к воротам: поверхность ведётся от порога двора наружу с
         // перепадом не более блока на клетку. Высокие выступы срезаются,
         // провалы подсыпаются ровно настолько, чтобы шаг остался проходимым.
-        prepareApproachCorridor(level, gate, floorY, halfWidth, margin, anchor, trees);
+        prepareApproachCorridor(level, gate, floorY, halfWidth, margin, radio, trees);
     }
 
     /**
@@ -860,11 +867,11 @@ public class CampGenerator {
      * @param floorY    уровень пола двора
      * @param halfWidth половина ширины коридора
      * @param margin    глубина коридора в клетках
-     * @param anchor    точка якоря (её колонка исключается)
+     * @param radio     рассчитанная точка якоря (её колонка исключается)
      * @param trees     решение по деревьям
      */
     private static void prepareApproachCorridor(ServerLevel level, BlockPos gate, int floorY,
-                                                int halfWidth, int margin, BlockPos anchor,
+                                                int halfWidth, int margin, BlockPos radio,
                                                 TreeDecision trees) {
         int courtyardY = floorY - 1;
         int[] previous = new int[halfWidth * 2 + 1];
@@ -873,7 +880,7 @@ public class CampGenerator {
             int z = gate.getZ() + step;
             for (int dx = -halfWidth; dx <= halfWidth; dx++) {
                 int x = gate.getX() + dx;
-                if (x == anchor.getX() && z == anchor.getZ()) {
+                if (x == radio.getX() && z == radio.getZ()) {
                     continue;
                 }
                 int index = dx + halfWidth;
@@ -999,12 +1006,12 @@ public class CampGenerator {
      * @param maxZ   максимальная координата рамки
      * @param gate   центральная клетка ворот
      * @param halfWidth половина ширины коридора подхода
-     * @param anchor точка якоря (её колонка исключается)
+     * @param radio  рассчитанная точка якоря (её колонка исключается)
      */
     private static void blendRing(ServerLevel level, CampSitePlanner.Plan plan, int floorY,
                                   int step, int margin, int minX, int maxX,
                                   int minZ, int maxZ, BlockPos gate, int halfWidth,
-                                  BlockPos anchor) {
+                                  BlockPos radio) {
         // Уровень грунта двора. Блок поверхности лежит на floorY - 1, и все
         // дальнейшие сравнения ведутся именно в этих координатах.
         int courtyardY = floorY - 1;
@@ -1022,7 +1029,7 @@ public class CampGenerator {
                 if (!onRing) {
                     continue;
                 }
-                if (x == anchor.getX() && z == anchor.getZ()) {
+                if (x == radio.getX() && z == radio.getZ()) {
                     continue;
                 }
                 if (isGateAccessCell(gate, halfWidth, margin, x, z)) {
@@ -1329,6 +1336,8 @@ public class CampGenerator {
      * @param record лагерь, уже добавленный в {@link CampSavedData}
      */
     public static void generate(ServerLevel level, CampSitePlanner.Plan plan, CampRecord record) {
+        record.setAnchor(plan.getRadioPos());
+        record.setCenter(plan.getCenter());
         record.setGatePos(plan.getGatePos());
 
         generatePerimeter(level, plan);
@@ -1381,10 +1390,18 @@ public class CampGenerator {
      */
     private static void placeRadio(ServerLevel level, CampSitePlanner.Plan plan, CampRecord record) {
         BlockPos radio = plan.getRadioPos();
+        BlockPos requestPos = plan.getRequestPos();
+        boolean movedRadio = !radio.equals(requestPos);
         level.setBlock(radio, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
         level.setBlock(radio, ModBlocks.CAMP_RADIO.get().defaultBlockState(), Block.UPDATE_ALL);
         if (level.getBlockEntity(radio) instanceof CampRadioBlockEntity radioBe) {
             radioBe.setCampId(record.getId());
+        }
+        if (movedRadio) {
+            // Запись уже хранит radioPos, в том числе его выбранный floorY.
+            // Поэтому onRemove исходного блока не найдёт запись по requestPos
+            // и не распустит лагерь во время переноса.
+            level.setBlock(requestPos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
         }
     }
 

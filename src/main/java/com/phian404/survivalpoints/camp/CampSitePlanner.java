@@ -88,11 +88,16 @@ public final class CampSitePlanner {
     /**
      * План застройки лагеря.
      *
+     * <p>{@link #getRequestPos()} — исходная точка запроса, а центр площадки,
+     * ярус пола и позиция радио-якоря — независимые результаты планирования.
+     * Кандидат один: центр прежний, а пол выбран по медиане высот площадки.
+     * Генератор не должен выводить геометрию или высоту из точки запроса.
+     *
      * <p>Все позиции хранятся в мировых координатах, но рассчитаны в
      * <b>локальной сетке</b> периметра: клетки {@code 0..2*radius} по X и Z,
      * где {@code 0} — северо-западный угол, {@code 2*radius} — юго-восточный.
      * Такая сетка позволяет описать планировку «опоры через 4 клетки» и
-     * «ворота в центре южной стены» независимо от того, где стоит якорь.
+     * «ворота в центре южной стены» независимо от исходной точки запроса.
      *
      * <p>Повороты модулей отдельные: у шаблонов разные стороны входа
      * (см. константы {@code *_ENTRANCE}), и общий угол разворота всех
@@ -100,6 +105,7 @@ public final class CampSitePlanner {
      */
     public static final class Plan {
 
+        private final BlockPos requestPos;
         private final BlockPos center;
         private final int radius;
         private final int floorY;
@@ -113,10 +119,11 @@ public final class CampSitePlanner {
         private final int[] surfaceAirY;
         private final BlockState[] surfaceStates;
 
-        private Plan(BlockPos center, int radius, int floorY, int medianY,
+        private Plan(BlockPos requestPos, BlockPos center, int radius, int floorY, int medianY,
                      Rotation watchtowerRotation, Rotation farmRotation, BlockPos gatePos,
                      BlockPos watchtowerPos, BlockPos farmPos, BlockPos radioPos,
                      int[] surfaceAirY, BlockState[] surfaceStates) {
+            this.requestPos = requestPos;
             this.center = center;
             this.radius = radius;
             this.floorY = floorY;
@@ -129,6 +136,11 @@ public final class CampSitePlanner {
             this.radioPos = radioPos;
             this.surfaceAirY = surfaceAirY;
             this.surfaceStates = surfaceStates;
+        }
+
+        /** Исходная точка запроса; не является центром площадки или якорем. */
+        public BlockPos getRequestPos() {
+            return this.requestPos;
         }
 
         /**
@@ -165,18 +177,21 @@ public final class CampSitePlanner {
                     this.center.getZ() - this.radius + localZ);
         }
 
-        /** Ярус пола двора: на нём стоят посты, секции и модули. */
+        /**
+         * Ярус пола двора: первый воздушный блок над поверхностью.
+         * На нём стоят посты, секции и модули.
+         */
         public int getFloorY() {
             return this.floorY;
         }
 
         /**
-         * Медиана высот клеток — статистический ориентир рельефа.
+         * Медиана высот клеток — выбранный ярус пола лагеря.
          *
-         * <p>Не равен {@link #getFloorY()}: пол задаётся ярусом якоря, потому
-         * что закреплённый блок радио обязан совпасть с плоскостью двора.
-         * Медиана показывает средний уровень участка и используется только в
-         * сообщениях об отказе.
+         * <p>Значения карты — первые воздушные блоки над грунтом, поэтому
+         * медиана уже использует конвенцию {@code floorY} и не требует
+         * дополнительного смещения. Она равна {@link #getFloorY()}; оба поля
+         * сохранены для статистики и последующих этапов оценки.
          */
         public int getMedianY() {
             return this.medianY;
@@ -284,20 +299,28 @@ public final class CampSitePlanner {
     /**
      * Проверить участок и построить план.
      *
-     * @param level  серверный уровень
-     * @param anchor точка, где игрок поставил якорь (радио-вышку)
-     * @param radius радиус лагеря
+     * <p>Кандидат один: центр площадки прежний, а ярус пола выбирается по
+     * медиане высот. Исходная точка запроса задаёт только центр и колонку
+     * установленного радио, которое нужно исключить из съёма рельефа.
+     *
+     * @param level      серверный уровень
+     * @param requestPos исходная точка запроса (где игрок поставил радио)
+     * @param radius     радиус лагеря
      * @return план или причина отказа
      */
-    public static Outcome plan(ServerLevel level, BlockPos anchor, int radius) {
+    public static Outcome plan(ServerLevel level, BlockPos requestPos, int radius) {
+        // Единственный кандидат: прежняя площадка вокруг запроса. Её Y не
+        // задаёт пол — тот выбирается после съёма высот по медиане.
+        BlockPos center = requestPos;
+
         // Периметр занимает клетки 0..2*radius: сторона 2*radius+1 блок.
         int half = radius;
-        int minX = anchor.getX() - half;
-        int maxX = anchor.getX() + half;
-        int minZ = anchor.getZ() - half;
-        int maxZ = anchor.getZ() + half;
+        int minX = center.getX() - half;
+        int maxX = center.getX() + half;
+        int minZ = center.getZ() - half;
+        int maxZ = center.getZ() + half;
 
-        String conflict = findCampConflict(level, anchor, radius);
+        String conflict = findCampConflict(level, center, radius);
         if (conflict != null) {
             return new Outcome(null, conflict);
         }
@@ -319,12 +342,13 @@ public final class CampSitePlanner {
             for (int lz = 0; lz < cells; lz++) {
                 int x = minX + lx;
                 int z = minZ + lz;
-                // В колонке якоря блок camp_radio не является грунтом: его
-                // нужно пропустить, иначе поверхностью считался бы сам якорь,
-                // а настоящий грунт под ним остался бы неучтённым.
-                boolean isAnchorColumn = x == anchor.getX() && z == anchor.getZ();
-                int groundY = isAnchorColumn
-                        ? findGroundY(level, x, z, anchor.getY())
+                // В колонке исходного радио блок camp_radio не является
+                // грунтом: его нужно пропустить, иначе поверхностью считался
+                // бы сам якорь, а настоящий грунт под ним остался бы неучтённым.
+                // Пропускается именно запрос, а не рассчитываемая позиция якоря.
+                boolean isRequestColumn = x == requestPos.getX() && z == requestPos.getZ();
+                int groundY = isRequestColumn
+                        ? findGroundY(level, x, z, requestPos.getY())
                         : findGroundY(level, x, z);
                 if (groundY == FLUID_FOUND) {
                     return new Outcome(null, "Вода или лава на площадке у " + x + "," + z);
@@ -339,18 +363,12 @@ public final class CampSitePlanner {
             }
         }
 
-        // Пол двора — ярус самого якоря. Якорь закреплён: его блок и
-        // BlockEntity остаются на исходных координатах, поэтому плоскость
-        // двора обязана совпасть с ним. Иначе колонка якоря либо выступала бы
-        // над выровненной площадкой, либо давала провал, либо подсыпка
-        // закопала бы радио.
-        int floorY = anchor.getY();
-
-        // Медиана остаётся статистическим ориентиром рельефа: она показывает
-        // средний уровень участка и используется в сообщениях об отказе.
+        // Карта хранит первый воздушный блок над грунтом. Её медиана — уже
+        // ярус floorY, поэтому дополнительное +/-1 здесь не применяется.
         int medianY = median(stats, statsCount);
+        int floorY = medianY;
 
-        // Перепад проверяется как максимальное отклонение клетки от якоря:
+        // Перепад проверяется как максимальное отклонение клетки от пола:
         // выравнивание подсыпает низины и срезает бугры относительно floorY,
         // поэтому допустимо ровно CAMP_MAX_HEIGHT_DELTA в обе стороны.
         int maxDeviation = 0;
@@ -358,23 +376,23 @@ public final class CampSitePlanner {
             maxDeviation = Math.max(maxDeviation, Math.abs(stats[i] - floorY));
         }
         if (maxDeviation > CampTuning.CAMP_MAX_HEIGHT_DELTA) {
-            return new Outcome(null, "Слишком неровная площадка: отклонение от якоря "
+            return new Outcome(null, "Слишком неровная площадка: отклонение от пола "
                     + maxDeviation + " блоков, допустимо " + CampTuning.CAMP_MAX_HEIGHT_DELTA
-                    + " (средний уровень участка " + medianY + ")");
+                    + " (медианный уровень участка " + medianY + ")");
         }
 
         // === Локальная сетка ===
         // Планировка описана в клетках 0..2*radius: (0,0) — северо-запад,
         // (2*radius, 2*radius) — юго-восток. Ворота и вход — на южной стене
         // (localZ == 2*radius), поэтому направление «на юг» в мировой системе
-        // совпадает с положительным Z при любом положении якоря.
+        // совпадает с положительным Z при любом положении центра.
         int side = radius * 2;
 
         // Ворота: одна створка ровно в центре южной стены (клетка 10).
         // Соседние клетки пролёта (9 и 11) — глухие панели: они дают двери
         // раму и симметричную обшивку с обеих сторон, поэтому проём не
         // расползается на весь пролёт между опорами 8 и 12.
-        BlockPos gatePos = new BlockPos(anchor.getX(), floorY, anchor.getZ() + half);
+        BlockPos gatePos = new BlockPos(center.getX(), floorY, center.getZ() + half);
 
         // Вышка 5×5 стоит в юго-западном углу периметра: её габарит точно
         // совпадает с угловым квадратом сетки (local 0..4 × 16..20), поэтому
@@ -383,8 +401,8 @@ public final class CampSitePlanner {
         int watchtowerCenterLocalX = WATCHTOWER_FOOTPRINT / 2;
         int watchtowerCenterLocalZ = side - WATCHTOWER_FOOTPRINT / 2;
         BlockPos watchtowerPos = new BlockPos(
-                anchor.getX() - radius + watchtowerCenterLocalX, floorY,
-                anchor.getZ() - radius + watchtowerCenterLocalZ);
+                center.getX() - radius + watchtowerCenterLocalX, floorY,
+                center.getZ() - radius + watchtowerCenterLocalZ);
 
         // Ферма 9×9 — в дальнем от ворот углу двора (северо-восток), с
         // отступом в 1 блок от стен: local X 11..19, Z 1..9. Вход фермы
@@ -393,20 +411,21 @@ public final class CampSitePlanner {
         int farmCenterLocalX = side - 5;
         int farmCenterLocalZ = WATCHTOWER_FOOTPRINT;
         BlockPos farmPos = new BlockPos(
-                anchor.getX() - radius + farmCenterLocalX, floorY - 1,
-                anchor.getZ() - radius + farmCenterLocalZ);
+                center.getX() - radius + farmCenterLocalX, floorY - 1,
+                center.getZ() - radius + farmCenterLocalZ);
 
         // Радио-якорь — рядом с центром, но со сдвигом на 2 клетки к югу:
         // в самом центре сходятся дорожки, и якорь перекрыл бы развязку.
-        BlockPos radioPos = new BlockPos(anchor.getX(), floorY, anchor.getZ() + 2);
+        // Позиция рассчитана отдельно и может отличаться от центра и floorY.
+        BlockPos radioPos = new BlockPos(center.getX(), floorY, center.getZ() + 2);
 
         // Повороты: вышка стоит без поворота (её север/восток уже смотрят во
         // двор), ферму разворачиваем так, чтобы её северный вход смотрел на юг.
         Rotation watchtowerRotation = rotationForFacing(Direction.NORTH, WATCHTOWER_ENTRANCE);
         Rotation farmRotation = rotationForFacing(Direction.SOUTH, FARM_ENTRANCE);
 
-        return new Outcome(new Plan(anchor, radius, floorY, medianY, watchtowerRotation,
-                farmRotation, gatePos, watchtowerPos, farmPos, radioPos,
+        return new Outcome(new Plan(requestPos, center, radius, floorY, medianY,
+                watchtowerRotation, farmRotation, gatePos, watchtowerPos, farmPos, radioPos,
                 surfaceAirY, surfaceStates), null);
     }
 
@@ -417,9 +436,9 @@ public final class CampSitePlanner {
      * значений, округлённое до целого яруса: пол двора обязан быть целым
      * блоком, а дробный результат сдвинул бы выравнивание на полблока.
      *
-     * @param values высоты клеток (без колонки якоря)
+     * @param values высоты клеток (включая грунт под исходным радио)
      * @param count  сколько значений заполнено
-     * @return целый ярус пола двора
+     * @return медианный первый воздушный ярус над поверхностью
      */
     private static int median(int[] values, int count) {
         int[] sorted = Arrays.copyOf(values, count);
@@ -559,17 +578,17 @@ public final class CampSitePlanner {
      * построек игрока здесь не делается — это отдельная задача ручного
      * создания лагерей.
      *
-     * <p>Колонка якоря пропускается: при установке радио-вышки в игре её
-     * собственный {@code CampRadioBlockEntity} уже стоит в мире и иначе
+     * <p>Колонка исходного запроса пропускается: при установке радио-вышки в
+     * игре её собственный {@code CampRadioBlockEntity} уже стоит в мире и иначе
      * блокировал бы создание лагеря.
      *
-     * @param level  серверный уровень
-     * @param plan   рассчитанный план
-     * @param anchor точка якоря (её колонка исключается)
+     * @param level серверный уровень
+     * @param plan  рассчитанный план
      * @return причина отказа или {@code null}
      */
     @Nullable
-    public static String checkPreparationZone(ServerLevel level, Plan plan, BlockPos anchor) {
+    public static String checkPreparationZone(ServerLevel level, Plan plan) {
+        BlockPos requestPos = plan.getRequestPos();
         int margin = CampTuning.CAMP_CLEAR_MARGIN;
         int minX = plan.getCenter().getX() - plan.getRadius() - margin;
         int maxX = plan.getCenter().getX() + plan.getRadius() + margin;
@@ -580,7 +599,7 @@ public final class CampSitePlanner {
 
         for (int x = minX; x <= maxX; x++) {
             for (int z = minZ; z <= maxZ; z++) {
-                if (x == anchor.getX() && z == anchor.getZ()) {
+                if (x == requestPos.getX() && z == requestPos.getZ()) {
                     continue;
                 }
                 for (int y = minY; y <= maxY; y++) {
@@ -599,13 +618,18 @@ public final class CampSitePlanner {
      *
      * <p>Сравнение по горизонтали с запасом в один радиус: два периметра
      * вплотную тоже недопустимы — между ними не останется прохода.
+     *
+     * @param level  серверный уровень
+     * @param center центр рассчитываемой площадки
+     * @param radius радиус лагеря
+     * @return причина отказа или {@code null}
      */
     @Nullable
-    private static String findCampConflict(ServerLevel level, BlockPos anchor, int radius) {
+    private static String findCampConflict(ServerLevel level, BlockPos center, int radius) {
         CampSavedData data = CampManager.data(level);
         for (CampRecord other : data.getCamps()) {
-            double dx = other.getCenter().getX() - anchor.getX();
-            double dz = other.getCenter().getZ() - anchor.getZ();
+            double dx = other.getCenter().getX() - center.getX();
+            double dz = other.getCenter().getZ() - center.getZ();
             double minDistance = radius + other.getRadius() + CampTuning.CAMP_MIN_GAP_BETWEEN;
             if (dx * dx + dz * dz < minDistance * minDistance) {
                 return "Слишком близко к лагерю «" + other.getName() + "»";

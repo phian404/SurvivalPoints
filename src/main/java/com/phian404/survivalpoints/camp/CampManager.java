@@ -80,36 +80,36 @@ public final class CampManager {
      * привязаны к реальной застройке.
      *
      * @param level серверный уровень
-     * @param anchor точка якоря (радио вышка)
+     * @param requestPos исходная точка запроса (радио вышка)
      * @param owner владелец (null — общий лагерь)
      * @param name название
      * @param radius радиус лагеря
      * @return созданный лагерь или {@code null} — участок не прошёл проверку
      */
     @Nullable
-    public static CampRecord createCamp(ServerLevel level, BlockPos anchor, @Nullable UUID owner,
+    public static CampRecord createCamp(ServerLevel level, BlockPos requestPos, @Nullable UUID owner,
                                          String name, int radius) {
         String missingModule = CampSitePlanner.checkModules(level);
         if (missingModule != null) {
             return null;
         }
-        CampSitePlanner.Outcome outcome = CampSitePlanner.plan(level, anchor, radius);
+        CampSitePlanner.Outcome outcome = CampSitePlanner.plan(level, requestPos, radius);
         if (!outcome.isSuccess()) {
             return null;
         }
         CampSitePlanner.Plan plan = outcome.getPlan();
 
-        String blocked = CampSitePlanner.checkPreparationZone(level, plan, anchor);
+        String blocked = CampSitePlanner.checkPreparationZone(level, plan);
         if (blocked != null) {
             return null;
         }
 
         // Подготовка участка — единственный вызов, до записи лагеря: если
         // выравнивание не удалось, в CampSavedData не остаётся следа.
-        CampGenerator.prepareTerrain(level, plan, anchor);
+        CampGenerator.prepareTerrain(level, plan);
 
-        CampRecord record = new CampRecord(name, anchor, radius, owner);
-        record.setCenter(anchor);
+        CampRecord record = new CampRecord(name, plan.getRadioPos(), radius, owner);
+        record.setCenter(plan.getCenter());
         data(level).addCamp(record);
         CampGenerator.generate(level, plan, record);
         CampGenerator.createPostsFromPois(record, plan);
