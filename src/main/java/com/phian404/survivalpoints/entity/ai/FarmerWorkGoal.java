@@ -129,7 +129,7 @@ public class FarmerWorkGoal extends Goal {
         if (adapter != null && adapter.isMature(state)) {
             harvest(level, cropPos, state, adapter);
         } else if (state.isAir()) {
-            plant(level, cropPos, adapterForPlanting(level, cropPos));
+            plant(level, cropPos);
         }
         this.target = null;
         this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
@@ -156,36 +156,42 @@ public class FarmerWorkGoal extends Goal {
         level.destroyBlock(pos, false);
     }
 
-    /** Посадка: семена списываются только после успешной установки блока. */
-    private void plant(ServerLevel level, BlockPos pos, @Nullable CropAdapter adapter) {
-        if (adapter == null) {
+    /**
+     * Посадка: адаптер и культура определяются по семени из инвентаря.
+     *
+     * <p>Семя списывается только после успешной установки блока; при неудаче
+     * извлечённый предмет возвращается обратно в инвентарь.
+     */
+    private void plant(ServerLevel level, BlockPos pos) {
+        ItemStack seed = findPlantableSeed();
+        if (seed == null) {
             return;
         }
-        ItemStack seed = adapter.getSeed(level, pos, level.getBlockState(pos.below()));
-        if (seed == null || seed.isEmpty()) {
+        CropAdapter adapter = CropAdapter.find(seed);
+        BlockState crop = adapter == null ? null : adapter.getCropForSeed(seed);
+        if (adapter == null || crop == null) {
             return;
         }
         ItemStack extracted = this.npc.extractItem(seed, 1);
         if (extracted.isEmpty()) {
             return;
         }
-        if (!adapter.plant(level, pos)) {
+        if (!adapter.plant(level, pos, crop)) {
             this.npc.addItem(extracted);
         }
     }
 
-    /**
-     * Адаптер для пустого участка: берём его из блока пашни под ним.
-     *
-     * <p>Для культур на базе CropBlock семена и посадка определяются одним
-     * адаптером; конкретный вид культуры появится после посадки.
-     */
+    /** Первое семя из инвентаря, для которого есть адаптер и культура. */
     @Nullable
-    private CropAdapter adapterForPlanting(ServerLevel level, BlockPos cropPos) {
-        BlockState soil = level.getBlockState(cropPos.below());
-        for (CropAdapter adapter : CropAdapter.REGISTRY) {
-            if (adapter.getSeed(level, cropPos, soil) != null) {
-                return adapter;
+    private ItemStack findPlantableSeed() {
+        for (int slot = 0; slot < this.npc.getInventory().getSlots(); slot++) {
+            ItemStack stack = this.npc.getInventory().getStackInSlot(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            CropAdapter adapter = CropAdapter.find(stack);
+            if (adapter != null && adapter.getCropForSeed(stack) != null) {
+                return stack;
             }
         }
         return null;
@@ -268,9 +274,7 @@ public class FarmerWorkGoal extends Goal {
         if (!state.isAir()) {
             return false;
         }
-        return adapterForPlanting(level, cropPos) != null
-                && this.npc.hasItem(adapterForPlanting(level, cropPos)
-                        .getSeed(level, cropPos, level.getBlockState(plot)));
+        return findPlantableSeed() != null;
     }
 
     private static boolean insideBorder(CampRecord camp, BlockPos pos) {

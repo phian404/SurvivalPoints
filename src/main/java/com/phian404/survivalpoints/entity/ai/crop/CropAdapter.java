@@ -40,6 +40,20 @@ public interface CropAdapter {
         return null;
     }
 
+    /** Найти адаптер по предмету семени; {@code null}, если семя не поддерживается. */
+    @Nullable
+    static CropAdapter find(ItemStack seed) {
+        if (seed.isEmpty()) {
+            return null;
+        }
+        for (CropAdapter adapter : REGISTRY) {
+            if (adapter.getCropForSeed(seed) != null) {
+                return adapter;
+            }
+        }
+        return null;
+    }
+
     /** Поддерживает ли адаптер этот блок. */
     boolean supports(BlockState state);
 
@@ -47,12 +61,20 @@ public interface CropAdapter {
     boolean isMature(BlockState state);
 
     /**
-     * Предмет для посадки или {@code null}, если адаптер не может его определить.
+     * Семя для существующей культуры (например, для повторной посадки).
      *
-     * <p>Ограничение конкретной культуры изолировано здесь, а не в Goal.
+     * <p>Состояние — именно блок культуры, не пашня.
      */
     @Nullable
-    ItemStack getSeed(ServerLevel level, BlockPos pos, BlockState state);
+    ItemStack getSeedForCrop(BlockState state);
+
+    /**
+     * Блок культуры, соответствующий предмету семени.
+     *
+     * <p>Именно по этому блоку адаптер сажает культуру на пустую грядку.
+     */
+    @Nullable
+    BlockState getCropForSeed(ItemStack seed);
 
     /**
      * Результат сбора: список стеков, которые нужно добавить в инвентарь.
@@ -62,6 +84,11 @@ public interface CropAdapter {
      */
     List<ItemStack> getDrops(ServerLevel level, BlockPos pos, BlockState state);
 
-    /** Посадить культуру на блоке. Возвращает {@code true} при успехе. */
-    boolean plant(ServerLevel level, BlockPos pos);
+    /**
+     * Посадить конкретную культуру на указанную позицию.
+     *
+     * <p>Целевая позиция после сбора пуста (AIR) — адаптер не должен требовать,
+     * чтобы там уже стояла культура.
+     */
+    boolean plant(ServerLevel level, BlockPos pos, BlockState crop);
 }
