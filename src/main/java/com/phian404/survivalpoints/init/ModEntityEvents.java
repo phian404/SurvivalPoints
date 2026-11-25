@@ -5,7 +5,9 @@ import com.phian404.survivalpoints.camp.CampRecord;
 import com.phian404.survivalpoints.camp.site.CampSiteDirector;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
 import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.monster.Monster;
@@ -123,7 +125,8 @@ public class ModEntityEvents {
      * сущность живой, поэтому дополнительно проверяется {@code isCanceled()}.
      *
      * <p>Замену погибшему не создаём: живые NPC сохраняются штатными средствами
-     * Minecraft, мёртвые не восстанавливаются.
+     * Minecraft, мёртвые не восстанавливаются. Если погиб последний житель,
+     * лагерь остаётся в мире, но считается заброшенным и уведомляет игроков рядом.
      */
     @SubscribeEvent
     public static void onLivingDeath(LivingDeathEvent event) {
@@ -142,9 +145,51 @@ public class ModEntityEvents {
         }
 
         UUID identity = npc.getIdentityId();
+        // Защита от повторного события: житель уже убран из состава —
+        // повторно уведомлять и менять данные не нужно.
+        if (!record.getResidents().contains(identity)) {
+            return;
+        }
+
+        boolean wasLeader = identity.equals(record.getLeaderIdentityId());
         record.removeResident(identity);
         record.clearLeaderIf(identity);
+
+        if (record.getResidents().isEmpty()) {
+            // Последний житель погиб: лагерь заброшен. Преемника не ищем
+            // и сообщение о смене лидера не отправляем.
+            notifyPlayers(level, record.getCenter(), Component.literal("Лагерь «"
+                    + record.getName() + "» остался без жителей. Лагерь заброшен."));
+        } else if (wasLeader) {
+            BaseSurvivorEntity successor = record.findSuccessor(level);
+            if (successor != null) {
+                record.setLeaderIdentityId(successor.getIdentityId());
+                String name = successor.getCustomName() == null
+                        ? successor.getName().getString() : successor.getCustomName().getString();
+                notifyPlayers(level, record.getCenter(), Component.literal("Лагерь «"
+                        + record.getName() + "» остался без лидера. Новым лидером назначен: "
+                        + name + "."));
+            }
+        }
+
         CampManager.data(level).setDirty();
+    }
+
+    /**
+     * Отправить сообщение онлайн-игрокам в радиусе 64 блоков от точки.
+     *
+     * <p>Только игроки того же измерения. Шаблон рассылки — как в
+     * {@code GuardianTrace.chat()}.
+     */
+    private static void notifyPlayers(ServerLevel level, net.minecraft.core.BlockPos center,
+                                      Component message) {
+        double radiusSqr = 64.0D * 64.0D;
+        for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+            if (player.level() == level && player.distanceToSqr(
+                    center.getX() + 0.5D, center.getY(), center.getZ() + 0.5D) <= radiusSqr) {
+                player.sendSystemMessage(message);
+            }
+        }
     }
 
     @SubscribeEvent

@@ -1,9 +1,12 @@
 package com.phian404.survivalpoints.camp;
 
+import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -399,6 +402,38 @@ public class CampRecord {
         if (identityId.equals(this.leaderIdentityId)) {
             this.leaderIdentityId = null;
         }
+    }
+
+    /**
+     * Найти преемника лидера среди жителей лагеря.
+     *
+     * <p>Сначала одним проходом собираются загруженные живые NPC лагеря по
+     * постоянному identity UUID, затем обходятся {@link #residents} в порядке
+     * вставки — первый доступный кандидат становится преемником. Выбор
+     * детерминирован: случайных критериев и характеристик пока нет.
+     *
+     * <p>Ограничение первой версии: NPC в невыгруженных чанках не видны через
+     * {@link ServerLevel#getAllEntities()} и пропускаются.
+     *
+     * @return первый живой загруженный житель лагеря или {@code null}
+     */
+    @Nullable
+    public BaseSurvivorEntity findSuccessor(ServerLevel level) {
+        Map<UUID, BaseSurvivorEntity> loaded = new HashMap<>();
+        for (Entity entity : level.getAllEntities()) {
+            if (entity instanceof BaseSurvivorEntity npc
+                    && this.id.equals(npc.getCampId())
+                    && npc.isAlive() && !npc.isDeadOrDying()) {
+                loaded.put(npc.getIdentityId(), npc);
+            }
+        }
+        for (UUID identityId : this.residents) {
+            BaseSurvivorEntity candidate = loaded.get(identityId);
+            if (candidate != null) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     public boolean isPopulationInitialized() {
