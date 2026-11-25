@@ -15,6 +15,7 @@
   "item.survivalpoints.base_guardian_spawn_egg": "Base Guardian Spawn Egg",
   "item.survivalpoints.base_survivor_spawn_egg": "Survivor Spawn Egg",
   "item.survivalpoints.npc_debug_wand": "NPC Debug Wand",
+  "item.survivalpoints.npc_role_swap_debug": "[DEBUG] NPC Role Swap",
   "entity.survivalpoints.base_survivor": "Survivor",
   "itemGroup.survivalpoints": "SurvivalPoints"
 }

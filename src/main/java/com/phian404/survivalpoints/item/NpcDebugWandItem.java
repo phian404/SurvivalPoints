@@ -11,6 +11,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -52,6 +53,15 @@ public class NpcDebugWandItem extends Item {
         out.append("\n §7campPostId: §f").append(uuid(npc.getCampPostId()));
         out.append("\n §7workPoiPos: §f").append(pos(npc.getWorkPoiPos()));
 
+        ItemStack mainHand = npc.getItemBySlot(EquipmentSlot.MAINHAND);
+        out.append("\n §7экипировка (рука): §f");
+        if (mainHand.isEmpty()) {
+            out.append("§7пусто");
+        } else {
+            out.append(mainHand.getHoverName().getString())
+                    .append(" §8×§f").append(mainHand.getCount());
+        }
+
         UUID campId = npc.getCampId();
         CampRecord camp = campId == null || !(player.level() instanceof ServerLevel serverLevel)
                 ? null : CampManager.getCamp(serverLevel, campId);
@@ -68,6 +78,18 @@ public class NpcDebugWandItem extends Item {
                     .append(camp.getResidents().contains(identity) ? "да" : "нет");
         } else {
             out.append("\n §7лагерь: §fнет или не найден");
+        }
+
+        out.append("\n §7Инвентарь:");
+        for (int slot = 0; slot < npc.getInventory().getSlots(); slot++) {
+            ItemStack stored = npc.getInventory().getStackInSlot(slot);
+            out.append("\n §f").append(slot + 1).append(". ");
+            if (stored.isEmpty()) {
+                out.append("§7пусто");
+            } else {
+                out.append(stored.getHoverName().getString())
+                        .append(" §8×§f").append(stored.getCount());
+            }
         }
 
         player.displayClientMessage(Component.literal(out.toString()), false);

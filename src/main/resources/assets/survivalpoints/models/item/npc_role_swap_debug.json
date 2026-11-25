@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/handheld",
+  "textures": {
+    "layer0": "survivalpoints:item/npc_debug_wand"
+  }
+}

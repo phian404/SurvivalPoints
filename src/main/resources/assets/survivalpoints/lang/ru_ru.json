@@ -16,5 +16,6 @@
   "item.survivalpoints.base_guardian_spawn_egg": "Яйцо призыва стража",
   "item.survivalpoints.base_survivor_spawn_egg": "Яйцо призыва выжившего",
   "item.survivalpoints.npc_debug_wand": "Палочка диагностики NPC",
+  "item.survivalpoints.npc_role_swap_debug": "[DEBUG] Смена роли NPC",
   "entity.survivalpoints.base_survivor": "Выживший"
 }
