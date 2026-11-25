@@ -146,6 +146,21 @@ public final class CampTuning {
     /** Тег разрешённых биомов для автоматических лагерей. */
     public static final String SITE_BIOME_ALLOW_TAG = "survivalpoints:camp_site_allowed";
 
+    // ==================== Фронтир впервые исследуемой территории (этап 8.1) ====================
+
+    /** Задержка после входа игрока перед consideration фронтира (тиков = 10 сек). */
+    public static final int SITE_JOIN_GRACE_TICKS = 200;
+    /** Минимальное горизонтальное перемещение игрока от позиции входа (блоков). */
+    public static final int SITE_MIN_PLAYER_TRAVEL = 32;
+    /** Предпочтительный минимум дистанции от границы площадки до игрока (блоков). */
+    public static final int SITE_PREFERRED_DISTANCE_MIN = 96;
+    /** Предпочтительный максимум дистанции от границы площадки до игрока (блоков). */
+    public static final int SITE_PREFERRED_DISTANCE_MAX = 140;
+    /** Время жизни кандидата в очереди фронтира (тиков = 30 сек). */
+    public static final int SITE_FRONTIER_TTL = 600;
+    /** Максимальный размер очереди фронтира. */
+    public static final int SITE_FRONTIER_QUEUE_LIMIT = 128;
+
     /**
      * Сколько постов у лагеря такого радиуса.
      *
