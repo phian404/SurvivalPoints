@@ -166,10 +166,10 @@ public final class CampSiteDirector {
         int maxX = chunk.cx() * 16 + 15 + reach;
         int minZ = chunk.cz() * 16 - reach;
         int maxZ = chunk.cz() * 16 + 15 + reach;
-        // cellCenter = cell*SIZE + half ∈ [min, max]  ⟺  cell ∈ [(min-half)/SIZE, (max-half)/SIZE]
-        int cellMinX = Math.floorDiv(minX - half, CampTuning.SITE_CELL_SIZE);
+        // cellCenter = cell*SIZE + half ∈ [min, max]  ⟺  cell ∈ [ceil((min-half)/SIZE), floor((max-half)/SIZE)]
+        int cellMinX = -Math.floorDiv(half - minX, CampTuning.SITE_CELL_SIZE);
         int cellMaxX = Math.floorDiv(maxX - half, CampTuning.SITE_CELL_SIZE);
-        int cellMinZ = Math.floorDiv(minZ - half, CampTuning.SITE_CELL_SIZE);
+        int cellMinZ = -Math.floorDiv(half - minZ, CampTuning.SITE_CELL_SIZE);
         int cellMaxZ = Math.floorDiv(maxZ - half, CampTuning.SITE_CELL_SIZE);
         List<Long> result = new ArrayList<>();
         for (int cx = cellMinX; cx <= cellMaxX; cx++) {
