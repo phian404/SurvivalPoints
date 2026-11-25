@@ -56,6 +56,12 @@ public class FarmerWorkGoal extends Goal {
     /** Короткая задержка после неудачного действия. */
     private static final int RETRY_PAUSE = 10;
 
+    /** Сколько тиков без прогресса считается застреванием. */
+    private static final int STUCK_TIMEOUT = 100;
+
+    /** Интервал принудительного перестроения пути. */
+    private static final int REPATH_INTERVAL = 20;
+
     /** Скорость движения к участку. */
     private static final double SPEED = 1.0D;
 
@@ -76,6 +82,12 @@ public class FarmerWorkGoal extends Goal {
     private String lastTraceStage = "";
     private long lastTraceTick = Long.MIN_VALUE;
     private boolean wasPaused = false;
+
+    /** Позиция NPC на предыдущем тике и счётчик отсутствия прогресса. */
+    @Nullable
+    private BlockPos lastNpcPos;
+    private int stuckTicks = 0;
+    private int repathTicks = 0;
 
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
@@ -215,17 +227,9 @@ public class FarmerWorkGoal extends Goal {
                 || !(this.npc.level() instanceof ServerLevel level)) {
             return false;
         }
-        CampRecord camp = camp(level);
         NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
         NpcTask task = controller.current();
-        if (camp == null || task == null || task.getTarget() == null) {
-            return false;
-        }
-        if (!atApproach(this.approach)) {
-            Path path = this.npc.getNavigation().getPath();
-            return path != null && !path.isDone() && pathInside(camp, path);
-        }
-        return true;
+        return task != null && task.getTarget() != null;
     }
 
     @Override
@@ -244,11 +248,47 @@ public class FarmerWorkGoal extends Goal {
         manager.keepAlive(task.getId(), level.getGameTime());
 
         if (!atApproach(this.approach)) {
-            this.npc.getNavigation().moveTo(this.approach.getX() + 0.5D, this.approach.getY(),
-                    this.approach.getZ() + 0.5D, SPEED);
+            BlockPos current = this.npc.blockPosition();
+            if (current.equals(this.lastNpcPos)) {
+                this.stuckTicks++;
+            } else {
+                this.stuckTicks = 0;
+                this.lastNpcPos = current;
+            }
+            if (this.stuckTicks >= STUCK_TIMEOUT) {
+                trace(level, "STUCK", "result=GIVE_UP approach=" + this.approach
+                        + " npc=" + current + " ticks=" + this.stuckTicks);
+                manager.markUnavailable(task.getId(), level.getGameTime());
+                controller.cancel();
+                this.approach = null;
+                this.state = State.IDLE;
+                this.stuckTicks = 0;
+                this.lastNpcPos = null;
+                this.pauseTicks = RETRY_PAUSE;
+                return;
+            }
+
+            Path path = this.npc.getNavigation().getPath();
+            boolean needRepath = path == null || path.isDone() || this.repathTicks <= 0;
+            if (needRepath) {
+                this.npc.getNavigation().moveTo(this.approach.getX() + 0.5D,
+                        this.approach.getY(), this.approach.getZ() + 0.5D, SPEED);
+                this.repathTicks = REPATH_INTERVAL;
+                trace(level, "REPATH", "npc=" + current + " pos=" + this.npc.position()
+                        + " approach=" + this.approach + " done=" + (path != null && path.isDone())
+                        + " nodes=" + (path == null ? 0 : path.getNodeCount())
+                        + " idx=" + (path == null ? 0 : path.getNextNodeIndex()));
+            } else {
+                this.repathTicks--;
+            }
             this.state = State.MOVING;
             return;
         }
+        this.stuckTicks = 0;
+        this.lastNpcPos = null;
+        this.repathTicks = 0;
+        trace(level, "ARRIVED", "npc=" + this.npc.blockPosition()
+                + " pos=" + this.npc.position() + " approach=" + this.approach);
 
         this.npc.getNavigation().stop();
         BlockPos plot = task.getTarget();
@@ -292,9 +332,23 @@ public class FarmerWorkGoal extends Goal {
             CampRecord camp = camp(level);
             NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
             NpcTask task = controller.current();
+            Path path = this.npc.getNavigation().getPath();
+            String reason = this.pauseTicks > 0 ? "PAUSE"
+                    : this.approach == null ? "NO_APPROACH"
+                    : task == null ? "NO_TASK"
+                    : atApproach(this.approach) ? "ARRIVED" : "GOAL_INTERRUPTED";
+            trace(level, "STOP_DIAG", "reason=" + reason
+                    + " npcBlock=" + this.npc.blockPosition()
+                    + " npcPos=" + this.npc.position()
+                    + " approach=" + this.approach
+                    + " atApproach=" + (this.approach != null && atApproach(this.approach))
+                    + " path=" + (path != null)
+                    + " done=" + (path != null && path.isDone())
+                    + " nodes=" + (path == null ? 0 : path.getNodeCount())
+                    + " idx=" + (path == null ? 0 : path.getNextNodeIndex()));
             if (camp != null && task != null) {
                 trace(level, "RELEASE", "result=STOP task=" + task.getType()
-                        + " target=" + task.getTarget());
+                        + " target=" + task.getTarget() + " reason=" + reason);
                 CampManager.farmManager(camp).release(task.getId());
             }
             controller.cancel();
@@ -302,6 +356,9 @@ public class FarmerWorkGoal extends Goal {
         this.npc.getNavigation().stop();
         this.approach = null;
         this.state = State.IDLE;
+        this.stuckTicks = 0;
+        this.lastNpcPos = null;
+        this.repathTicks = 0;
     }
 
     /** Повторная проверка и выполнение действия. */
@@ -390,6 +447,9 @@ public class FarmerWorkGoal extends Goal {
         CampManager.taskController(this.npc.getIdentityId()).cancel();
         this.approach = null;
         this.state = State.IDLE;
+        this.stuckTicks = 0;
+        this.lastNpcPos = null;
+        this.repathTicks = 0;
         this.pauseTicks = done ? PAUSE_MIN : RETRY_PAUSE;
     }
 
@@ -411,20 +471,11 @@ public class FarmerWorkGoal extends Goal {
      */
     @Nullable
     private BlockPos approachPos(ServerLevel level, CampRecord camp, BlockPos plot) {
-        // Сначала четыре стороны, затем диагонали: диагональная клетка тоже
-        // остаётся соседней с грядкой и может оказаться единственной внутри
-        // рабочей границы, когда стороны заняты пашней или вне круга.
+        // Только четыре стороны: диагональная клетка имеет distSqr=2 до грядки
+        // и отсекается порогом TARGET_REACH_SQR=1.0, поэтому её перебор
+        // бесполезен. Порог взаимодействия не расширяем.
         for (Direction dir : Direction.Plane.HORIZONTAL) {
             BlockPos candidate = considerApproach(level, camp, plot, plot.relative(dir));
-            if (candidate != null) {
-                return candidate;
-            }
-        }
-        for (Direction dir : Direction.Plane.HORIZONTAL) {
-            Direction next = dir.getClockWise();
-            BlockPos diagonal = plot.offset(dir.getStepX() + next.getStepX(), 0,
-                    dir.getStepZ() + next.getStepZ());
-            BlockPos candidate = considerApproach(level, camp, plot, diagonal);
             if (candidate != null) {
                 return candidate;
             }
@@ -439,15 +490,24 @@ public class FarmerWorkGoal extends Goal {
         if (!insideBorder(camp, pos)) {
             return null;
         }
-        if (!level.getBlockState(pos.below()).blocksMotion()
-                || level.getBlockState(pos.above()).blocksMotion()) {
+        if (!level.getBlockState(pos.below()).blocksMotion()) {
             return null;
         }
         if (horizontalDistSqr(pos, plot) > TARGET_REACH_SQR) {
             return null;
         }
-        // Пашня и культура в соседней клетке не блокируют стояние: у культур
-        // нет коллизии, а вытаптывание пашни перехватывается CampEvents.
+        // Проверяем реальный объём тела NPC в целевой клетке: одной проверки
+        // «над головой нет блока» недостаточно — культура или забор могут
+        // пересекать хитбокс. Пашня не мешает: у неё нет коллизии тела, а
+        // вытаптывание перехватывается CampEvents.
+        double half = this.npc.getBbWidth() / 2.0D;
+        net.minecraft.world.phys.AABB body = new net.minecraft.world.phys.AABB(
+                pos.getX() + 0.5D - half, pos.getY(), pos.getZ() + 0.5D - half,
+                pos.getX() + 0.5D + half, pos.getY() + this.npc.getBbHeight(),
+                pos.getZ() + 0.5D + half);
+        if (!level.noCollision(body)) {
+            return null;
+        }
         return pos;
     }
 
