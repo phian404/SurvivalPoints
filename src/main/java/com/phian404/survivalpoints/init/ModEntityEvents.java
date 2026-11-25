@@ -81,6 +81,7 @@ public class ModEntityEvents {
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         GUARDIAN_CACHES.clear();
+        CampManager.clearRuntimeState();
     }
 
     /** Габариты мира по вертикали, ширина — максимально возможная. */

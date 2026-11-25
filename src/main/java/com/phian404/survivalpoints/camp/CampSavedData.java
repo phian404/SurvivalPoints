@@ -91,6 +91,7 @@ public class CampSavedData extends SavedData {
     public CampRecord removeCamp(UUID id) {
         CampRecord removed = this.camps.remove(id);
         if (removed != null) {
+            CampManager.removeFarmManager(id);
             this.setDirty();
         }
         return removed;

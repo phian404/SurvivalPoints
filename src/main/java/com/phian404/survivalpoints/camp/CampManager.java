@@ -9,6 +9,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -19,6 +21,9 @@ import java.util.UUID;
  * а лагерь тикает раз в секунду — обновляет режим «день/ночь» и зону тревоги.
  */
 public final class CampManager {
+
+    /** Runtime-диспетчеры ферм по id лагеря; не сохраняются в NBT. */
+    private static final Map<UUID, CampFarmManager> FARM_MANAGERS = new HashMap<>();
 
     private CampManager() {
     }
@@ -293,12 +298,34 @@ public final class CampManager {
             record.setStaffCheckTimer(record.getStaffCheckTimer() + CampTuning.CAMP_TICK_INTERVAL);
             record.setRadioCallTimer(record.getRadioCallTimer() + CampTuning.CAMP_TICK_INTERVAL);
             updateGate(level, record, night);
+            farmManager(record).refresh(level, record, level.getGameTime());
         }
 
         if (changed) {
             data.setDirty();
         }
     }
+/** Диспетчер фермы лагеря (создаётся лениво, живёт только в runtime). */
+public static CampFarmManager farmManager(CampRecord record) {
+    return FARM_MANAGERS.computeIfAbsent(record.getId(), id -> new CampFarmManager());
+}
+
+/** Убрать runtime-диспетчер удалённого лагеря. */
+public static void removeFarmManager(UUID campId) {
+    CampFarmManager manager = FARM_MANAGERS.remove(campId);
+    if (manager != null) {
+        manager.clear();
+    }
+}
+
+/** Очистить runtime-диспетчеры при остановке сервера. */
+public static void clearRuntimeState() {
+    for (CampFarmManager manager : FARM_MANAGERS.values()) {
+        manager.clear();
+    }
+    FARM_MANAGERS.clear();
+}
+
 
     /**
      * Ворота: ночью закрыты, днём открыты.
