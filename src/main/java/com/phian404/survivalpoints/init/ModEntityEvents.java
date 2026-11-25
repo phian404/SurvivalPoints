@@ -9,13 +9,17 @@ import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.level.LevelEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Глобальные события мода.
@@ -27,17 +31,17 @@ import java.util.List;
  * (включая ванильных зомби) начинали двигаться рывками, потому что их тики
  * выполнялись с задержкой.
  *
- * <p>Теперь список стражей кэшируется один раз на весь мир и обновляется
+ * <p>Теперь список стражей кэшируется отдельно для каждого уровня и обновляется
  * раз в {@link GuardianTuning#ALLY_SEARCH_INTERVAL} тиков.
  */
 @Mod.EventBusSubscriber(modid = "survivalpoints", bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class ModEntityEvents {
 
-    /** Кэш стражей на текущий уровень. */
-    private static final List<BaseGuardianEntity> GUARDIAN_CACHE = new ArrayList<>();
+    /** Кэш стражей по уровням (ключ — идентичность Level). */
+    private record GuardianCacheEntry(List<BaseGuardianEntity> guardians, long cachedTime) {
+    }
 
-    private static Level cachedLevel = null;
-    private static long cachedTime = Long.MIN_VALUE;
+    private static final Map<Level, GuardianCacheEntry> GUARDIAN_CACHES = new IdentityHashMap<>();
 
     /**
      * Список стражей на уровне.
@@ -50,14 +54,26 @@ public class ModEntityEvents {
      */
     public static List<BaseGuardianEntity> getGuardians(Level level) {
         long now = level.getGameTime();
-        if (cachedLevel != level || now - cachedTime >= GuardianTuning.ALLY_SEARCH_INTERVAL) {
-            cachedLevel = level;
-            cachedTime = now;
-            GUARDIAN_CACHE.clear();
-            GUARDIAN_CACHE.addAll(level.getEntitiesOfClass(
+        GuardianCacheEntry entry = GUARDIAN_CACHES.get(level);
+        if (entry == null || now - entry.cachedTime() >= GuardianTuning.ALLY_SEARCH_INTERVAL) {
+            List<BaseGuardianEntity> snapshot = List.copyOf(level.getEntitiesOfClass(
                     BaseGuardianEntity.class, worldBox(level), e -> true));
+            entry = new GuardianCacheEntry(snapshot, now);
+            GUARDIAN_CACHES.put(level, entry);
         }
-        return GUARDIAN_CACHE;
+        return entry.guardians();
+    }
+
+    @SubscribeEvent
+    public static void onLevelUnload(LevelEvent.Unload event) {
+        if (event.getLevel() instanceof Level level) {
+            GUARDIAN_CACHES.remove(level);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        GUARDIAN_CACHES.clear();
     }
 
     /** Габариты мира по вертикали, ширина — максимально возможная. */
