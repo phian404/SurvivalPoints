@@ -39,26 +39,38 @@ public final class CampSiteDirector {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CampSiteDirector.class);
 
-    /** Кандидат фронтира: чанк, игрок и время события. */
-    private record FrontierCandidate(CampFrontierEvents.ChunkKey chunk, UUID playerId,
-                                     long eventTime) {
+    /** Кандидат фронтира: ячейка, обосновывающий чанк, игрок и время события. */
+    private record FrontierCandidate(long cellKey, CampFrontierEvents.ChunkKey chunk,
+                                     UUID playerId, long eventTime) {
         private String dedupKey() {
-            return chunk.cx() + ":" + chunk.cz() + ":" + playerId;
+            return chunk.dimension().location() + ":" + cellKey;
         }
     }
 
     /** Позиция входа игрока: UUID → {x, z, gameTime}. */
     private static final Map<UUID, double[]> JOIN_POS = new HashMap<>();
-    /** Очередь кандидатов с дедупликацией по чанку+игроку. */
+    /** Очередь кандидатов с дедупликацией по cellKey+измерение. */
     private static final Deque<FrontierCandidate> QUEUE = new ArrayDeque<>();
     private static final Set<String> QUEUED = new HashSet<>();
+    /** Признак предыдущего состояния авто-режима — для очистки при выключении. */
+    private static boolean wasEnabled = false;
 
     private CampSiteDirector() {
     }
 
     /** Тик сервера: вызывается на фазе END из ModEntityEvents. */
     public static void onServerTick(MinecraftServer server) {
-        if (!CampSiteConfig.isAutoEnabled()) {
+        boolean enabled = CampSiteConfig.isAutoEnabled();
+        if (wasEnabled && !enabled) {
+            // Выключение: очистить все накопленные события и очередь, чтобы
+            // старые территории не запустили генерацию после включения.
+            CampFrontierEvents.clear();
+            QUEUE.clear();
+            QUEUED.clear();
+            JOIN_POS.clear();
+        }
+        wasEnabled = enabled;
+        if (!enabled) {
             return;
         }
 
@@ -69,7 +81,8 @@ public final class CampSiteDirector {
         if (first == null || first.getGameTime() % CampTuning.SITE_SCAN_INTERVAL != 0) {
             return;
         }
-        Map<CampFrontierEvents.ChunkKey, Map<UUID, Long>> frontier = CampFrontierEvents.drain();
+        Map<CampFrontierEvents.ChunkKey, Map<UUID, Long>> frontier =
+                CampFrontierEvents.drain(first.getGameTime());
 
         for (ServerLevel level : server.getAllLevels()) {
             if (!CampSiteCandidates.isAllowedDimension(level.dimension())) {
@@ -108,16 +121,49 @@ public final class CampSiteDirector {
                 if (!isEligible(level, playerId, gameTime)) {
                     continue;
                 }
-                String dedupKey = key.cx() + ":" + key.cz() + ":" + playerId;
-                if (!QUEUED.add(dedupKey)) {
-                    continue;
+                for (long cellKey : candidateCellsForChunk(key)) {
+                    FrontierCandidate candidate = new FrontierCandidate(
+                            cellKey, key, playerId, watcher.getValue());
+                    if (!QUEUED.add(candidate.dedupKey())) {
+                        continue; // один cellKey в измерении — одна строгая оценка
+                    }
+                    if (QUEUE.size() >= CampTuning.SITE_FRONTIER_QUEUE_LIMIT) {
+                        QUEUED.remove(expireOne().dedupKey());
+                    }
+                    QUEUE.addLast(candidate);
                 }
-                if (QUEUE.size() >= CampTuning.SITE_FRONTIER_QUEUE_LIMIT) {
-                    QUEUED.remove(expireOne().dedupKey());
-                }
-                QUEUE.addLast(new FrontierCandidate(key, playerId, watcher.getValue()));
             }
         }
+    }
+
+    /**
+     * Все ячейки, чья потенциальная зона может пересекать новый чанк.
+     *
+     * <p>Центр лагеря смещается от центра ячейки не более чем на
+     * {@link CampSitePlanner#SITE_SEARCH_RADIUS}, а изменяемая зона простирается
+     * на {@code radius + CAMP_CLEAR_MARGIN}. Значит центр ячейки должен лежать
+     * в пределах {@code 16 + radius + margin + searchRadius} от границы чанка.
+     * Перебираем все ячейки в этом расширенном квадрате.
+     */
+    private static List<Long> candidateCellsForChunk(CampFrontierEvents.ChunkKey chunk) {
+        int radius = CampTuning.CAMP_DEFAULT_RADIUS;
+        int reach = 16 + radius + CampTuning.CAMP_CLEAR_MARGIN
+                + CampSitePlanner.SITE_SEARCH_RADIUS;
+        int minX = chunk.cx() * 16 - reach;
+        int maxX = chunk.cx() * 16 + 15 + reach;
+        int minZ = chunk.cz() * 16 - reach;
+        int maxZ = chunk.cz() * 16 + 15 + reach;
+        int cellMinX = CampSiteCandidates.cellOf(minX);
+        int cellMaxX = CampSiteCandidates.cellOf(maxX);
+        int cellMinZ = CampSiteCandidates.cellOf(minZ);
+        int cellMaxZ = CampSiteCandidates.cellOf(maxZ);
+        List<Long> result = new ArrayList<>();
+        for (int cx = cellMinX; cx <= cellMaxX; cx++) {
+            for (int cz = cellMinZ; cz <= cellMaxZ; cz++) {
+                result.add(CampSiteCandidates.cellKey(cx, cz));
+            }
+        }
+        return result;
     }
 
     /** Найти онлайн-игрока по UUID среди игроков измерения. */
@@ -184,9 +230,10 @@ public final class CampSiteDirector {
             reviewed++;
 
             CampFrontierEvents.ChunkKey chunk = candidate.chunk();
-            int cellX = Math.floorDiv(chunk.cx() * 16 + 8, CampTuning.SITE_CELL_SIZE);
-            int cellZ = Math.floorDiv(chunk.cz() * 16 + 8, CampTuning.SITE_CELL_SIZE);
-            long cellKey = CampSiteCandidates.cellKey(cellX, cellZ);
+            long cellKey = candidate.cellKey();
+            int[] cellCoords = CampSiteCandidates.cellCoords(cellKey);
+            int cellX = cellCoords[0];
+            int cellZ = cellCoords[1];
 
             CampSiteJournal.SiteState state = journal.state(cellKey);
             if (state == CampSiteJournal.SiteState.REJECTED

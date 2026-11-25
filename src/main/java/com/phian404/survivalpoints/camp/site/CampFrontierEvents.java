@@ -1,5 +1,6 @@
 package com.phian404.survivalpoints.camp.site;
 
+import com.phian404.survivalpoints.camp.CampTuning;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
@@ -10,9 +11,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -36,7 +36,7 @@ public final class CampFrontierEvents {
     public record ChunkKey(ResourceKey<Level> dimension, int cx, int cz) {
     }
 
-    /** Новые чанки, ещё не связанные с игроком: ключ → время загрузки. */
+    /** Новые чанки: ключ → время загрузки. Удаляются только после Watch или по TTL. */
     private static final Map<ChunkKey, Long> NEW_CHUNKS = new HashMap<>();
     /** Просмотренные игроками чанки: ключ → UUID игрока → время просмотра. */
     private static final Map<ChunkKey, Map<UUID, Long>> WATCHED = new HashMap<>();
@@ -46,7 +46,8 @@ public final class CampFrontierEvents {
 
     @SubscribeEvent
     public static void onChunkLoad(ChunkEvent.Load event) {
-        if (!event.isNewChunk() || !(event.getLevel() instanceof ServerLevel level)) {
+        if (!CampSiteConfig.isAutoEnabled() || !event.isNewChunk()
+                || !(event.getLevel() instanceof ServerLevel level)) {
             return;
         }
         ChunkPos pos = event.getChunk().getPos();
@@ -55,6 +56,9 @@ public final class CampFrontierEvents {
 
     @SubscribeEvent
     public static void onChunkWatch(ChunkWatchEvent.Watch event) {
+        if (!CampSiteConfig.isAutoEnabled()) {
+            return;
+        }
         ServerLevel level = event.getLevel();
         ChunkPos pos = event.getPos();
         WATCHED.computeIfAbsent(new ChunkKey(level.dimension(), pos.x, pos.z),
@@ -62,19 +66,45 @@ public final class CampFrontierEvents {
     }
 
     /**
-     * Снять и очистить накопленные события. Вызывается один раз за проход
-     * Director на END-фазе тика. Возвращает только чанки, которые были и новыми,
-     * и просмотренными игроком.
+     * Снять сопоставленные события. Вызывается один раз за проход Director.
+     *
+     * <p>Новый чанк удаляется из {@code NEW_CHUNKS} только когда для него получен
+     * {@code Watch}. Несопоставленные записи обоих карт истекут по TTL
+     * {@link CampTuning#SITE_FRONTIER_TTL}, чтобы не копить утечку памяти.
+     *
+     * @param gameTime текущее время измерения
+     * @return чанки, которые были и новыми, и просмотренными игроком
      */
-    public static Map<ChunkKey, Map<UUID, Long>> drain() {
+    public static Map<ChunkKey, Map<UUID, Long>> drain(long gameTime) {
         Map<ChunkKey, Map<UUID, Long>> result = new HashMap<>();
-        for (Map.Entry<ChunkKey, Map<UUID, Long>> entry : WATCHED.entrySet()) {
-            if (NEW_CHUNKS.containsKey(entry.getKey())) {
+        Iterator<Map.Entry<ChunkKey, Map<UUID, Long>>> it = WATCHED.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<ChunkKey, Map<UUID, Long>> entry = it.next();
+            Long loadTime = NEW_CHUNKS.get(entry.getKey());
+            if (loadTime != null) {
+                // Watch получен — чанк можно снимать с учёта.
                 result.put(entry.getKey(), new HashMap<>(entry.getValue()));
+                NEW_CHUNKS.remove(entry.getKey());
+                it.remove();
+            } else if (gameTime - latest(entry.getValue()) > CampTuning.SITE_FRONTIER_TTL) {
+                it.remove(); // Watch без нового чанка — просрочен
             }
         }
+        NEW_CHUNKS.values().removeIf(time -> gameTime - time > CampTuning.SITE_FRONTIER_TTL);
+        return result;
+    }
+
+    /** Полностью очистить накопленные события (при выключении авто-режима). */
+    public static void clear() {
         NEW_CHUNKS.clear();
         WATCHED.clear();
-        return result;
+    }
+
+    private static long latest(Map<UUID, Long> times) {
+        long max = Long.MIN_VALUE;
+        for (long time : times.values()) {
+            max = Math.max(max, time);
+        }
+        return max;
     }
 }
