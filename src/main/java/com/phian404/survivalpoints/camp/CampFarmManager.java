@@ -51,7 +51,11 @@ public final class CampFarmManager {
 
     /** Обновить пул задач, если прошёл интервал сканирования. */
     public void refresh(ServerLevel level, CampRecord record, long gameTime) {
-        if (gameTime - this.lastScanTick < CampTuning.FARM_SCAN_INTERVAL) {
+        // Long.MIN_VALUE — признак «скана ещё не было». Вычитание из него
+        // переполняет long и даёт отрицательную разницу, из-за чего первый
+        // скан никогда не наступал. Проверяем признак до арифметики.
+        if (this.lastScanTick != Long.MIN_VALUE
+                && gameTime - this.lastScanTick < CampTuning.FARM_SCAN_INTERVAL) {
             return;
         }
         this.lastScanTick = gameTime;

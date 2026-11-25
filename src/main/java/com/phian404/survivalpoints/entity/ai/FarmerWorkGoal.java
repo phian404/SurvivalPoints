@@ -9,6 +9,7 @@ import com.phian404.survivalpoints.entity.ai.task.NpcTask;
 import com.phian404.survivalpoints.entity.ai.task.NpcTaskController;
 import com.phian404.survivalpoints.entity.role.SurvivorProfession;
 import com.phian404.survivalpoints.entity.role.SurvivorRole;
+import com.phian404.survivalpoints.init.GuardianTrace;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -39,9 +40,18 @@ public class FarmerWorkGoal extends Goal {
     /** Предельная дистанция от позиции взаимодействия до грядки. */
     private static final double REACH_DISTANCE_SQR = 1.5D * 1.5D;
 
-    /** Пауза после успешного действия. */
-    private static final int PAUSE_MIN = 30;
-    private static final int PAUSE_MAX = 80;
+    /**
+     * Предельная дистанция от центра NPC до центра целевого блока.
+     *
+     * <p>Соседняя клетка по горизонтали даёт ровно 1 блок между центрами —
+     * этого достаточно, чтобы взаимодействовать с грядкой, не вставая на неё.
+     * Значение не подбирается «для вида»: оно равно геометрии одной клетки.
+     */
+    private static final double TARGET_REACH_SQR = 1.0D * 1.0D;
+
+    /** Пауза после успешного действия (уменьшена вдвое для отзывчивости). */
+    private static final int PAUSE_MIN = 15;
+    private static final int PAUSE_MAX = 40;
 
     /** Короткая задержка после неудачного действия. */
     private static final int RETRY_PAUSE = 10;
@@ -61,10 +71,11 @@ public class FarmerWorkGoal extends Goal {
 
     private State state = State.IDLE;
 
-    /** ВРЕМЕННО: частота трассировки и последняя записанная стадия. */
+    /** ВРЕМЕННО: частота сводки и последняя записанная стадия. */
     private static final int TRACE_INTERVAL = 100;
     private String lastTraceStage = "";
     private long lastTraceTick = Long.MIN_VALUE;
+    private boolean wasPaused = false;
 
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
@@ -77,12 +88,15 @@ public class FarmerWorkGoal extends Goal {
     }
 
     /**
-     * ВРЕМЕННО: записать стадию отказа с ограничением частоты.
+     * ВРЕМЕННО: записать только изменение диагностического состояния.
      *
-     * <p>Одно сообщение на стадию раз в 100 тиков; повтор той же стадии в
-     * пределах интервала не пишется. Диагностика только читает состояние.
+     * <p>Повтор той же стадии в пределах 100 тиков не пишется. Полностью
+     * отключается существующим флагом {@code /sp_trace chat off}.
      */
     private void trace(ServerLevel level, String stage, String detail) {
+        if (!GuardianTrace.isChatEnabled()) {
+            return;
+        }
         long now = level.getGameTime();
         String key = stage + "|" + detail;
         if (key.equals(this.lastTraceStage) && now - this.lastTraceTick < TRACE_INTERVAL) {
@@ -100,16 +114,19 @@ public class FarmerWorkGoal extends Goal {
     public boolean canUse() {
         if (this.pauseTicks > 0) {
             this.pauseTicks--;
-            if (this.npc.level() instanceof ServerLevel level) {
-                trace(level, "PAUSE", "ticks=" + this.pauseTicks);
+            if (!this.wasPaused && this.npc.level() instanceof ServerLevel level) {
+                trace(level, "PAUSE", "result=ENTER ticks=" + this.pauseTicks);
             }
+            this.wasPaused = true;
             return false;
         }
         if (this.npc.level().isClientSide || !(this.npc.level() instanceof ServerLevel level)) {
             return false;
         }
-        trace(level, "CALLED", "role=" + this.npc.getRole().name()
-                + " profession=" + this.npc.getProfession().name());
+        if (this.wasPaused) {
+            trace(level, "PAUSE", "result=EXIT");
+            this.wasPaused = false;
+        }
         if (this.npc.getRole() != SurvivorRole.CIVILIAN) {
             trace(level, "ROLE", "result=NOT_CIVILIAN");
             return false;
@@ -147,10 +164,13 @@ public class FarmerWorkGoal extends Goal {
                 + " result=" + task.getType() + " target=" + task.getTarget());
         BlockPos approach = approachPos(level, camp, task.getTarget());
         if (approach == null) {
-            trace(level, "APPROACH", "result=NO_POSITION target=" + task.getTarget());
+            trace(level, "APPROACH", "result=NO_POSITION target=" + task.getTarget()
+                    + " reason=NO_SAFE_SIDE_INSIDE_BORDER");
             manager.markUnavailable(task.getId(), level.getGameTime());
             return false;
         }
+        trace(level, "APPROACH", "result=OK target=" + task.getTarget()
+                + " approach=" + approach + " task=" + task.getType());
 
         UUID taskId = task.getId();
         if (!controller.tryStart(task, () -> manager.release(taskId))) {
@@ -162,7 +182,7 @@ public class FarmerWorkGoal extends Goal {
 
         this.approach = approach;
         this.state = State.MOVING;
-        if (this.npc.blockPosition().distSqr(approach) <= REACH_DISTANCE_SQR) {
+        if (atApproach(approach)) {
             trace(level, "PATH_RESULT", "result=ALREADY_THERE");
             return true;
         }
@@ -201,7 +221,7 @@ public class FarmerWorkGoal extends Goal {
         if (camp == null || task == null || task.getTarget() == null) {
             return false;
         }
-        if (this.npc.blockPosition().distSqr(this.approach) > REACH_DISTANCE_SQR) {
+        if (!atApproach(this.approach)) {
             Path path = this.npc.getNavigation().getPath();
             return path != null && !path.isDone() && pathInside(camp, path);
         }
@@ -223,7 +243,7 @@ public class FarmerWorkGoal extends Goal {
         CampFarmManager manager = CampManager.farmManager(camp);
         manager.keepAlive(task.getId(), level.getGameTime());
 
-        if (this.npc.blockPosition().distSqr(this.approach) > REACH_DISTANCE_SQR) {
+        if (!atApproach(this.approach)) {
             this.npc.getNavigation().moveTo(this.approach.getX() + 0.5D, this.approach.getY(),
                     this.approach.getZ() + 0.5D, SPEED);
             this.state = State.MOVING;
@@ -234,9 +254,26 @@ public class FarmerWorkGoal extends Goal {
         BlockPos plot = task.getTarget();
         this.npc.getLookControl().setLookAt(plot.getX() + 0.5D, plot.getY() + 0.5D,
                 plot.getZ() + 0.5D);
-        this.state = State.WORKING;
 
+        // Повторная проверка непосредственно перед изменением блока: NPC обязан
+        // физически находиться рядом с целевой грядкой, а не только около
+        // абстрактной позиции подхода.
+        double targetDistance = horizontalDistSqr(this.npc.blockPosition(), plot);
+        if (targetDistance > TARGET_REACH_SQR) {
+            trace(level, "TARGET_DISTANCE", "result=TOO_FAR target=" + plot
+                    + " distSqr=" + String.format("%.2f", targetDistance));
+            manager.markUnavailable(task.getId(), level.getGameTime());
+            controller.cancel();
+            this.approach = null;
+            this.state = State.IDLE;
+            this.pauseTicks = RETRY_PAUSE;
+            return;
+        }
+
+        this.state = State.WORKING;
         boolean done = perform(level, task, plot);
+        trace(level, "INTERACT", "target=" + plot + " task=" + task.getType()
+                + " result=" + (done ? "DONE" : "FAILED"));
         if (done) {
             controller.complete();
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
@@ -256,6 +293,8 @@ public class FarmerWorkGoal extends Goal {
             NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
             NpcTask task = controller.current();
             if (camp != null && task != null) {
+                trace(level, "RELEASE", "result=STOP task=" + task.getType()
+                        + " target=" + task.getTarget());
                 CampManager.farmManager(camp).release(task.getId());
             }
             controller.cancel();
@@ -346,6 +385,7 @@ public class FarmerWorkGoal extends Goal {
     }
 
     private void cancel(ServerLevel level, CampFarmManager manager, UUID taskId, boolean done) {
+        trace(level, "RELEASE", "result=CANCEL taskId=" + taskId);
         manager.release(taskId);
         CampManager.taskController(this.npc.getIdentityId()).cancel();
         this.approach = null;
@@ -359,32 +399,74 @@ public class FarmerWorkGoal extends Goal {
         return campId == null ? null : CampManager.getCamp(level, campId);
     }
 
-    /** Боковая позиция на уровень выше пашни. */
+    /**
+     * Боковая позиция взаимодействия.
+     *
+     * <p>Ноги NPC находятся на том же уровне, что и блок пашни: культура стоит
+     * на блок выше, поэтому позиция «над пашней» была на блок выше фактического
+     * уровня стояния и давала лишнюю вертикальную компоненту в дистанции.
+     * Кандидат — соседняя клетка на уровне пашни с твёрдой опорой под ногами и
+     * двумя свободными клетками для тела и головы. Опорой может быть любой
+     * твёрдый блок, не обязательно пашня.
+     */
     @Nullable
     private BlockPos approachPos(ServerLevel level, CampRecord camp, BlockPos plot) {
-        BlockPos best = null;
-        double bestDistance = Double.MAX_VALUE;
+        // Сначала четыре стороны, затем диагонали: диагональная клетка тоже
+        // остаётся соседней с грядкой и может оказаться единственной внутри
+        // рабочей границы, когда стороны заняты пашней или вне круга.
         for (Direction dir : Direction.Plane.HORIZONTAL) {
-            BlockPos pos = plot.relative(dir).above();
-            if (!insideBorder(camp, pos)) {
-                continue;
-            }
-            if (!level.getBlockState(pos.below()).blocksMotion()
-                    || !level.getBlockState(pos).isAir()
-                    || !level.getBlockState(pos.above()).isAir()) {
-                continue;
-            }
-            if (pos.distSqr(plot.above()) > REACH_DISTANCE_SQR) {
-                continue;
-            }
-            boolean onFarmland = level.getBlockState(pos.below()).is(Blocks.FARMLAND);
-            double distance = this.npc.blockPosition().distSqr(pos) + (onFarmland ? 1000.0D : 0.0D);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = pos;
+            BlockPos candidate = considerApproach(level, camp, plot, plot.relative(dir));
+            if (candidate != null) {
+                return candidate;
             }
         }
-        return best;
+        for (Direction dir : Direction.Plane.HORIZONTAL) {
+            Direction next = dir.getClockWise();
+            BlockPos diagonal = plot.offset(dir.getStepX() + next.getStepX(), 0,
+                    dir.getStepZ() + next.getStepZ());
+            BlockPos candidate = considerApproach(level, camp, plot, diagonal);
+            if (candidate != null) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /** Проверить одного кандидата; вернуть его, если он пригоден. */
+    @Nullable
+    private BlockPos considerApproach(ServerLevel level, CampRecord camp, BlockPos plot,
+                                      BlockPos pos) {
+        if (!insideBorder(camp, pos)) {
+            return null;
+        }
+        if (!level.getBlockState(pos.below()).blocksMotion()
+                || level.getBlockState(pos.above()).blocksMotion()) {
+            return null;
+        }
+        if (horizontalDistSqr(pos, plot) > TARGET_REACH_SQR) {
+            return null;
+        }
+        // Пашня и культура в соседней клетке не блокируют стояние: у культур
+        // нет коллизии, а вытаптывание пашни перехватывается CampEvents.
+        return pos;
+    }
+
+    /**
+     * NPC физически находится в выбранной клетке подхода.
+     *
+     * <p>Сравнение по {@code blockPosition()} — без «почти прибыл»: иначе Goal
+     * останавливается на расстоянии 1.5 блока от позиции и затем получает
+     * TOO_FAR до самой грядки.
+     */
+    private boolean atApproach(BlockPos approach) {
+        return this.npc.blockPosition().equals(approach);
+    }
+
+    /** Горизонтальное расстояние между центрами клеток, без компоненты Y. */
+    private static double horizontalDistSqr(BlockPos a, BlockPos b) {
+        double dx = a.getX() - b.getX();
+        double dz = a.getZ() - b.getZ();
+        return dx * dx + dz * dz;
     }
 
     private static boolean insideBorder(CampRecord camp, BlockPos pos) {
