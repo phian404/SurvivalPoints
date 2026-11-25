@@ -116,6 +116,36 @@ public final class CampTuning {
     /** Имя файла данных в мире. */
     public static final String CAMP_DATA_ID = "survivalpoints_camps";
 
+    // ==================== Автоматический поиск площадок (этап 7) ====================
+
+    /**
+     * Сторона ячейки кандидата (в блоках).
+     *
+     * <p>Кандидат стоит строго в центре ячейки. Минимальное расстояние между
+     * центрами соседних лагерей: {@code 2*radius + CAMP_MIN_GAP_BETWEEN = 28}.
+     * Смещение итогового центра до {@code SITE_SEARCH_RADIUS = 6} по каждой
+     * оси даёт {@code 28 + 2*6 = 40}.
+     */
+    public static final int SITE_CELL_SIZE = 40;
+    /** Тиков между проходами сканирования ячеек. */
+    public static final int SITE_SCAN_INTERVAL = 200;
+    /** Сколько лагерей создаётся за один проход. */
+    public static final int SITE_MAX_CREATED_PER_SCAN = 1;
+    /** Сколько ячеек рассматривается за один проход (включая пропущенные). */
+    public static final int SITE_MAX_CELLS_PER_SCAN = 8;
+    /** Радиус поиска ячеек вокруг игроков (в блоках). */
+    public static final int SITE_PLAYER_SCAN_RADIUS = 256;
+    /** Минимальная дистанция от центра лагеря до игрока (в блоках). */
+    public static final int SITE_MIN_DISTANCE_TO_PLAYER = 64;
+    /** Пауза перед повторной проверкой после трёх временных недоступностей (тиков). */
+    public static final int SITE_NOT_READY_RETRY_DELAY = 1200;
+    /** Сколько временных недоступностей допускается до паузы. */
+    public static final int SITE_NOT_READY_MAX_ATTEMPTS = 3;
+    /** Имя файла журнала ячеек в мире. */
+    public static final String SITE_JOURNAL_DATA_ID = "survivalpoints_camp_sites";
+    /** Тег разрешённых биомов для автоматических лагерей. */
+    public static final String SITE_BIOME_ALLOW_TAG = "survivalpoints:camp_site_allowed";
+
     /**
      * Сколько постов у лагеря такого радиуса.
      *

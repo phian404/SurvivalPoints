@@ -1,6 +1,7 @@
 package com.phian404.survivalpoints.init;
 
 import com.phian404.survivalpoints.camp.CampManager;
+import com.phian404.survivalpoints.camp.site.CampSiteDirector;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.AbstractArrow;
@@ -167,6 +168,7 @@ public class ModEntityEvents {
         }
         long start = System.nanoTime();
         CampManager.onServerTick(event.getServer());
+        CampSiteDirector.onServerTick(event.getServer());
         PerfDiagnostics.addOurNanos(System.nanoTime() - start);
         PerfDiagnostics.onTickEnd();
     }

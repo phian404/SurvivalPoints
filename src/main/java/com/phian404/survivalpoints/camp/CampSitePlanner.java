@@ -1,16 +1,20 @@
 package com.phian404.survivalpoints.camp;
 
+import com.phian404.survivalpoints.camp.site.CampSiteRequest;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.ChunkStatus;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
@@ -452,20 +456,60 @@ public final class CampSitePlanner {
     }
 
     /**
-     * Результат проверки: план либо причина отказа.
+     * Режим поиска площадки.
+     *
+     * <p>{@link #BEST_EFFORT} — прежний ручной путь: незагруженные центры
+     * пропускаются, выбирается лучший среди доступных.
+     *
+     * <p>{@link #STRICT} — автоматический путь: должны быть полноценно оценены
+     * все {@link #SITE_SEARCH_MAX_CANDIDATES} центров. Если хотя бы один центр
+     * оценить нельзя, возвращается {@link Outcome.Status#NOT_READY} — выбор
+     * лучшего из неполного набора запрещён.
+     */
+    public enum SearchMode {
+        BEST_EFFORT,
+        STRICT
+    }
+
+    /**
+     * Результат проверки: план, окончательный отказ или временная недоступность.
      */
     public static final class Outcome {
 
+        public enum Status {
+            PLAN,
+            REJECTED,
+            NOT_READY
+        }
+
+        private final Status status;
         private final Plan plan;
         private final String refusal;
 
-        private Outcome(Plan plan, String refusal) {
+        private Outcome(Status status, Plan plan, String refusal) {
+            this.status = status;
             this.plan = plan;
             this.refusal = refusal;
         }
 
+        public static Outcome success(Plan plan) {
+            return new Outcome(Status.PLAN, plan, null);
+        }
+
+        public static Outcome rejected(String reason) {
+            return new Outcome(Status.REJECTED, null, reason);
+        }
+
+        public static Outcome notReady(String reason) {
+            return new Outcome(Status.NOT_READY, null, reason);
+        }
+
+        public Status status() {
+            return this.status;
+        }
+
         public boolean isSuccess() {
-            return this.plan != null;
+            return this.status == Status.PLAN;
         }
 
         @Nullable
@@ -494,20 +538,60 @@ public final class CampSitePlanner {
      * @return план или причина отказа
      */
     public static Outcome plan(ServerLevel level, BlockPos requestPos, int radius) {
+        return plan(level, new CampSiteRequest(
+                CampSiteRequest.Source.MANUAL_RADIO, requestPos, radius), SearchMode.BEST_EFFORT);
+    }
+
+    /**
+     * Проверить участок и построить план с заданным источником и режимом.
+     *
+     * <p>{@link SearchMode#BEST_EFFORT} сохраняет прежнее поведение: незагруженные
+     * центры пропускаются, выбирается лучший среди доступных.
+     *
+     * <p>{@link SearchMode#STRICT} требует полноценной оценки всех
+     * {@link #SITE_SEARCH_MAX_CANDIDATES} центров. Если какой-то центр нельзя
+     * оценить (чанки не готовы) или оценка дала временную недоступность
+     * (незагруженная ссылка на структуру), возвращается
+     * {@link Outcome.Status#NOT_READY}. Выбор лучшего из неполного набора
+     * запрещён.
+     *
+     * @param level   серверный уровень
+     * @param request источник запроса (ручное радио или автоматическая ячейка)
+     * @param mode    режим поиска
+     * @return план, окончательный отказ или временная недоступность
+     */
+    public static Outcome plan(ServerLevel level, CampSiteRequest request, SearchMode mode) {
+        BlockPos requestPos = request.requestPos();
+        int radius = request.radius();
+        boolean strict = mode == SearchMode.STRICT;
+
         SiteScore best = null;
         String lastRefusal = null;
+        String notReadyReason = null;
         int checked = 0;
 
         for (BlockPos center : candidateCenters(requestPos)) {
             if (checked >= SITE_SEARCH_MAX_CANDIDATES) {
                 break;
             }
-            if (!isAreaLoaded(level, center, radius)) {
+            if (!isAreaReady(level, center, radius, strict)) {
+                if (strict) {
+                    notReadyReason = "Чанки центра " + center.getX() + "," + center.getZ()
+                            + " ещё не готовы";
+                    break;
+                }
                 continue;
             }
             checked++;
 
-            SiteCandidate candidate = evaluateSite(level, requestPos, center, radius);
+            SiteCandidate candidate = evaluateSite(level, request, center, radius);
+            if (candidate.notReady) {
+                if (strict) {
+                    notReadyReason = candidate.refusal;
+                    break;
+                }
+                continue;
+            }
             if (candidate.plan != null) {
                 SiteScore score = new SiteScore(candidate.plan, candidate.orientation);
                 if (best == null || score.isBetterThan(best)) {
@@ -518,10 +602,20 @@ public final class CampSitePlanner {
             }
         }
 
-        if (best != null) {
-            return new Outcome(best.plan, null);
+        if (strict) {
+            if (notReadyReason != null) {
+                return Outcome.notReady(notReadyReason);
+            }
+            if (checked < SITE_SEARCH_MAX_CANDIDATES) {
+                return Outcome.notReady("Оценено " + checked + " из "
+                        + SITE_SEARCH_MAX_CANDIDATES + " центров");
+            }
         }
-        return new Outcome(null, lastRefusal != null
+
+        if (best != null) {
+            return Outcome.success(best.plan);
+        }
+        return Outcome.rejected(lastRefusal != null
                 ? lastRefusal : "Подходящая площадка не найдена");
     }
 
@@ -566,7 +660,45 @@ public final class CampSitePlanner {
     }
 
     /**
-     * Проверить, что все чтения создания лагеря покрыты загруженными чанками.
+     * Проверить готовность области вокруг точки запроса.
+     *
+     * <p>Охват равен {@code radius + CAMP_CLEAR_MARGIN + EDGE_PROBE_STEPS} от
+     * точки запроса плюс {@link #SITE_SEARCH_RADIUS} на возможное смещение
+     * центра. Для компактного лагеря это {@code 10 + 3 + 3 + 6 = 22} блока.
+     * Арифметика не дублируется: {@link #isAreaReady} считает extent один раз.
+     *
+     * <p>Каждый чанк проверяется через {@code getChunkNow} и должен иметь статус
+     * не ниже {@link ChunkStatus#FULL}. {@code hasChunk} здесь недостаточен:
+     * чанк может существовать в кэше, но ещё не быть готовым к чтению и изменению
+     * блоков. Метод не запрашивает чанк и не запускает генерацию.
+     *
+     * @param level      серверный уровень
+     * @param requestPos исходная точка запроса
+     * @param radius     радиус лагеря
+     * @return {@code true}, если вся область поиска полностью готова
+     */
+    public static boolean isSearchAreaReady(ServerLevel level, BlockPos requestPos, int radius) {
+        return isAreaReady(level, requestPos, radius + SITE_SEARCH_RADIUS, true);
+    }
+
+    /**
+     * Биом на поверхности колонки.
+     *
+     * <p>Единый метод для проверки точки кандидата и фактического центра лагеря.
+     * Не использует {@code Plan.getCenter().getY()}: этот Y наследуется от точки
+     * запроса и может не совпадать с поверхностью выбранной площадки.
+     *
+     * @param level серверный уровень
+     * @param pos   точка (Y не используется)
+     * @return биом поверхностного блока колонки
+     */
+    public static Holder<Biome> surfaceBiome(ServerLevel level, BlockPos pos) {
+        int y = level.getHeight(Heightmap.Types.WORLD_SURFACE, pos.getX(), pos.getZ());
+        return level.getBiome(new BlockPos(pos.getX(), y, pos.getZ()));
+    }
+
+    /**
+     * Проверить, что все чтения создания лагеря покрыты готовыми чанками.
      *
      * <p>Площадка и зона подготовки занимают {@code radius + CAMP_CLEAR_MARGIN}.
      * Дальше {@link CampGenerator#probeOuterTerrainY} читает рельеф за полосой
@@ -575,15 +707,15 @@ public final class CampSitePlanner {
      * {@code radius + margin + EDGE_PROBE_STEPS}; для текущих значений это
      * {@code 10 + 3 + 3 = 16}.
      *
-     * <p>Используется только {@code hasChunk}: метод не запрашивает чанк и не
-     * запускает генерацию. Незагруженный кандидат пропускается без ошибки.
-     *
      * @param level  серверный уровень
      * @param center центр кандидата
      * @param radius радиус лагеря
-     * @return {@code true}, если все нужные чанки уже есть
+     * @param strict если {@code true} — {@code getChunkNow} + статус FULL;
+     *               иначе прежний {@code hasChunk} ручного пути
+     * @return {@code true}, если все нужные чанки готовы
      */
-    private static boolean isAreaLoaded(ServerLevel level, BlockPos center, int radius) {
+    private static boolean isAreaReady(ServerLevel level, BlockPos center, int radius,
+                                       boolean strict) {
         int extent = radius + CampTuning.CAMP_CLEAR_MARGIN + CampGenerator.EDGE_PROBE_STEPS;
         int minX = (center.getX() - extent) >> 4;
         int maxX = (center.getX() + extent) >> 4;
@@ -591,7 +723,12 @@ public final class CampSitePlanner {
         int maxZ = (center.getZ() + extent) >> 4;
         for (int cx = minX; cx <= maxX; cx++) {
             for (int cz = minZ; cz <= maxZ; cz++) {
-                if (!level.getChunkSource().hasChunk(cx, cz)) {
+                if (strict) {
+                    LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
+                    if (chunk == null || !chunk.getStatus().isOrAfter(ChunkStatus.FULL)) {
+                        return false;
+                    }
+                } else if (!level.getChunkSource().hasChunk(cx, cz)) {
                     return false;
                 }
             }
@@ -608,8 +745,11 @@ public final class CampSitePlanner {
      * @param radius     радиус лагеря
      * @return план либо причина отказа
      */
-    private static SiteCandidate evaluateSite(ServerLevel level, BlockPos requestPos,
+    private static SiteCandidate evaluateSite(ServerLevel level, CampSiteRequest request,
                                               BlockPos center, int radius) {
+        BlockPos requestPos = request.requestPos();
+        boolean manualRadio = request.source() == CampSiteRequest.Source.MANUAL_RADIO;
+
         String conflict = findCampConflict(level, center, radius);
         if (conflict != null) {
             return SiteCandidate.refused(conflict);
@@ -628,9 +768,11 @@ public final class CampSitePlanner {
             for (int lz = 0; lz < cells; lz++) {
                 int x = minX + lx;
                 int z = minZ + lz;
-                // Исходное радио исключается по его фактической колонке: блок
-                // стоит в requestPos, а не в центре выбранной площадки.
-                boolean isRequestColumn = x == requestPos.getX() && z == requestPos.getZ();
+                // Исключение колонки исходного радио — только для ручного пути.
+                // AUTO_CELL не ставит радио в точке запроса, поэтому грунт
+                // ищется во всех колонках без пропуска яруса.
+                boolean isRequestColumn = manualRadio
+                        && x == requestPos.getX() && z == requestPos.getZ();
                 int groundY = isRequestColumn
                         ? findGroundY(level, x, z, requestPos.getY())
                         : findGroundY(level, x, z);
@@ -662,16 +804,19 @@ public final class CampSitePlanner {
                     + " (медианный уровень участка " + medianY + ")");
         }
 
-        String structureConflict = findStructureConflict(level, center, radius, floorY);
-        if (structureConflict != null) {
-            return SiteCandidate.refused(structureConflict);
+        StructureCheck structureCheck = findStructureConflict(level, center, radius, floorY);
+        if (structureCheck.notReady) {
+            return SiteCandidate.notReady(structureCheck.reason);
+        }
+        if (structureCheck.reason != null) {
+            return SiteCandidate.refused(structureCheck.reason);
         }
 
         OrientationScore orientation = chooseOrientation(level, center, radius, floorY);
         Plan plan = buildPlan(requestPos, center, radius, floorY, medianY,
                 orientation.rotation, surfaceAirY, surfaceStates);
 
-        String blocked = checkPreparationZone(level, plan);
+        String blocked = checkPreparationZone(level, plan, manualRadio);
         if (blocked != null) {
             return SiteCandidate.refused(blocked);
         }
@@ -721,19 +866,50 @@ public final class CampSitePlanner {
         private final Plan plan;
         private final String refusal;
         private final OrientationScore orientation;
+        private final boolean notReady;
 
-        private SiteCandidate(Plan plan, String refusal, OrientationScore orientation) {
+        private SiteCandidate(Plan plan, String refusal, OrientationScore orientation,
+                              boolean notReady) {
             this.plan = plan;
             this.refusal = refusal;
             this.orientation = orientation;
+            this.notReady = notReady;
         }
 
         private static SiteCandidate accepted(Plan plan, OrientationScore orientation) {
-            return new SiteCandidate(plan, null, orientation);
+            return new SiteCandidate(plan, null, orientation, false);
         }
 
         private static SiteCandidate refused(String refusal) {
-            return new SiteCandidate(null, refusal, null);
+            return new SiteCandidate(null, refusal, null, false);
+        }
+
+        private static SiteCandidate notReady(String reason) {
+            return new SiteCandidate(null, reason, null, true);
+        }
+    }
+
+    /** Результат проверки структур: конфликт, временная недоступность или чисто. */
+    private static final class StructureCheck {
+
+        private final String reason;
+        private final boolean notReady;
+
+        private StructureCheck(String reason, boolean notReady) {
+            this.reason = reason;
+            this.notReady = notReady;
+        }
+
+        private static StructureCheck clear() {
+            return new StructureCheck(null, false);
+        }
+
+        private static StructureCheck conflict(String reason) {
+            return new StructureCheck(reason, false);
+        }
+
+        private static StructureCheck notReady(String reason) {
+            return new StructureCheck(reason, true);
         }
     }
 
@@ -1179,9 +1355,8 @@ public final class CampSitePlanner {
      * @param floorY выбранный ярус пола
      * @return причина отказа или {@code null}
      */
-    @Nullable
-    private static String findStructureConflict(ServerLevel level, BlockPos center,
-                                                int radius, int floorY) {
+    private static StructureCheck findStructureConflict(ServerLevel level, BlockPos center,
+                                                       int radius, int floorY) {
         int margin = CampTuning.CAMP_CLEAR_MARGIN;
         int minX = center.getX() - radius - margin;
         int maxX = center.getX() + radius + margin;
@@ -1206,7 +1381,7 @@ public final class CampSitePlanner {
                     String conflict = checkStructureStart(level, entry.getKey(), entry.getValue(),
                             minX, maxX, minY, maxY, minZ, maxZ);
                     if (conflict != null) {
-                        return conflict;
+                        return StructureCheck.conflict(conflict);
                     }
                 }
 
@@ -1220,21 +1395,24 @@ public final class CampSitePlanner {
                             ResourceLocation id = level.registryAccess()
                                     .registryOrThrow(Registries.STRUCTURE)
                                     .getKey(structure);
-                            return "Структура " + (id != null ? id : "?")
+                            // Незагруженный стартовый чанк — временная недоступность,
+                            // а не окончательный отказ площадки.
+                            return StructureCheck.notReady("Структура "
+                                    + (id != null ? id : "?")
                                     + " не проверена: стартовый чанк " + startX + "," + startZ
-                                    + " не загружен";
+                                    + " не загружен");
                         }
                         String conflict = checkStructureStart(level, structure,
                                 startChunk.getStartForStructure(structure),
                                 minX, maxX, minY, maxY, minZ, maxZ);
                         if (conflict != null) {
-                            return conflict;
+                            return StructureCheck.conflict(conflict);
                         }
                     }
                 }
             }
         }
-        return null;
+        return StructureCheck.clear();
     }
 
     /**
@@ -1288,6 +1466,24 @@ public final class CampSitePlanner {
      */
     @Nullable
     public static String checkPreparationZone(ServerLevel level, Plan plan) {
+        return checkPreparationZone(level, plan, true);
+    }
+
+    /**
+     * Проверить зону подготовки с учётом источника запроса.
+     *
+     * <p>Колонка исходного радио исключается только для {@code MANUAL_RADIO}:
+     * там {@code BlockEntity} радио уже стоит в мире и иначе блокировал бы
+     * создание. Для {@code AUTO_CELL} радио в точке запроса нет, поэтому
+     * исключения нет — любая колонка с объектом блокирует площадку.
+     *
+     * @param level       серверный уровень
+     * @param plan        рассчитанный план
+     * @param manualRadio {@code true} — ручной путь с исходным радио
+     * @return причина отказа или {@code null}
+     */
+    @Nullable
+    public static String checkPreparationZone(ServerLevel level, Plan plan, boolean manualRadio) {
         BlockPos requestPos = plan.getRequestPos();
         int margin = CampTuning.CAMP_CLEAR_MARGIN;
         int minX = plan.getCenter().getX() - plan.getRadius() - margin;
@@ -1299,7 +1495,7 @@ public final class CampSitePlanner {
 
         for (int x = minX; x <= maxX; x++) {
             for (int z = minZ; z <= maxZ; z++) {
-                if (x == requestPos.getX() && z == requestPos.getZ()) {
+                if (manualRadio && x == requestPos.getX() && z == requestPos.getZ()) {
                     continue;
                 }
                 for (int y = minY; y <= maxY; y++) {

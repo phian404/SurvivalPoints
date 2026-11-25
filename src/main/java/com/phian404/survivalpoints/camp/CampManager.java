@@ -1,5 +1,6 @@
 package com.phian404.survivalpoints.camp;
 
+import com.phian404.survivalpoints.camp.site.CampSiteRequest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -106,6 +107,80 @@ public final class CampManager {
 
         // Подготовка участка — единственный вызов, до записи лагеря: если
         // выравнивание не удалось, в CampSavedData не остаётся следа.
+        CampGenerator.prepareTerrain(level, plan);
+
+        CampRecord record = new CampRecord(name, plan.getRadioPos(), radius, owner);
+        record.setCenter(plan.getCenter());
+        data(level).addCamp(record);
+        CampGenerator.generate(level, plan, record);
+        CampGenerator.createPostsFromPois(record, plan);
+        data(level).setDirty();
+        return record;
+    }
+
+    /**
+     * Атомарно создать лагерь из уже рассчитанного STRICT-плана.
+     *
+     * <p>Автоматический путь: планировщик уже оценил все 49 центров и вернул
+     * готовый {@link CampSitePlanner.Plan}. Повторного вызова {@code plan()}
+     * здесь нет — иначе строгая оценка была бы заменена BEST_EFFORT.
+     *
+     * <p>Последовательность та же, что в ручном методе: подготовка → запись →
+     * застройка → посты. {@code request.source()} определяет, применяются ли
+     * исключения для исходного радио при повторной проверке зоны подготовки.
+     *
+     * @param level  серверный уровень
+     * @param request источник запроса (AUTO_CELL)
+     * @param owner  владелец (null — общий лагерь)
+     * @param name   название
+     * @param plan   готовый STRICT-план
+     * @return созданный лагерь или {@code null}, если зона подготовки заблокирована
+     */
+    @Nullable
+    public static CampRecord createCamp(ServerLevel level, CampSiteRequest request,
+                                        @Nullable UUID owner, String name,
+                                        CampSitePlanner.Plan plan) {
+        String missingModule = CampSitePlanner.checkModules(level);
+        if (missingModule != null) {
+            return null;
+        }
+
+        boolean manualRadio = request.source() == CampSiteRequest.Source.MANUAL_RADIO;
+        String blocked = CampSitePlanner.checkPreparationZone(level, plan, manualRadio);
+        if (blocked != null) {
+            return null;
+        }
+
+        int radius = plan.getRadius();
+
+        // Финальные проверки непосредственно перед изменением мира. Для
+        // AUTO_CELL план пришёл из STRICT-оценки, но перепроверка здесь
+        // гарантирует, что площадка не пересекает существующие лагеря и не
+        // накрывает игроков даже если состояние изменилось после plan().
+        if (!manualRadio) {
+            BlockPos center = plan.getCenter();
+            for (CampRecord other : data(level).getCamps()) {
+                int minDistance = radius + other.getRadius() + CampTuning.CAMP_MIN_GAP_BETWEEN;
+                long dx = Math.abs((long) other.getCenter().getX() - center.getX());
+                long dz = Math.abs((long) other.getCenter().getZ() - center.getZ());
+                if (dx < minDistance && dz < minDistance) {
+                    return null;
+                }
+            }
+            long minPlayerSqr = (long) CampTuning.SITE_MIN_DISTANCE_TO_PLAYER
+                    * CampTuning.SITE_MIN_DISTANCE_TO_PLAYER;
+            for (net.minecraft.server.level.ServerPlayer player : level.players()) {
+                // Расстояние до БЛИЖАЙШЕЙ ГРАНИЦЫ площадки, а не до центра.
+                long px = (long) player.getX() - center.getX();
+                long pz = (long) player.getZ() - center.getZ();
+                long outsideX = Math.max(0L, Math.abs(px) - radius);
+                long outsideZ = Math.max(0L, Math.abs(pz) - radius);
+                if (outsideX * outsideX + outsideZ * outsideZ < minPlayerSqr) {
+                    return null;
+                }
+            }
+        }
+
         CampGenerator.prepareTerrain(level, plan);
 
         CampRecord record = new CampRecord(name, plan.getRadioPos(), radius, owner);

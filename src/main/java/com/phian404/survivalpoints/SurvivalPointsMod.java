@@ -1,9 +1,12 @@
 package com.phian404.survivalpoints;
 
+import com.phian404.survivalpoints.camp.site.CampSiteConfig;
 import com.phian404.survivalpoints.init.ModBlocks;
 import com.phian404.survivalpoints.init.ModCreativeTabs;
 import com.phian404.survivalpoints.init.ModEntities;
+import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
@@ -21,6 +24,8 @@ public class SurvivalPointsMod {
         ModEntities.ENTITY_TYPES.register(FMLJavaModLoadingContext.get().getModEventBus());
         ModBlocks.register(FMLJavaModLoadingContext.get().getModEventBus());
         ModCreativeTabs.register(FMLJavaModLoadingContext.get().getModEventBus());
+
+        ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, CampSiteConfig.SPEC);
 
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::setup);
     }
