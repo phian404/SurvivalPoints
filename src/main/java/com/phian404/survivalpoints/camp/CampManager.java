@@ -167,14 +167,18 @@ public final class CampManager {
                     return null;
                 }
             }
-            long minPlayerSqr = (long) CampTuning.SITE_MIN_DISTANCE_TO_PLAYER
+            double minPlayerSqr = (double) CampTuning.SITE_MIN_DISTANCE_TO_PLAYER
                     * CampTuning.SITE_MIN_DISTANCE_TO_PLAYER;
+            // Генератор меняет рельеф и за полосой периметра: подсыпка края и
+            // подход к воротам занимают CAMP_CLEAR_MARGIN. Поэтому границей
+            // зоны воздействия считаем radius + margin, а не только периметр.
+            double affected = radius + CampTuning.CAMP_CLEAR_MARGIN;
             for (net.minecraft.server.level.ServerPlayer player : level.players()) {
-                // Расстояние до БЛИЖАЙШЕЙ ГРАНИЦЫ площадки, а не до центра.
-                long px = (long) player.getX() - center.getX();
-                long pz = (long) player.getZ() - center.getZ();
-                long outsideX = Math.max(0L, Math.abs(px) - radius);
-                long outsideZ = Math.max(0L, Math.abs(pz) - radius);
+                // Точные double-разности без усечения координат игрока.
+                double px = player.getX() - center.getX();
+                double pz = player.getZ() - center.getZ();
+                double outsideX = Math.max(0.0D, Math.abs(px) - affected);
+                double outsideZ = Math.max(0.0D, Math.abs(pz) - affected);
                 if (outsideX * outsideX + outsideZ * outsideZ < minPlayerSqr) {
                     return null;
                 }

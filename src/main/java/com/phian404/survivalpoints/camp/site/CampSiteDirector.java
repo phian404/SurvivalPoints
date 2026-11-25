@@ -44,11 +44,6 @@ public final class CampSiteDirector {
         if (!CampSiteConfig.isAutoEnabled()) {
             return;
         }
-        int tick = server.getTickCount();
-        if (tick % CampTuning.SITE_SCAN_INTERVAL != 0) {
-            return;
-        }
-
         for (ServerLevel level : server.getAllLevels()) {
             if (!CampSiteCandidates.isAllowedDimension(level.dimension())) {
                 continue;
@@ -56,11 +51,15 @@ public final class CampSiteDirector {
             if (level.players().isEmpty()) {
                 continue;
             }
-            scanLevel(level, tick);
+            long gameTime = level.getGameTime();
+            if (gameTime % CampTuning.SITE_SCAN_INTERVAL != 0) {
+                continue;
+            }
+            scanLevel(level, gameTime);
         }
     }
 
-    private static void scanLevel(ServerLevel level, int tick) {
+    private static void scanLevel(ServerLevel level, long gameTime) {
         long worldSeed = level.getSeed();
         ResourceKey<Level> dimension = level.dimension();
         TagKey<Biome> allowedBiome = CampSiteCandidates.allowedBiomeTag();
@@ -124,7 +123,7 @@ public final class CampSiteDirector {
                     || state == CampSiteJournal.SiteState.CREATED) {
                 continue;
             }
-            if (!journal.isDue(cellKey, tick)) {
+            if (!journal.isDue(cellKey, gameTime)) {
                 continue;
             }
 
@@ -139,7 +138,7 @@ public final class CampSiteDirector {
 
             // Гейт готовности ПЕРВЫЙ: до любого чтения высоты или биома.
             if (!CampSitePlanner.isSearchAreaReady(level, centerXZ, radius)) {
-                journal.markNotReady(cellKey, tick);
+                journal.markNotReady(cellKey, gameTime);
                 LOGGER.info("[SP][SITE] deferred cell {},{}: area not ready",
                         coords[0], coords[1]);
                 continue;
@@ -159,7 +158,7 @@ public final class CampSiteDirector {
                     level, request, CampSitePlanner.SearchMode.STRICT);
 
             if (outcome.status() == CampSitePlanner.Outcome.Status.NOT_READY) {
-                journal.markNotReady(cellKey, tick);
+                journal.markNotReady(cellKey, gameTime);
                 LOGGER.info("[SP][SITE] deferred cell {},{}: {}",
                         coords[0], coords[1], outcome.getRefusal());
                 continue;
@@ -194,7 +193,7 @@ public final class CampSiteDirector {
                     "Лагерь выживших", plan);
             if (record == null) {
                 // Неуспех создания — временная проблема, не окончательный отказ.
-                journal.markNotReady(cellKey, tick);
+                journal.markNotReady(cellKey, gameTime);
                 LOGGER.info("[SP][SITE] deferred cell {},{}: creation failed",
                         coords[0], coords[1]);
                 continue;
