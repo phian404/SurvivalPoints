@@ -1,5 +1,6 @@
 package com.phian404.survivalpoints.entity;
 
+import com.phian404.survivalpoints.entity.ai.CampWanderGoal;
 import com.phian404.survivalpoints.entity.role.RoleAssignmentService;
 import com.phian404.survivalpoints.entity.role.SurvivorRole;
 import net.minecraft.world.DifficultyInstance;
@@ -9,6 +10,9 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.SpawnGroupData;
+import net.minecraft.world.entity.ai.goal.FloatGoal;
+import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
+import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ServerLevelAccessor;
@@ -27,6 +31,22 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
     public BaseSurvivorNpcEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
         this.setRoleInternal(SurvivorRole.CIVILIAN);
+    }
+
+    /**
+     * Поведение мирного жителя: прогулка по лагерю, осмотр и взгляд на игрока.
+     *
+     * <p>{@link CampWanderGoal} сама проверяет наличие лагеря и границы круга,
+     * поэтому жители без привязки сохраняют прежнее поведение. Взгляд на игрока
+     * использует только флаг LOOK и не прерывает прогулку.
+     */
+    @Override
+    protected void registerGoals() {
+        super.registerGoals();
+        this.goalSelector.addGoal(0, new FloatGoal(this));
+        this.goalSelector.addGoal(1, new CampWanderGoal(this));
+        this.goalSelector.addGoal(2, new RandomLookAroundGoal(this));
+        this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 8.0F));
     }
 
     /**
