@@ -5,6 +5,10 @@ import com.phian404.survivalpoints.camp.CampPoi;
 import com.phian404.survivalpoints.camp.CampRecord;
 import com.phian404.survivalpoints.camp.CampStructurePlacer;
 import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
+import com.phian404.survivalpoints.entity.BaseSurvivorNpcEntity;
+import com.phian404.survivalpoints.entity.ai.FarmerWorkGoal;
+import com.phian404.survivalpoints.entity.ai.task.NpcTask;
+import com.phian404.survivalpoints.entity.ai.task.NpcTaskController;
 import com.phian404.survivalpoints.entity.role.SurvivorProfession;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -67,6 +71,7 @@ public class NpcDebugWandItem extends Item {
                 ? null : CampManager.getCamp(serverLevel, campId);
 
         out.append("\n §7Занятость: §f").append(occupation(npc, camp, player.level()));
+        out.append("\n §7Задача: §f").append(taskState(npc));
 
         if (camp != null) {
             UUID identity = npc.getIdentityId();
@@ -106,6 +111,33 @@ public class NpcDebugWandItem extends Item {
 
     private static String pos(@Nullable BlockPos value) {
         return value == null ? "—" : value.toShortString();
+    }
+
+    /** Текущая деятельность NPC из контроллера и исполнительного Goal. */
+    private static String taskState(BaseSurvivorEntity npc) {
+        NpcTaskController controller = CampManager.peekTaskController(npc.getIdentityId());
+        NpcTask task = controller == null ? null : controller.current();
+        if (task == null) {
+            return "REST → IDLE";
+        }
+        String state = "IDLE";
+        if (npc instanceof BaseSurvivorNpcEntity civilian) {
+            for (net.minecraft.world.entity.ai.goal.Goal goal
+                    : civilian.goalSelector.getRunningGoals()
+                            .map(wrapped -> wrapped.getGoal()).toList()) {
+                if (goal instanceof FarmerWorkGoal farmer) {
+                    state = farmer.getState().name();
+                    break;
+                }
+            }
+        }
+        StringBuilder out = new StringBuilder(task.getPriority().name())
+                .append(" → ").append(task.getType())
+                .append(" → ").append(state);
+        if (task.getTarget() != null) {
+            out.append(" → ").append(pos(task.getTarget()));
+        }
+        return out.toString();
     }
 
     /**

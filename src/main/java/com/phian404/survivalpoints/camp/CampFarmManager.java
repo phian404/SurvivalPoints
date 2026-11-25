@@ -1,10 +1,12 @@
 package com.phian404.survivalpoints.camp;
 
+import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.ai.crop.CropAdapter;
 import com.phian404.survivalpoints.entity.ai.task.NpcTask;
 import com.phian404.survivalpoints.entity.ai.task.NpcTaskPriority;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkStatus;
@@ -34,6 +36,9 @@ public final class CampFarmManager {
     /** Время жизни резервации в тиках. */
     private static final int RESERVATION_TTL = 200;
 
+    /** Задержка повторного предложения недоступной задачи. */
+    private static final int UNAVAILABLE_COOLDOWN = 60;
+
     /** Тип задачи сбора. */
     public static final String TYPE_HARVEST = "farm_harvest";
     /** Тип задачи посадки. */
@@ -54,9 +59,27 @@ public final class CampFarmManager {
     /** Доступная задача для NPC; {@code null}, если работы нет. */
     @Nullable
     public NpcTask take(ServerLevel level, CampRecord record, UUID npcId, long gameTime) {
+        return take(level, record, null, npcId, gameTime);
+    }
+
+    /**
+     * Доступная и выполнимая задача для конкретного NPC.
+     *
+     * <p>Проверка инвентаря для {@code PLANT} и вместимости для {@code HARVEST}
+     * выполняется здесь, чтобы диспетчер не выдавал задачу, которую исполнитель
+     * не сможет выполнить.
+     */
+    @Nullable
+    public NpcTask take(ServerLevel level, CampRecord record, @Nullable BaseSurvivorEntity npc,
+                        UUID npcId, long gameTime) {
         dropExpired(gameTime);
         for (FarmTask task : this.tasks.values()) {
-            if (task.reservedBy != null || !isStillValid(level, record, task)) {
+            if (task.reservedBy != null || gameTime < task.availableAt
+                    || !isStillValid(level, record, task)) {
+                continue;
+            }
+            if (npc != null && !isExecutable(level, task, npc)) {
+                task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
                 continue;
             }
             task.reservedBy = npcId;
@@ -64,6 +87,63 @@ public final class CampFarmManager {
             return task.task;
         }
         return null;
+    }
+
+    /** Продлить резервацию активной задачи. */
+    public void keepAlive(UUID taskId, long gameTime) {
+        for (FarmTask task : this.tasks.values()) {
+            if (task.task.getId().equals(taskId)) {
+                task.reservedAt = gameTime;
+                return;
+            }
+        }
+    }
+
+    /** Пометить задачу временно недоступной и снять резервацию. */
+    public void markUnavailable(UUID taskId, long gameTime) {
+        for (FarmTask task : this.tasks.values()) {
+            if (task.task.getId().equals(taskId)) {
+                task.reservedBy = null;
+                task.reservedAt = Long.MIN_VALUE;
+                task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
+                return;
+            }
+        }
+    }
+
+    /** Проверка выполнимости задачи конкретным NPC. */
+    private boolean isExecutable(ServerLevel level, FarmTask task, BaseSurvivorEntity npc) {
+        BlockPos plot = task.task.getTarget();
+        BlockState state = level.getBlockState(plot.above());
+        if (TYPE_HARVEST.equals(task.task.getType())) {
+            CropAdapter adapter = CropAdapter.find(state);
+            return adapter != null && adapter.isMature(state)
+                    && fitsInventory(npc, adapter.getDrops(level, plot.above(), state));
+        }
+        if (!state.isAir()) {
+            return false;
+        }
+        for (int slot = 0; slot < npc.getInventory().getSlots(); slot++) {
+            ItemStack stack = npc.getInventory().getStackInSlot(slot);
+            if (!stack.isEmpty() && CropAdapter.find(stack) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Вмещаются ли все стекы в инвентарь NPC. */
+    private static boolean fitsInventory(BaseSurvivorEntity npc, List<ItemStack> drops) {
+        int free = 0;
+        for (int slot = 0; slot < npc.getInventory().getSlots(); slot++) {
+            ItemStack stack = npc.getInventory().getStackInSlot(slot);
+            free += stack.isEmpty() ? 64 : Math.max(0, stack.getMaxStackSize() - stack.getCount());
+        }
+        int needed = 0;
+        for (ItemStack drop : drops) {
+            needed += drop.getCount();
+        }
+        return needed <= free;
     }
 
     /** Освободить задачу по идентификатору. Идемпотентно. */
@@ -175,6 +255,7 @@ public final class CampFarmManager {
         @Nullable
         private UUID reservedBy;
         private long reservedAt = Long.MIN_VALUE;
+        private long availableAt = Long.MIN_VALUE;
 
         private FarmTask(NpcTask task, String slotId) {
             this.task = task;

@@ -1,6 +1,7 @@
 package com.phian404.survivalpoints.camp;
 
 import com.phian404.survivalpoints.camp.site.CampSiteRequest;
+import com.phian404.survivalpoints.entity.ai.task.NpcTaskController;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -24,6 +25,9 @@ public final class CampManager {
 
     /** Runtime-диспетчеры ферм по id лагеря; не сохраняются в NBT. */
     private static final Map<UUID, CampFarmManager> FARM_MANAGERS = new HashMap<>();
+
+    /** Runtime-контроллеры задач по identityId NPC; не сохраняются в NBT. */
+    private static final Map<UUID, NpcTaskController> TASK_CONTROLLERS = new HashMap<>();
 
     private CampManager() {
     }
@@ -318,12 +322,41 @@ public static void removeFarmManager(UUID campId) {
     }
 }
 
+/**
+ * Контроллер задач NPC по постоянному identityId.
+ *
+ * <p>Хранится вне сущности: при смене роли создаётся новая сущность, и
+ * устаревшая активная задача не переносится. Контроллер живёт до явной
+ * очистки (смерть, потеря лагеря, остановка сервера).
+ */
+public static NpcTaskController taskController(UUID identityId) {
+    return TASK_CONTROLLERS.computeIfAbsent(identityId, id -> new NpcTaskController());
+}
+
+/** Контроллер без создания — для чтения диагностикой. */
+@Nullable
+public static NpcTaskController peekTaskController(UUID identityId) {
+    return TASK_CONTROLLERS.get(identityId);
+}
+
+/** Освободить и удалить контроллер задач NPC. */
+public static void removeTaskController(UUID identityId) {
+    NpcTaskController controller = TASK_CONTROLLERS.remove(identityId);
+    if (controller != null) {
+        controller.cancel();
+    }
+}
+
 /** Очистить runtime-диспетчеры при остановке сервера. */
 public static void clearRuntimeState() {
     for (CampFarmManager manager : FARM_MANAGERS.values()) {
         manager.clear();
     }
     FARM_MANAGERS.clear();
+    for (NpcTaskController controller : TASK_CONTROLLERS.values()) {
+        controller.cancel();
+    }
+    TASK_CONTROLLERS.clear();
 }
 
 

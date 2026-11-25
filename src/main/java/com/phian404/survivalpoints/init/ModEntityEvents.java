@@ -153,6 +153,7 @@ public class ModEntityEvents {
         }
 
         boolean wasLeader = identity.equals(record.getLeaderIdentityId());
+        CampManager.removeTaskController(identity);
         record.removeResident(identity);
         record.clearLeaderIf(identity);
 

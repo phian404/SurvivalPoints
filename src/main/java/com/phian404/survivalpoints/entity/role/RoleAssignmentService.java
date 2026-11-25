@@ -3,6 +3,7 @@ package com.phian404.survivalpoints.entity.role;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
 import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.BaseSurvivorNpcEntity;
+import com.phian404.survivalpoints.camp.CampManager;
 import com.phian404.survivalpoints.init.ModEntities;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
@@ -119,6 +120,9 @@ public final class RoleAssignmentService {
 
         // Новая сущность успешно в мире — теперь можно убрать старую.
         source.discard();
+        // Активная задача и резервация могли устареть вместе со старой сущностью:
+        // после смены роли NPC запрашивает работу заново.
+        CampManager.removeTaskController(source.getIdentityId());
         return replacement;
     }
 
