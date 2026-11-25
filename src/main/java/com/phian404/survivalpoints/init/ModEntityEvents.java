@@ -1,8 +1,11 @@
 package com.phian404.survivalpoints.init;
 
 import com.phian404.survivalpoints.camp.CampManager;
+import com.phian404.survivalpoints.camp.CampRecord;
 import com.phian404.survivalpoints.camp.site.CampSiteDirector;
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
+import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.monster.Monster;
@@ -11,6 +14,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -20,6 +24,7 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Глобальные события мода.
@@ -106,6 +111,40 @@ public class ModEntityEvents {
                 guardian.setTarget(attacker);
             }
         }
+    }
+
+    /**
+     * Смерть жителя лагеря: убрать его из состава и освободить пост.
+     *
+     * <p>Forge вызывает {@link LivingDeathEvent} из {@code LivingEntity.die()}
+     * ДО проверки {@code !isRemoved() && !dead}, поэтому событие приходит и при
+     * повторном вызове {@code die()} на уже мёртвой сущности. Защита — проверка
+     * {@link LivingEntity#isDeadOrDying()}. Отменённая смерть оставляет
+     * сущность живой, поэтому дополнительно проверяется {@code isCanceled()}.
+     *
+     * <p>Замену погибшему не создаём: живые NPC сохраняются штатными средствами
+     * Minecraft, мёртвые не восстанавливаются.
+     */
+    @SubscribeEvent
+    public static void onLivingDeath(LivingDeathEvent event) {
+        if (event.isCanceled() || !(event.getEntity() instanceof BaseSurvivorEntity npc)
+                || !npc.isDeadOrDying() || !(npc.level() instanceof ServerLevel level)) {
+            return;
+        }
+
+        UUID campId = npc.getCampId();
+        if (campId == null) {
+            return;
+        }
+        CampRecord record = CampManager.getCamp(level, campId);
+        if (record == null) {
+            return;
+        }
+
+        UUID identity = npc.getIdentityId();
+        record.removeResident(identity);
+        record.clearLeaderIf(identity);
+        CampManager.data(level).setDirty();
     }
 
     @SubscribeEvent
