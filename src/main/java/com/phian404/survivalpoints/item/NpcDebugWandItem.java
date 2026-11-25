@@ -1,8 +1,11 @@
 package com.phian404.survivalpoints.item;
 
 import com.phian404.survivalpoints.camp.CampManager;
+import com.phian404.survivalpoints.camp.CampPoi;
 import com.phian404.survivalpoints.camp.CampRecord;
+import com.phian404.survivalpoints.camp.CampStructurePlacer;
 import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
+import com.phian404.survivalpoints.entity.role.SurvivorProfession;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -13,6 +16,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 
 import javax.annotation.Nullable;
 import java.util.UUID;
@@ -51,6 +55,9 @@ public class NpcDebugWandItem extends Item {
         UUID campId = npc.getCampId();
         CampRecord camp = campId == null || !(player.level() instanceof ServerLevel serverLevel)
                 ? null : CampManager.getCamp(serverLevel, campId);
+
+        out.append("\n §7Занятость: §f").append(occupation(npc, camp, player.level()));
+
         if (camp != null) {
             UUID identity = npc.getIdentityId();
             boolean leader = identity.equals(camp.getLeaderIdentityId());
@@ -77,5 +84,53 @@ public class NpcDebugWandItem extends Item {
 
     private static String pos(@Nullable BlockPos value) {
         return value == null ? "—" : value.toShortString();
+    }
+
+    /**
+     * Текст занятости NPC по профессии и доступности рабочего места.
+     *
+     * <p>Профессия не сбрасывается: при недоступном месте показывается
+     * «фермерство -> без занятия», а не смена профессии.
+     */
+    private static String occupation(BaseSurvivorEntity npc, @Nullable CampRecord camp, Level level) {
+        if (npc.getProfession() == SurvivorProfession.NONE) {
+            return "без занятия";
+        }
+        if (npc.getProfession() != SurvivorProfession.FARMER) {
+            return "без занятия";
+        }
+        return hasFarmWorkplace(npc, camp, level) ? "фермерство" : "фермерство -> без занятия";
+    }
+
+    /**
+     * Доступность фермерского рабочего места.
+     *
+     * <p>Точка должна быть задана и присутствовать в POI лагеря с типом
+     * {@code farm_plot}. Если чанк загружен, дополнительно проверяется пашня
+     * по координатам. Выгруженный чанк не считается потерей места.
+     */
+    private static boolean hasFarmWorkplace(BaseSurvivorEntity npc, @Nullable CampRecord camp,
+                                            Level level) {
+        BlockPos workPos = npc.getWorkPoiPos();
+        if (workPos == null || camp == null) {
+            return false;
+        }
+
+        boolean poiExists = false;
+        for (CampPoi poi : camp.getPois()) {
+            if (CampStructurePlacer.FARM_PLOT_TYPE.equals(poi.getType())
+                    && workPos.equals(poi.getPos())) {
+                poiExists = true;
+                break;
+            }
+        }
+        if (!poiExists) {
+            return false;
+        }
+
+        if (level.isLoaded(workPos) && !level.getBlockState(workPos).is(Blocks.FARMLAND)) {
+            return false;
+        }
+        return true;
     }
 }
