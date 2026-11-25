@@ -39,11 +39,11 @@ public final class CampSiteDirector {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CampSiteDirector.class);
 
-    /** Кандидат фронтира: ячейка, обосновывающий чанк, игрок и время события. */
-    private record FrontierCandidate(long cellKey, CampFrontierEvents.ChunkKey chunk,
+    /** Кандидат фронтира: ячейка, все обосновывающие чанки, игрок и время. */
+    private record FrontierCandidate(long cellKey, List<CampFrontierEvents.ChunkKey> chunks,
                                      UUID playerId, long eventTime) {
         private String dedupKey() {
-            return chunk.dimension().location() + ":" + cellKey;
+            return chunks.get(0).dimension().location() + ":" + cellKey;
         }
     }
 
@@ -122,15 +122,26 @@ public final class CampSiteDirector {
                     continue;
                 }
                 for (long cellKey : candidateCellsForChunk(key)) {
-                    FrontierCandidate candidate = new FrontierCandidate(
-                            cellKey, key, playerId, watcher.getValue());
-                    if (!QUEUED.add(candidate.dedupKey())) {
-                        continue; // один cellKey в измерении — одна строгая оценка
+                    String dedupKey = dimension.location() + ":" + cellKey;
+                    FrontierCandidate existing = findQueued(dedupKey);
+                    if (existing != null) {
+                        // Та же ячейка от другого нового чанка: сохраняем чанк
+                        // как дополнительное обоснование, без новой оценки.
+                        if (!existing.chunks().contains(key)) {
+                            existing.chunks().add(key);
+                        }
+                        continue;
                     }
+                    if (!QUEUED.add(dedupKey)) {
+                        continue;
+                    }
+                    List<CampFrontierEvents.ChunkKey> chunks = new ArrayList<>();
+                    chunks.add(key);
                     if (QUEUE.size() >= CampTuning.SITE_FRONTIER_QUEUE_LIMIT) {
                         QUEUED.remove(expireOne().dedupKey());
                     }
-                    QUEUE.addLast(candidate);
+                    QUEUE.addLast(new FrontierCandidate(
+                            cellKey, chunks, playerId, watcher.getValue()));
                 }
             }
         }
@@ -141,22 +152,25 @@ public final class CampSiteDirector {
      *
      * <p>Центр лагеря смещается от центра ячейки не более чем на
      * {@link CampSitePlanner#SITE_SEARCH_RADIUS}, а изменяемая зона простирается
-     * на {@code radius + CAMP_CLEAR_MARGIN}. Значит центр ячейки должен лежать
-     * в пределах {@code 16 + radius + margin + searchRadius} от границы чанка.
-     * Перебираем все ячейки в этом расширенном квадрате.
+     * на {@code radius + CAMP_CLEAR_MARGIN}. Расчёт ведётся от границ чанка,
+     * поэтому расширение равно {@code radius + margin + searchRadius} — без
+     * дополнительных 16 блоков. Центр ячейки — {@code cell*SIZE + SIZE/2};
+     * ищем все cell, чей центр попадает в расширенный квадрат.
      */
     private static List<Long> candidateCellsForChunk(CampFrontierEvents.ChunkKey chunk) {
         int radius = CampTuning.CAMP_DEFAULT_RADIUS;
-        int reach = 16 + radius + CampTuning.CAMP_CLEAR_MARGIN
+        int reach = radius + CampTuning.CAMP_CLEAR_MARGIN
                 + CampSitePlanner.SITE_SEARCH_RADIUS;
+        int half = CampTuning.SITE_CELL_SIZE / 2;
         int minX = chunk.cx() * 16 - reach;
         int maxX = chunk.cx() * 16 + 15 + reach;
         int minZ = chunk.cz() * 16 - reach;
         int maxZ = chunk.cz() * 16 + 15 + reach;
-        int cellMinX = CampSiteCandidates.cellOf(minX);
-        int cellMaxX = CampSiteCandidates.cellOf(maxX);
-        int cellMinZ = CampSiteCandidates.cellOf(minZ);
-        int cellMaxZ = CampSiteCandidates.cellOf(maxZ);
+        // cellCenter = cell*SIZE + half ∈ [min, max]  ⟺  cell ∈ [(min-half)/SIZE, (max-half)/SIZE]
+        int cellMinX = Math.floorDiv(minX - half, CampTuning.SITE_CELL_SIZE);
+        int cellMaxX = Math.floorDiv(maxX - half, CampTuning.SITE_CELL_SIZE);
+        int cellMinZ = Math.floorDiv(minZ - half, CampTuning.SITE_CELL_SIZE);
+        int cellMaxZ = Math.floorDiv(maxZ - half, CampTuning.SITE_CELL_SIZE);
         List<Long> result = new ArrayList<>();
         for (int cx = cellMinX; cx <= cellMaxX; cx++) {
             for (int cz = cellMinZ; cz <= cellMaxZ; cz++) {
@@ -164,6 +178,16 @@ public final class CampSiteDirector {
             }
         }
         return result;
+    }
+
+    /** Найти уже очередь кандидата по ключу дедупликации. */
+    private static FrontierCandidate findQueued(String dedupKey) {
+        for (FrontierCandidate candidate : QUEUE) {
+            if (candidate.dedupKey().equals(dedupKey)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     /** Найти онлайн-игрока по UUID среди игроков измерения. */
@@ -218,7 +242,7 @@ public final class CampSiteDirector {
         List<FrontierCandidate> ordered = new ArrayList<>(QUEUE);
         ordered.sort(Comparator.comparingInt((FrontierCandidate c) -> distanceBand(level, c))
                 .thenComparingLong(c -> CampSiteCandidates.candidateOrder(worldSeed,
-                        c.chunk().cx(), c.chunk().cz(), dimension)));
+                        c.chunks().get(0).cx(), c.chunks().get(0).cz(), dimension)));
 
         int reviewed = 0;
         int created = 0;
@@ -229,7 +253,6 @@ public final class CampSiteDirector {
             }
             reviewed++;
 
-            CampFrontierEvents.ChunkKey chunk = candidate.chunk();
             long cellKey = candidate.cellKey();
             int[] cellCoords = CampSiteCandidates.cellCoords(cellKey);
             int cellX = cellCoords[0];
@@ -281,9 +304,17 @@ public final class CampSiteDirector {
                 continue;
             }
 
-            // Фактическая изменяемая зона должна пересекать новый чанк.
+            // Фактическая зона должна пересекать хотя бы один из чанков,
+            // которые обосновывают эту ячейку.
             int affected = radius + CampTuning.CAMP_CLEAR_MARGIN;
-            if (!intersectsChunk(plan.getCenter(), affected, chunk)) {
+            boolean frontierMatch = false;
+            for (CampFrontierEvents.ChunkKey source : candidate.chunks()) {
+                if (intersectsChunk(plan.getCenter(), affected, source)) {
+                    frontierMatch = true;
+                    break;
+                }
+            }
+            if (!frontierMatch) {
                 continue;
             }
 
@@ -314,7 +345,8 @@ public final class CampSiteDirector {
             return 1;
         }
         int affected = CampTuning.CAMP_DEFAULT_RADIUS + CampTuning.CAMP_CLEAR_MARGIN;
-        double distance = distanceToAffected(player, chunkCenter(candidate.chunk()), affected);
+        double distance = distanceToAffected(player,
+                chunkCenter(candidate.chunks().get(0)), affected);
         return distance >= CampTuning.SITE_PREFERRED_DISTANCE_MIN
                 && distance <= CampTuning.SITE_PREFERRED_DISTANCE_MAX ? 0 : 1;
     }
