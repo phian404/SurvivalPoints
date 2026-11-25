@@ -160,6 +160,8 @@ public final class CampTuning {
     public static final int SITE_FRONTIER_TTL = 600;
     /** Максимальный размер очереди фронтира. */
     public static final int SITE_FRONTIER_QUEUE_LIMIT = 128;
+    /** Порог inhabitedTime: чанк с таким или большим временем считается обжитым. */
+    public static final long SITE_MAX_INHABITED_TIME = 1000L;
 
     /**
      * Сколько постов у лагеря такого радиуса.

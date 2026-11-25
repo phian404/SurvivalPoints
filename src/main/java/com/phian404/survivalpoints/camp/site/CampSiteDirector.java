@@ -13,6 +13,8 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.chunk.ChunkStatus;
+import net.minecraft.world.level.chunk.LevelChunk;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,6 +60,14 @@ public final class CampSiteDirector {
     private CampSiteDirector() {
     }
 
+    /** Сбросить оперативное состояние (выключение режима, остановка сервера). */
+    public static void resetRuntimeState() {
+        QUEUE.clear();
+        QUEUED.clear();
+        JOIN_POS.clear();
+        wasEnabled = false;
+    }
+
     /** Тик сервера: вызывается на фазе END из ModEntityEvents. */
     public static void onServerTick(MinecraftServer server) {
         boolean enabled = CampSiteConfig.isAutoEnabled();
@@ -65,9 +75,7 @@ public final class CampSiteDirector {
             // Выключение: очистить все накопленные события и очередь, чтобы
             // старые территории не запустили генерацию после включения.
             CampFrontierEvents.clear();
-            QUEUE.clear();
-            QUEUED.clear();
-            JOIN_POS.clear();
+            resetRuntimeState();
         }
         wasEnabled = enabled;
         if (!enabled) {
@@ -180,6 +188,12 @@ public final class CampSiteDirector {
         return result;
     }
 
+    /** Удалить кандидата из оперативной очереди после терминального статуса. */
+    private static void dropCandidate(FrontierCandidate candidate) {
+        QUEUE.remove(candidate);
+        QUEUED.remove(candidate.dedupKey());
+    }
+
     /** Найти уже очередь кандидата по ключу дедупликации. */
     private static FrontierCandidate findQueued(String dedupKey) {
         for (FrontierCandidate candidate : QUEUE) {
@@ -244,6 +258,12 @@ public final class CampSiteDirector {
                 .thenComparingLong(c -> CampSiteCandidates.candidateOrder(worldSeed,
                         c.chunks().get(0).cx(), c.chunks().get(0).cz(), dimension)));
 
+        // При достижении лимита не тратим бюджет на кандидатов: они остаются
+        // в очереди и будут рассмотрены после освобождения места.
+        if (CampManager.canCreateCamp(level, null) != null) {
+            return;
+        }
+
         int reviewed = 0;
         int created = 0;
         for (FrontierCandidate candidate : ordered) {
@@ -261,10 +281,11 @@ public final class CampSiteDirector {
             CampSiteJournal.SiteState state = journal.state(cellKey);
             if (state == CampSiteJournal.SiteState.REJECTED
                     || state == CampSiteJournal.SiteState.CREATED) {
+                dropCandidate(candidate); // терминальный статус из журнала — убрать из очереди
                 continue;
             }
             if (CampManager.canCreateCamp(level, null) != null) {
-                continue;
+                continue; // лимит — кандидат остаётся в очереди
             }
 
             BlockPos centerXZ = CampSiteCandidates.cellCenterXZ(cellKey);
@@ -278,6 +299,7 @@ public final class CampSiteDirector {
             BlockPos anchor = CampSiteCandidates.candidateAnchor(level, cellKey);
             if (!CampSiteCandidates.isAllowedBiome(level, anchor, allowedBiome)) {
                 journal.markRejected(cellKey, "Биом точки кандидата не разрешён");
+                dropCandidate(candidate);
                 LOGGER.info("[SP][SITE] rejected cell {},{}: candidate biome", cellX, cellZ);
                 continue;
             }
@@ -292,6 +314,7 @@ public final class CampSiteDirector {
             }
             if (outcome.status() == CampSitePlanner.Outcome.Status.REJECTED) {
                 journal.markRejected(cellKey, outcome.getRefusal());
+                dropCandidate(candidate);
                 LOGGER.info("[SP][SITE] rejected cell {},{}: {}", cellX, cellZ, outcome.getRefusal());
                 continue;
             }
@@ -300,13 +323,28 @@ public final class CampSiteDirector {
 
             if (!CampSiteCandidates.isAllowedBiome(level, plan.getCenter(), allowedBiome)) {
                 journal.markRejected(cellKey, "Биом центра лагеря не разрешён");
+                dropCandidate(candidate);
                 LOGGER.info("[SP][SITE] rejected cell {},{}: center biome", cellX, cellZ);
+                continue;
+            }
+
+            int affected = radius + CampTuning.CAMP_CLEAR_MARGIN;
+
+            // Inhabited Time: проверяем ВСЕ чанки фактической зоны, а не только
+            // чанк фронтира. Один обжитый чанк — окончательный отказ ячейки.
+            int inhabitedResult = checkInhabitedTime(level, plan.getCenter(), affected);
+            if (inhabitedResult < 0) {
+                continue; // временная недоступность чанка — без REJECTED и без задания
+            }
+            if (inhabitedResult > 0) {
+                journal.markRejected(cellKey, "Территория уже обжита (inhabitedTime)");
+                dropCandidate(candidate);
+                LOGGER.info("[SP][SITE] rejected cell {},{}: inhabited time", cellX, cellZ);
                 continue;
             }
 
             // Фактическая зона должна пересекать хотя бы один из чанков,
             // которые обосновывают эту ячейку.
-            int affected = radius + CampTuning.CAMP_CLEAR_MARGIN;
             boolean frontierMatch = false;
             for (CampFrontierEvents.ChunkKey source : candidate.chunks()) {
                 if (intersectsChunk(plan.getCenter(), affected, source)) {
@@ -331,8 +369,7 @@ public final class CampSiteDirector {
 
             journal.markCreated(cellKey, record.getId());
             created++;
-            QUEUE.remove(candidate);
-            QUEUED.remove(candidate.dedupKey());
+            dropCandidate(candidate);
             LOGGER.info("[SP][SITE] created camp {} at cell {},{}",
                     record.getShortId(), cellX, cellZ);
         }
@@ -362,6 +399,31 @@ public final class CampSiteDirector {
         double outsideX = Math.max(0.0D, Math.abs(px) - affected);
         double outsideZ = Math.max(0.0D, Math.abs(pz) - affected);
         return Math.sqrt(outsideX * outsideX + outsideZ * outsideZ);
+    }
+
+    /**
+     * Проверить inhabitedTime всех чанков зоны center±affected.
+     *
+     * @return {@code -1} — чанк недоступен/не FULL (временно),
+     *         {@code 1} — найден обжитый чанк, {@code 0} — зона свободна
+     */
+    private static int checkInhabitedTime(ServerLevel level, BlockPos center, int affected) {
+        int minX = (center.getX() - affected) >> 4;
+        int maxX = (center.getX() + affected) >> 4;
+        int minZ = (center.getZ() - affected) >> 4;
+        int maxZ = (center.getZ() + affected) >> 4;
+        for (int cx = minX; cx <= maxX; cx++) {
+            for (int cz = minZ; cz <= maxZ; cz++) {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
+                if (chunk == null || !chunk.getStatus().isOrAfter(ChunkStatus.FULL)) {
+                    return -1; // без принудительной загрузки
+                }
+                if (chunk.getInhabitedTime() >= CampTuning.SITE_MAX_INHABITED_TIME) {
+                    return 1;
+                }
+            }
+        }
+        return 0;
     }
 
     /** Пересекает ли зона center±affected новый чанк. */

@@ -7,6 +7,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.event.level.ChunkEvent;
 import net.minecraftforge.event.level.ChunkWatchEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
@@ -98,6 +99,16 @@ public final class CampFrontierEvents {
     public static void clear() {
         NEW_CHUNKS.clear();
         WATCHED.clear();
+    }
+
+    /**
+     * Остановка сервера: сбросить всё оперативное состояние фронтира, чтобы
+     * данные одного мира не переносились в другой в той же JVM (одиночная игра).
+     */
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        clear();
+        CampSiteDirector.resetRuntimeState();
     }
 
     private static long latest(Map<UUID, Long> times) {
