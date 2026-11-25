@@ -32,6 +32,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -98,6 +99,7 @@ public class CampDebugCommand {
                                         .executes(ctx -> create(ctx, StringArgumentType.getString(ctx, "name"),
                                                 IntegerArgumentType.getInteger(ctx, "radius"), true)))))
                 .then(Commands.literal("remove")
+                        .executes(CampDebugCommand::removeAllCamps)
                         .then(Commands.argument("id", StringArgumentType.word())
                                 .executes(ctx -> remove(ctx, StringArgumentType.getString(ctx, "id")))))
                 .then(Commands.literal("upgrade")
@@ -303,6 +305,9 @@ public class CampDebugCommand {
     }
 
     private static int remove(CommandContext<CommandSourceStack> ctx, String id) {
+        if (id.equalsIgnoreCase("all")) {
+            return removeAllCamps(ctx);
+        }
         ServerLevel level = ctx.getSource().getLevel();
         CampSavedData data = CampManager.data(level);
         CampRecord record = data.getCampByShortId(id);
@@ -319,6 +324,23 @@ public class CampDebugCommand {
         data.removeCamp(record.getId());
         ctx.getSource().sendSuccess(() -> Component.literal("§aЛагерь «" + record.getName() + "» удалён"), true);
         return 1;
+    }
+
+    private static int removeAllCamps(CommandContext<CommandSourceStack> ctx) {
+        ServerLevel level = ctx.getSource().getLevel();
+        CampSavedData data = CampManager.data(level);
+        if (data.getCampCount() == 0) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§7Лагерей в этом измерении нет"), false);
+            return 0;
+        }
+
+        int count = data.getCampCount();
+        for (CampRecord record : new ArrayList<>(data.getCamps())) {
+            CampStructurePlacer.clearGateLeaf(level, record.getGatePos());
+            data.removeCamp(record.getId());
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§aУдалено лагерей: " + count), true);
+        return count;
     }
 
     /**

@@ -83,8 +83,6 @@ public class PerfDiagnostics {
             PerfDiagnostics.ourNanos = PerfDiagnostics.ourWindowNanos;
             PerfDiagnostics.pathNanos = PerfDiagnostics.pathWindowNanos;
             PerfDiagnostics.pathRebuilds = PerfDiagnostics.pathWindowRebuilds;
-            PerfDiagnostics.entityCount = countEntities();
-            PerfDiagnostics.chunkCount = countChunks();
 
             PerfDiagnostics.windowStartNanos = now;
             PerfDiagnostics.windowTicks = 0;
@@ -129,6 +127,12 @@ public class PerfDiagnostics {
             count += level.getChunkSource().getLoadedChunksCount();
         }
         return count;
+    }
+
+    /** Обновить снимок количества сущностей и чанков (вызывается явно). */
+    public static void refreshCounts() {
+        PerfDiagnostics.entityCount = countEntities();
+        PerfDiagnostics.chunkCount = countChunks();
     }
 
     // ==================== Событие урона ====================
@@ -194,6 +198,7 @@ public class PerfDiagnostics {
         }
 
         static int report(CommandContext<CommandSourceStack> ctx) {
+            PerfDiagnostics.refreshCounts();
             ServerLevel level = ctx.getSource().getLevel();
             ctx.getSource().sendSuccess(() -> Component.literal(buildReport(level, null, null, 0.0F)), false);
             return 1;
