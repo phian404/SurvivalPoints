@@ -61,6 +61,11 @@ public class FarmerWorkGoal extends Goal {
 
     private State state = State.IDLE;
 
+    /** ВРЕМЕННО: частота трассировки и последняя записанная стадия. */
+    private static final int TRACE_INTERVAL = 100;
+    private String lastTraceStage = "";
+    private long lastTraceTick = Long.MIN_VALUE;
+
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
         this.setFlags(EnumSet.of(Goal.Flag.MOVE));
@@ -71,62 +76,116 @@ public class FarmerWorkGoal extends Goal {
         return this.state;
     }
 
+    /**
+     * ВРЕМЕННО: записать стадию отказа с ограничением частоты.
+     *
+     * <p>Одно сообщение на стадию раз в 100 тиков; повтор той же стадии в
+     * пределах интервала не пишется. Диагностика только читает состояние.
+     */
+    private void trace(ServerLevel level, String stage, String detail) {
+        long now = level.getGameTime();
+        String key = stage + "|" + detail;
+        if (key.equals(this.lastTraceStage) && now - this.lastTraceTick < TRACE_INTERVAL) {
+            return;
+        }
+        this.lastTraceStage = key;
+        this.lastTraceTick = now;
+        String message = "FarmerWorkGoal: identity=" + this.npc.getIdentityId()
+                + " stage=" + stage + " " + detail;
+        level.getServer().getPlayerList().broadcastSystemMessage(
+                net.minecraft.network.chat.Component.literal("§8[SP] §7" + message), false);
+    }
+
     @Override
     public boolean canUse() {
         if (this.pauseTicks > 0) {
             this.pauseTicks--;
+            if (this.npc.level() instanceof ServerLevel level) {
+                trace(level, "PAUSE", "ticks=" + this.pauseTicks);
+            }
             return false;
         }
         if (this.npc.level().isClientSide || !(this.npc.level() instanceof ServerLevel level)) {
             return false;
         }
-        if (this.npc.getRole() != SurvivorRole.CIVILIAN
-                || this.npc.getProfession() != SurvivorProfession.FARMER) {
+        trace(level, "CALLED", "role=" + this.npc.getRole().name()
+                + " profession=" + this.npc.getProfession().name());
+        if (this.npc.getRole() != SurvivorRole.CIVILIAN) {
+            trace(level, "ROLE", "result=NOT_CIVILIAN");
+            return false;
+        }
+        if (this.npc.getProfession() != SurvivorProfession.FARMER) {
+            trace(level, "PROFESSION", "result=NOT_FARMER");
             return false;
         }
         CampRecord camp = camp(level);
-        if (camp == null || this.npc.getWorkPoiPos() == null) {
+        if (camp == null) {
+            trace(level, "CAMP", "result=NO_RECORD campId=" + this.npc.getCampId());
+            return false;
+        }
+        if (this.npc.getWorkPoiPos() == null) {
+            trace(level, "WORK_POI", "result=NULL");
             return false;
         }
 
         NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
         if (controller.current() != null) {
+            trace(level, "CONTROLLER", "result=BUSY task=" + controller.current().getType());
             return false;
         }
 
         CampFarmManager manager = CampManager.farmManager(camp);
+        int harvest = manager.taskCount(CampFarmManager.TYPE_HARVEST);
+        int plant = manager.taskCount(CampFarmManager.TYPE_PLANT);
         NpcTask task = manager.take(level, camp, this.npc, this.npc.getIdentityId(), level.getGameTime());
         if (task == null || task.getTarget() == null) {
+            trace(level, "TAKE_RESULT", "harvest=" + harvest + " plant=" + plant
+                    + " result=NO_TASK");
             return false;
         }
+        trace(level, "TAKE_RESULT", "harvest=" + harvest + " plant=" + plant
+                + " result=" + task.getType() + " target=" + task.getTarget());
         BlockPos approach = approachPos(level, camp, task.getTarget());
         if (approach == null) {
+            trace(level, "APPROACH", "result=NO_POSITION target=" + task.getTarget());
             manager.markUnavailable(task.getId(), level.getGameTime());
             return false;
         }
 
         UUID taskId = task.getId();
         if (!controller.tryStart(task, () -> manager.release(taskId))) {
+            trace(level, "TRY_START", "result=REJECTED");
             manager.release(taskId);
             return false;
         }
+        trace(level, "TRY_START", "result=OK");
 
         this.approach = approach;
         this.state = State.MOVING;
         if (this.npc.blockPosition().distSqr(approach) <= REACH_DISTANCE_SQR) {
+            trace(level, "PATH_RESULT", "result=ALREADY_THERE");
             return true;
         }
         if (!this.npc.getNavigation().moveTo(approach.getX() + 0.5D, approach.getY(),
                 approach.getZ() + 0.5D, SPEED)) {
+            trace(level, "PATH_RESULT", "result=NO_PATH approach=" + approach);
             cancel(level, manager, taskId, false);
             return false;
         }
         Path path = this.npc.getNavigation().getPath();
-        if (path == null || !pathInside(camp, path)) {
+        if (path == null) {
+            trace(level, "PATH_RESULT", "result=NULL_PATH");
             this.npc.getNavigation().stop();
             cancel(level, manager, taskId, false);
             return false;
         }
+        if (!pathInside(camp, path)) {
+            trace(level, "PATH_RESULT", "result=OUTSIDE_BORDER nodes=" + path.getNodeCount());
+            this.npc.getNavigation().stop();
+            cancel(level, manager, taskId, false);
+            return false;
+        }
+        trace(level, "PATH_RESULT", "result=OK nodes=" + path.getNodeCount());
         return true;
     }
 

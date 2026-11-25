@@ -46,6 +46,8 @@ public final class CampFarmManager {
 
     private final Map<BlockPos, FarmTask> tasks = new LinkedHashMap<>();
     private long lastScanTick = Long.MIN_VALUE;
+    private long lastTakeTraceTick = Long.MIN_VALUE;
+    private String lastTakeTraceKey = "";
 
     /** Обновить пул задач, если прошёл интервал сканирования. */
     public void refresh(ServerLevel level, CampRecord record, long gameTime) {
@@ -54,6 +56,9 @@ public final class CampFarmManager {
         }
         this.lastScanTick = gameTime;
         scan(level, record, gameTime);
+        trace("REFRESH", "camp=" + record.getId() + " interval=" + CampTuning.FARM_SCAN_INTERVAL
+                + " harvest=" + taskCount(TYPE_HARVEST) + " plant=" + taskCount(TYPE_PLANT)
+                + " total=" + this.tasks.size(), level);
     }
 
     /** Доступная задача для NPC; {@code null}, если работы нет. */
@@ -73,19 +78,38 @@ public final class CampFarmManager {
     public NpcTask take(ServerLevel level, CampRecord record, @Nullable BaseSurvivorEntity npc,
                         UUID npcId, long gameTime) {
         dropExpired(gameTime);
+        int reserved = 0;
+        int cooldown = 0;
+        int stale = 0;
+        int notExecutable = 0;
         for (FarmTask task : this.tasks.values()) {
-            if (task.reservedBy != null || gameTime < task.availableAt
-                    || !isStillValid(level, record, task)) {
+            if (task.reservedBy != null) {
+                reserved++;
+                continue;
+            }
+            if (gameTime < task.availableAt) {
+                cooldown++;
+                continue;
+            }
+            if (!isStillValid(level, record, task)) {
+                stale++;
                 continue;
             }
             if (npc != null && !isExecutable(level, task, npc)) {
+                notExecutable++;
                 task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
                 continue;
             }
             task.reservedBy = npcId;
             task.reservedAt = gameTime;
+            traceTake(level, "camp=" + record.getId() + " npc=" + npcId
+                    + " result=" + task.task.getType() + " target=" + task.task.getTarget());
             return task.task;
         }
+        traceTake(level, "camp=" + record.getId() + " npc=" + npcId + " result=NO_TASK"
+                + " total=" + this.tasks.size() + " reserved=" + reserved
+                + " cooldown=" + cooldown + " stale=" + stale
+                + " notExecutable=" + notExecutable);
         return null;
     }
 
@@ -158,6 +182,40 @@ public final class CampFarmManager {
         }
     }
 
+    /** ВРЕМЕННО: диагностика take() не чаще раза в 100 тиков для одного NPC. */
+    private void traceTake(ServerLevel level, String detail) {
+        long now = level.getGameTime();
+        if (detail.equals(this.lastTakeTraceKey) && now - this.lastTakeTraceTick < 100) {
+            return;
+        }
+        this.lastTakeTraceKey = detail;
+        this.lastTakeTraceTick = now;
+        trace("TAKE", detail, level);
+    }
+
+    /** ВРЕМЕННО: вывод диагностики в чат сервера. */
+    private static void trace(String stage, String detail, ServerLevel level) {
+        level.getServer().getPlayerList().broadcastSystemMessage(
+                net.minecraft.network.chat.Component.literal("§8[SP] §7CampFarmManager: "
+                        + stage + " " + detail), false);
+    }
+
+    /** ВРЕМЕННО: имя блока для диагностики. */
+    private static String blockName(BlockState state) {
+        return state.getBlock().builtInRegistryHolder().key().location().toString();
+    }
+
+    /** ВРЕМЕННО: количество задач по типам для диагностики. */
+    public int taskCount(String type) {
+        int count = 0;
+        for (FarmTask task : this.tasks.values()) {
+            if (type.equals(task.task.getType())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     /** Полный сброс runtime-пула (например, при выгрузке лагеря). */
     public void clear() {
         this.tasks.clear();
@@ -167,22 +225,66 @@ public final class CampFarmManager {
     /** Сканирование POI лагеря без принудительной загрузки чанков. */
     private void scan(ServerLevel level, CampRecord record, long gameTime) {
         Map<BlockPos, FarmTask> fresh = new LinkedHashMap<>();
+        int total = 0;
+        int loaded = 0;
+        int recognized = 0;
+        int mature = 0;
+        int empty = 0;
+        int harvestCreated = 0;
+        int plantCreated = 0;
+        int skippedType = 0;
+        int skippedChunk = 0;
+        int skippedOther = 0;
+
         for (CampPoi poi : record.getPois()) {
             if (!CampStructurePlacer.FARM_PLOT_TYPE.equals(poi.getType())) {
+                skippedType++;
                 continue;
             }
+            total++;
             BlockPos plot = poi.getPos();
-            if (!isChunkReady(level, plot)) {
+            boolean isLoaded = level.isLoaded(plot);
+            ChunkPos cp = new ChunkPos(plot);
+            LevelChunk chunk = isLoaded ? level.getChunkSource().getChunkNow(cp.x, cp.z) : null;
+            boolean chunkReady = chunk != null && chunk.getStatus().isOrAfter(ChunkStatus.FULL);
+            if (!isLoaded || !chunkReady) {
+                skippedChunk++;
+                trace("POI", "pos=" + plot + " result=SKIPPED reason=CHUNK_NOT_LOADED"
+                        + " isLoaded=" + isLoaded + " getChunkNow=" + (chunk != null), level);
                 continue;
             }
+            loaded++;
+            BlockState soil = level.getBlockState(plot);
             BlockState cropState = level.getBlockState(plot.above());
             CropAdapter adapter = CropAdapter.find(cropState);
+            String base = "POI=" + plot + " block=" + blockName(soil)
+                    + " above=" + blockName(cropState);
+            if (adapter != null) {
+                recognized++;
+            }
             if (adapter != null && adapter.isMature(cropState)) {
+                mature++;
                 add(fresh, plot, poi.getSlotId(), TYPE_HARVEST, record.getId());
+                harvestCreated++;
+                trace("POI", base + " adapter=" + adapter.getClass().getSimpleName()
+                        + " result=HARVEST_CREATED", level);
             } else if (cropState.isAir()) {
+                empty++;
                 add(fresh, plot, poi.getSlotId(), TYPE_PLANT, record.getId());
+                plantCreated++;
+                trace("POI", base + " result=PLANT_CREATED", level);
+            } else {
+                skippedOther++;
+                trace("POI", base + " adapter=" + (adapter == null ? "NONE"
+                        : adapter.getClass().getSimpleName()) + " result=SKIPPED reason=NO_WORK", level);
             }
         }
+
+        trace("SCAN_SUMMARY", "camp=" + record.getId() + " totalPOI=" + total
+                + " loaded=" + loaded + " recognized=" + recognized + " mature=" + mature
+                + " empty=" + empty + " harvest=" + harvestCreated + " plant=" + plantCreated
+                + " skippedType=" + skippedType + " skippedChunk=" + skippedChunk
+                + " skippedOther=" + skippedOther, level);
 
         // Переносятся только ещё не истёкшие резервации по живым задачам.
         for (Map.Entry<BlockPos, FarmTask> entry : fresh.entrySet()) {
