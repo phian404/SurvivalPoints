@@ -9,6 +9,8 @@ import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import com.phian404.survivalpoints.SurvivalPointsMod;
+import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
+import com.phian404.survivalpoints.entity.role.SurvivorProfession;
 
 /**
  * События изменения блоков внутри слотов лагеря.
@@ -50,6 +52,23 @@ public final class CampEvents {
      *
      * @param event событие установки
      */
+    /**
+     * Защита пашни от вытаптывания NPC-фермерами.
+     *
+     * <p>Отменяется только событие от фермера с привязкой к лагерю. Игроки,
+     * обычные мобы и NPC других профессий не затрагиваются; глобальный
+     * {@code mobGriefing} не меняется.
+     */
+    @SubscribeEvent
+    public static void onFarmlandTrample(BlockEvent.FarmlandTrampleEvent event) {
+        if (!(event.getEntity() instanceof BaseSurvivorEntity npc)) {
+            return;
+        }
+        if (npc.getProfession() == SurvivorProfession.FARMER && npc.hasCampBinding()) {
+            event.setCanceled(true);
+        }
+    }
+
     @SubscribeEvent
     public static void onEntityPlace(BlockEvent.EntityPlaceEvent event) {
         LevelAccessor accessor = event.getLevel();

@@ -9,9 +9,11 @@ import com.phian404.survivalpoints.entity.ai.crop.CropAdapter;
 import com.phian404.survivalpoints.entity.role.SurvivorProfession;
 import com.phian404.survivalpoints.entity.role.SurvivorRole;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
 
@@ -84,7 +86,7 @@ public class FarmerWorkGoal extends Goal {
         if (this.target == null) {
             return false;
         }
-        BlockPos approach = approachPos(camp, this.target);
+        BlockPos approach = approachPos(level, camp, this.target);
         if (approach == null) {
             this.target = null;
             return false;
@@ -116,15 +118,16 @@ public class FarmerWorkGoal extends Goal {
         if (camp == null) {
             return false;
         }
-        BlockPos approach = approachPos(camp, this.target);
-        if (approach == null || !insideBorder(camp, approach)) {
+        BlockPos approach = approachPos(level, camp, this.target);
+        if (approach == null) {
             return false;
         }
-        if (this.npc.blockPosition().distSqr(this.target) <= WORK_DISTANCE_SQR) {
-            return true;
+        if (this.npc.blockPosition().distSqr(approach) > WORK_DISTANCE_SQR) {
+            Path path = this.npc.getNavigation().getPath();
+            return path != null && !path.isDone() && pathInside(camp, path);
         }
-        Path path = this.npc.getNavigation().getPath();
-        return path != null && !path.isDone() && pathInside(camp, path);
+        // Позиция взаимодействия достигнута — проверяем доступность самой грядки.
+        return this.npc.blockPosition().distSqr(this.target.above()) <= WORK_DISTANCE_SQR;
     }
 
     @Override
@@ -133,7 +136,7 @@ public class FarmerWorkGoal extends Goal {
             return;
         }
         CampRecord camp = camp(level);
-        BlockPos approach = camp == null ? null : approachPos(camp, this.target);
+        BlockPos approach = camp == null ? null : approachPos(level, camp, this.target);
         if (approach == null) {
             this.target = null;
             return;
@@ -146,6 +149,8 @@ public class FarmerWorkGoal extends Goal {
 
         this.npc.getNavigation().stop();
         BlockPos plot = this.target;
+        this.npc.getLookControl().setLookAt(plot.getX() + 0.5D, plot.getY() + 0.5D,
+                plot.getZ() + 0.5D);
         BlockPos cropPos = plot.above();
         BlockState state = level.getBlockState(cropPos);
         CropAdapter adapter = CropAdapter.find(state);
@@ -310,8 +315,8 @@ public class FarmerWorkGoal extends Goal {
             if (!ready) {
                 continue;
             }
-            BlockPos approach = approachPos(camp, plot);
-            if (approach == null || !insideBorder(camp, approach)) {
+            BlockPos approach = approachPos(level, camp, plot);
+            if (approach == null) {
                 continue;
             }
             double distance = this.npc.blockPosition().distSqr(approach);
@@ -337,26 +342,41 @@ public class FarmerWorkGoal extends Goal {
     }
 
     /**
-     * Позиция взаимодействия: сама грядка, если она внутри круга, иначе ближайшая
-     * точка на линии от центра лагеря к грядке с отступом {@link #BORDER_INSET}.
+     * Боковая позиция взаимодействия с грядкой.
+     *
+     * <p>NPC не встаёт на саму пашню. Кандидаты — четыре соседние клетки на
+     * уровень выше грядки; каждая проверяется по опоре, свободному пространству
+     * и кругу лагеря. Предпочитается клетка без пашни под ногами, затем
+     * ближайшая к NPC. Для грядок вне круга дополнительно проверяется, что
+     * расстояние от позиции до грядки не превышает {@link #WORK_DISTANCE_SQR}.
      */
     @Nullable
-    private static BlockPos approachPos(CampRecord camp, BlockPos plot) {
-        BlockPos center = camp.getCenter();
-        if (insideBorder(camp, plot)) {
-            return plot;
+    private BlockPos approachPos(ServerLevel level, CampRecord camp, BlockPos plot) {
+        BlockPos best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (Direction dir : Direction.Plane.HORIZONTAL) {
+            // Ноги NPC на уровень выше пашни: сама грядка не используется как
+            // позиция стояния, а опорой служит любой твёрдый блок под ногами.
+            BlockPos pos = plot.relative(dir).above();
+            if (!insideBorder(camp, pos)) {
+                continue;
+            }
+            if (!level.getBlockState(pos.below()).blocksMotion()
+                    || !level.getBlockState(pos).isAir()
+                    || !level.getBlockState(pos.above()).isAir()) {
+                continue;
+            }
+            if (pos.distSqr(plot.above()) > WORK_DISTANCE_SQR) {
+                continue;
+            }
+            boolean onFarmland = level.getBlockState(pos.below()).is(Blocks.FARMLAND);
+            double distance = this.npc.blockPosition().distSqr(pos) + (onFarmland ? 1000.0D : 0.0D);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = pos;
+            }
         }
-        double dx = plot.getX() - center.getX();
-        double dz = plot.getZ() - center.getZ();
-        double length = Math.sqrt(dx * dx + dz * dz);
-        if (length < 1.0E-6D) {
-            return center;
-        }
-        int radius = Math.max(0, camp.getRadius() - BORDER_INSET);
-        int x = center.getX() + (int) Math.round(dx / length * radius);
-        int z = center.getZ() + (int) Math.round(dz / length * radius);
-        BlockPos approach = new BlockPos(x, plot.getY(), z);
-        return insideBorder(camp, approach) ? approach : null;
+        return best;
     }
 
     private static boolean insideBorder(CampRecord camp, BlockPos pos) {
