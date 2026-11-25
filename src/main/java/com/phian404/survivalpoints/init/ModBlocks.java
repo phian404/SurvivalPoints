@@ -9,6 +9,7 @@ import com.phian404.survivalpoints.camp.block.fence.PostBlock;
 import com.phian404.survivalpoints.camp.block.fence.SheetSectionBlock;
 import com.phian404.survivalpoints.camp.block.fence.WireSectionBlock;
 import com.phian404.survivalpoints.camp.blockentity.CampRadioBlockEntity;
+import com.phian404.survivalpoints.item.NpcDebugWandItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
@@ -125,6 +126,10 @@ public class ModBlocks {
 
     public static final net.minecraftforge.registries.RegistryObject<Item> RUSTED_WIRE_1_ITEM =
             ITEMS.register("rusted_wire_1", () -> new BlockItem(RUSTED_WIRE_1.get(), new Item.Properties()));
+
+    /** Отладочная палочка: читает данные NPC в чат, не меняя их. */
+    public static final net.minecraftforge.registries.RegistryObject<Item> NPC_DEBUG_WAND =
+            ITEMS.register("npc_debug_wand", NpcDebugWandItem::new);
 
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES =
             DeferredRegister.create(ForgeRegistries.BLOCK_ENTITY_TYPES, SurvivalPointsMod.MOD_ID);

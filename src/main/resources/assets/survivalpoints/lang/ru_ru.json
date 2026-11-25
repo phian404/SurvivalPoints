@@ -15,5 +15,6 @@
   "block.survivalpoints.camp_gate": "Ворота лагеря",
   "item.survivalpoints.base_guardian_spawn_egg": "Яйцо призыва стража",
   "item.survivalpoints.base_survivor_spawn_egg": "Яйцо призыва выжившего",
+  "item.survivalpoints.npc_debug_wand": "Палочка диагностики NPC",
   "entity.survivalpoints.base_survivor": "Выживший"
 }

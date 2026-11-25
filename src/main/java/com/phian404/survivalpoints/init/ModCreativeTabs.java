@@ -36,6 +36,7 @@ public class ModCreativeTabs {
                         output.accept(ModBlocks.CAMP_GATE_ITEM.get());
                         output.accept(ModEntities.BASE_GUARDIAN_SPAWN_EGG.get());
                         output.accept(ModEntities.BASE_SURVIVOR_SPAWN_EGG.get());
+                        output.accept(ModBlocks.NPC_DEBUG_WAND.get());
                     })
                     .build());
 

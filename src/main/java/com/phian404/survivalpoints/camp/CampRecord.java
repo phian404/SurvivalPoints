@@ -64,6 +64,26 @@ public class CampRecord {
     /** Привязка стража к посту: id стража → id поста. */
     private final Map<UUID, UUID> guardianPosts = new HashMap<>();
 
+    /**
+     * Постоянные identity UUID жителей лагеря.
+     *
+     * <p>Источник истины о составе лагеря: сущности в мире могут быть не
+     * загружены, а запись переживает выгрузку чанков и перезапуск.
+     */
+    private final List<UUID> residents = new ArrayList<>();
+
+    /** Лидер лагеря по постоянному identity UUID; {@code null} — лидера нет. */
+    @Nullable
+    private UUID leaderIdentityId;
+
+    /**
+     * Признак того, что население лагеря уже создано.
+     *
+     * <p>Защита от повторного спавна. Старые лагеря без тега загружаются как
+     * {@code false}, но автоматического создания при загрузке нет.
+     */
+    private boolean populationInitialized = false;
+
     /** Отношения с другими лагерями: id лагеря → отношение. */
     private final Map<UUID, CampRelation> relations = new HashMap<>();
 
@@ -340,6 +360,55 @@ public class CampRecord {
         return this.guardianPosts.size();
     }
 
+    // ==================== Население ====================
+
+    /** Постоянные identity UUID жителей (только чтение). */
+    public List<UUID> getResidents() {
+        return this.residents;
+    }
+
+    /** Добавить жителя, если его ещё нет в списке. */
+    public void addResident(UUID identityId) {
+        if (!this.residents.contains(identityId)) {
+            this.residents.add(identityId);
+        }
+    }
+
+    /**
+     * Убрать жителя из списка и освободить его пост.
+     *
+     * <p>Освобождение идёт через {@link #releaseGuardian(UUID)}: иначе пост
+     * оставался бы занятым мёртвым или ушедшим стражем.
+     */
+    public void removeResident(UUID identityId) {
+        this.residents.remove(identityId);
+        this.releaseGuardian(identityId);
+    }
+
+    @Nullable
+    public UUID getLeaderIdentityId() {
+        return this.leaderIdentityId;
+    }
+
+    public void setLeaderIdentityId(@Nullable UUID leaderIdentityId) {
+        this.leaderIdentityId = leaderIdentityId;
+    }
+
+    /** Сбросить лидера, только если это указанный житель. */
+    public void clearLeaderIf(UUID identityId) {
+        if (identityId.equals(this.leaderIdentityId)) {
+            this.leaderIdentityId = null;
+        }
+    }
+
+    public boolean isPopulationInitialized() {
+        return this.populationInitialized;
+    }
+
+    public void setPopulationInitialized(boolean populationInitialized) {
+        this.populationInitialized = populationInitialized;
+    }
+
     // ==================== Ресурсы ====================
 
     public int getFood() {
@@ -492,6 +561,18 @@ public class CampRecord {
         }
         tag.put("Guardians", guardianList);
 
+        ListTag residentList = new ListTag();
+        for (UUID identityId : this.residents) {
+            CompoundTag entry = new CompoundTag();
+            entry.putUUID("Resident", identityId);
+            residentList.add(entry);
+        }
+        tag.put("Residents", residentList);
+        if (this.leaderIdentityId != null) {
+            tag.putUUID("Leader", this.leaderIdentityId);
+        }
+        tag.putBoolean("PopulationInitialized", this.populationInitialized);
+
         ListTag relationList = new ListTag();
         for (Map.Entry<UUID, CampRelation> entry : this.relations.entrySet()) {
             CompoundTag pair = new CompoundTag();
@@ -552,6 +633,16 @@ public class CampRecord {
             CompoundTag pair = guardianList.getCompound(i);
             record.guardianPosts.put(pair.getUUID("Guard"), pair.getUUID("Post"));
         }
+
+        ListTag residentList = tag.getList("Residents", Tag.TAG_COMPOUND);
+        for (int i = 0; i < residentList.size(); i++) {
+            CompoundTag entry = residentList.getCompound(i);
+            if (entry.hasUUID("Resident")) {
+                record.residents.add(entry.getUUID("Resident"));
+            }
+        }
+        record.leaderIdentityId = tag.hasUUID("Leader") ? tag.getUUID("Leader") : null;
+        record.populationInitialized = tag.getBoolean("PopulationInitialized");
 
         ListTag relationList = tag.getList("Relations", Tag.TAG_COMPOUND);
         for (int i = 0; i < relationList.size(); i++) {

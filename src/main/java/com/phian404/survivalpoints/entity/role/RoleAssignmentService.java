@@ -139,6 +139,10 @@ public final class RoleAssignmentService {
         replacement.setScale(source.getScale());
         replacement.setCampId(source.getCampId());
         replacement.setCampPostId(source.getCampPostId());
+        // Профессия и рабочая точка — независимые от роли данные: смена типа
+        // сущности не должна сбрасывать фермера в NONE или терять его POI.
+        replacement.setProfession(source.getProfession());
+        replacement.setWorkPoiPos(source.getWorkPoiPos());
 
         replacement.moveTo(source.getX(), source.getY(), source.getZ(),
                 source.getYRot(), source.getXRot());

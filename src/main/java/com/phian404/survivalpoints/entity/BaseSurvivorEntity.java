@@ -2,7 +2,9 @@ package com.phian404.survivalpoints.entity;
 
 import com.phian404.survivalpoints.entity.role.SurvivorGender;
 import com.phian404.survivalpoints.entity.role.SurvivorNames;
+import com.phian404.survivalpoints.entity.role.SurvivorProfession;
 import com.phian404.survivalpoints.entity.role.SurvivorRole;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -101,6 +103,20 @@ public abstract class BaseSurvivorEntity extends PathfinderMob {
     /** Необязательная привязка к посту лагеря. */
     @Nullable
     private UUID campPostId;
+
+    /**
+     * Профессия выжившего. Независима от боевой роли и от лидерства.
+     *
+     * <p>Старые сохранения без тега получают {@link SurvivorProfession#NONE}.
+     */
+    private SurvivorProfession profession = SurvivorProfession.NONE;
+
+    /**
+     * Рабочая точка фермера. Симметрична {@link #campPostId}: пост для стража,
+     * POI пашни для фермера. {@code null} — точка не назначена.
+     */
+    @Nullable
+    private BlockPos workPoiPos;
 
     protected BaseSurvivorEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
@@ -251,7 +267,24 @@ public abstract class BaseSurvivorEntity extends PathfinderMob {
         return this.campId != null;
     }
 
-    // ==================== Сохранение ====================
+    // ==================== Профессия и рабочая точка ====================
+
+    public SurvivorProfession getProfession() {
+        return this.profession;
+    }
+
+    public void setProfession(SurvivorProfession profession) {
+        this.profession = profession == null ? SurvivorProfession.NONE : profession;
+    }
+
+    @Nullable
+    public BlockPos getWorkPoiPos() {
+        return this.workPoiPos;
+    }
+
+    public void setWorkPoiPos(@Nullable BlockPos workPoiPos) {
+        this.workPoiPos = workPoiPos;
+    }
 
     @Override
     public void addAdditionalSaveData(CompoundTag tag) {
@@ -266,6 +299,10 @@ public abstract class BaseSurvivorEntity extends PathfinderMob {
         }
         if (this.campPostId != null) {
             tag.putUUID("CampPostId", this.campPostId);
+        }
+        tag.putString("Profession", this.profession.name());
+        if (this.workPoiPos != null) {
+            tag.putLong("WorkPoiPos", this.workPoiPos.asLong());
         }
     }
 
@@ -303,6 +340,9 @@ public abstract class BaseSurvivorEntity extends PathfinderMob {
 
         this.campId = tag.hasUUID("CampId") ? tag.getUUID("CampId") : null;
         this.campPostId = tag.hasUUID("CampPostId") ? tag.getUUID("CampPostId") : null;
+        // Отсутствующий тег — старое сохранение: безопасное значение по умолчанию.
+        this.profession = SurvivorProfession.byName(tag.getString("Profession"));
+        this.workPoiPos = tag.contains("WorkPoiPos") ? BlockPos.of(tag.getLong("WorkPoiPos")) : null;
 
         // Имя читается движком из ванильного CustomName до этого метода.
         // ensureName() покрывает только старые сохранения, где имени не было:

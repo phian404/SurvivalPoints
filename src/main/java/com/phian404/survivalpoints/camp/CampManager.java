@@ -114,6 +114,7 @@ public final class CampManager {
         data(level).addCamp(record);
         CampGenerator.generate(level, plan, record);
         CampGenerator.createPostsFromPois(record, plan);
+        CampPopulation.spawn(level, record, plan);
         data(level).setDirty();
         return record;
     }
@@ -192,6 +193,7 @@ public final class CampManager {
         data(level).addCamp(record);
         CampGenerator.generate(level, plan, record);
         CampGenerator.createPostsFromPois(record, plan);
+        CampPopulation.spawn(level, record, plan);
         data(level).setDirty();
         return record;
     }
