@@ -2,6 +2,7 @@ package com.phian404.survivalpoints.entity.ai;
 
 import com.phian404.survivalpoints.entity.BaseGuardianEntity;
 import com.phian404.survivalpoints.init.GuardianTuning;
+import com.phian404.survivalpoints.init.PerfDiagnostics;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.monster.Monster;
@@ -38,14 +39,25 @@ public class GuardianTargetGoal extends Goal {
             return false;
         }
 
-        return this.findNearestMonster() != null;
+        boolean diag = PerfDiagnostics.isGuardianTargetDiagnosticsEnabled();
+        long start = diag ? System.nanoTime() : 0L;
+        LivingEntity result = this.findNearestMonster();
+        if (diag) {
+            PerfDiagnostics.addGuardianTargetSearch(false, System.nanoTime() - start);
+        }
+        return result != null;
     }
 
     @Override
     public void tick() {
         this.lastScanTick = this.guardian.tickCount;
 
+        boolean diag = PerfDiagnostics.isGuardianTargetDiagnosticsEnabled();
+        long start = diag ? System.nanoTime() : 0L;
         LivingEntity nearest = this.findNearestMonster();
+        if (diag) {
+            PerfDiagnostics.addGuardianTargetSearch(true, System.nanoTime() - start);
+        }
         if (nearest != null) {
             this.guardian.setTarget(nearest);
         }
@@ -74,10 +86,12 @@ public class GuardianTargetGoal extends Goal {
             return null;
         }
 
+        boolean diag = PerfDiagnostics.isGuardianTargetDiagnosticsEnabled();
         return this.guardian.level().getEntitiesOfClass(LivingEntity.class,
                         this.guardian.getBoundingBox().inflate(GuardianTuning.TARGET_DETECT_DISTANCE),
                         e -> (e instanceof Monster) && !(e instanceof BaseGuardianEntity) && e.isAlive()
                                 && !this.guardian.isTargetUnreachable(e)
+                                && (diag ? PerfDiagnostics.recordGuardianTargetLosCheck() : true)
                                 && this.guardian.hasLineOfSight(e))
                 .stream()
                 .min(Comparator.comparingDouble(this.guardian::distanceToSqr))

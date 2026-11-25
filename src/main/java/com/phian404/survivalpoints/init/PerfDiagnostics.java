@@ -50,6 +50,19 @@ public class PerfDiagnostics {
     private static int entityCount = 0;
     private static int chunkCount = 0;
 
+    // --- Диагностика GuardianTargetGoal (выключена по умолчанию) ---
+    private static boolean guardianTargetDiagnostics = false;
+    private static long guardianTargetCanUseWindow = 0L;
+    private static long guardianTargetTickWindow = 0L;
+    private static long guardianTargetLosWindow = 0L;
+    private static long guardianTargetNanosWindow = 0L;
+    private static long guardianTargetMaxNanosWindow = 0L;
+    private static long guardianTargetCanUse = 0L;
+    private static long guardianTargetTick = 0L;
+    private static long guardianTargetLos = 0L;
+    private static long guardianTargetNanos = 0L;
+    private static long guardianTargetMaxNanos = 0L;
+
     // --- Накопители (обнуляются раз в секунду) ---
     private static long tickStartNanos = 0L;
     private static long tickTotalNanos = 0L;
@@ -84,11 +97,22 @@ public class PerfDiagnostics {
             PerfDiagnostics.pathNanos = PerfDiagnostics.pathWindowNanos;
             PerfDiagnostics.pathRebuilds = PerfDiagnostics.pathWindowRebuilds;
 
+            PerfDiagnostics.guardianTargetCanUse = PerfDiagnostics.guardianTargetCanUseWindow;
+            PerfDiagnostics.guardianTargetTick = PerfDiagnostics.guardianTargetTickWindow;
+            PerfDiagnostics.guardianTargetLos = PerfDiagnostics.guardianTargetLosWindow;
+            PerfDiagnostics.guardianTargetNanos = PerfDiagnostics.guardianTargetNanosWindow;
+            PerfDiagnostics.guardianTargetMaxNanos = PerfDiagnostics.guardianTargetMaxNanosWindow;
+
             PerfDiagnostics.windowStartNanos = now;
             PerfDiagnostics.windowTicks = 0;
             PerfDiagnostics.ourWindowNanos = 0L;
             PerfDiagnostics.pathWindowNanos = 0L;
             PerfDiagnostics.pathWindowRebuilds = 0;
+            PerfDiagnostics.guardianTargetCanUseWindow = 0L;
+            PerfDiagnostics.guardianTargetTickWindow = 0L;
+            PerfDiagnostics.guardianTargetLosWindow = 0L;
+            PerfDiagnostics.guardianTargetNanosWindow = 0L;
+            PerfDiagnostics.guardianTargetMaxNanosWindow = 0L;
         }
     }
 
@@ -101,6 +125,46 @@ public class PerfDiagnostics {
     public static void addPathRebuild(long nanos) {
         PerfDiagnostics.pathWindowNanos += nanos;
         PerfDiagnostics.pathWindowRebuilds++;
+    }
+
+    /** Включена ли диагностика GuardianTargetGoal. */
+    public static boolean isGuardianTargetDiagnosticsEnabled() {
+        return PerfDiagnostics.guardianTargetDiagnostics;
+    }
+
+    /** Включить/выключить диагностику GuardianTargetGoal. */
+    public static void setGuardianTargetDiagnosticsEnabled(boolean value) {
+        PerfDiagnostics.guardianTargetDiagnostics = value;
+        // Сбросить и окно, и снимок, чтобы не осталось старых данных.
+        PerfDiagnostics.guardianTargetCanUseWindow = 0L;
+        PerfDiagnostics.guardianTargetTickWindow = 0L;
+        PerfDiagnostics.guardianTargetLosWindow = 0L;
+        PerfDiagnostics.guardianTargetNanosWindow = 0L;
+        PerfDiagnostics.guardianTargetMaxNanosWindow = 0L;
+        PerfDiagnostics.guardianTargetCanUse = 0L;
+        PerfDiagnostics.guardianTargetTick = 0L;
+        PerfDiagnostics.guardianTargetLos = 0L;
+        PerfDiagnostics.guardianTargetNanos = 0L;
+        PerfDiagnostics.guardianTargetMaxNanos = 0L;
+    }
+
+    /** Учесть проверку hasLineOfSight() (только при включённой диагностике). */
+    public static boolean recordGuardianTargetLosCheck() {
+        PerfDiagnostics.guardianTargetLosWindow++;
+        return true;
+    }
+
+    /** Учесть один поиск цели. */
+    public static void addGuardianTargetSearch(boolean fromTick, long nanos) {
+        if (fromTick) {
+            PerfDiagnostics.guardianTargetTickWindow++;
+        } else {
+            PerfDiagnostics.guardianTargetCanUseWindow++;
+        }
+        PerfDiagnostics.guardianTargetNanosWindow += nanos;
+        if (nanos > PerfDiagnostics.guardianTargetMaxNanosWindow) {
+            PerfDiagnostics.guardianTargetMaxNanosWindow = nanos;
+        }
     }
 
     private static int countEntities() {
@@ -160,6 +224,10 @@ public class PerfDiagnostics {
 
     private static String buildReport(ServerLevel level, BaseGuardianEntity guardian,
                                        DamageSource source, float amount) {
+        long targetSearches = PerfDiagnostics.guardianTargetCanUse + PerfDiagnostics.guardianTargetTick;
+        double targetAvgMs = targetSearches > 0
+                ? (PerfDiagnostics.guardianTargetNanos / 1_000_000.0D) / targetSearches
+                : 0.0D;
         return "§6[SP] §7урон стражу §f" + String.format("%.1f", amount)
                 + " §7(" + source.getMsgId() + ")"
                 + " §8| §7тик §f" + String.format("%.1f", PerfDiagnostics.lastTickMs) + " мс"
@@ -169,7 +237,14 @@ public class PerfDiagnostics {
                 + " §7мс/с, §f" + PerfDiagnostics.pathRebuilds + "§7 путей/с)"
                 + " §8| §7сущностей §f" + PerfDiagnostics.entityCount
                 + " §8| §7чанков §f" + PerfDiagnostics.chunkCount
-                + " §8| §7стражей §f" + ModEntityEvents.getGuardians(level).size();
+                + " §8| §7стражей §f" + ModEntityEvents.getGuardians(level).size()
+                + " §8| §7поиск цели " + (PerfDiagnostics.guardianTargetDiagnostics ? "§aвкл" : "§7выкл")
+                + " §8| §7поисков §f" + targetSearches + "/с (canUse " + PerfDiagnostics.guardianTargetCanUse
+                + ", tick " + PerfDiagnostics.guardianTargetTick + ")"
+                + " §8| §7LoS §f" + PerfDiagnostics.guardianTargetLos + "/с"
+                + " §8| §7время поиска §f" + String.format("%.2f", PerfDiagnostics.guardianTargetNanos / 1_000_000.0D) + " мс/с"
+                + " (ср §f" + String.format("%.3f", targetAvgMs) + " §7мс, макс §f"
+                + String.format("%.3f", PerfDiagnostics.guardianTargetMaxNanos / 1_000_000.0D) + " §7мс)";
     }
 
     // ==================== Команда ====================
@@ -188,7 +263,12 @@ public class PerfDiagnostics {
                 .then(Commands.literal("off")
                         .executes(ctx -> CampPerfCommands.setAuto(ctx, false)))
                 .then(Commands.literal("reset")
-                        .executes(ctx -> CampPerfCommands.reset(ctx))));
+                        .executes(ctx -> CampPerfCommands.reset(ctx)))
+                .then(Commands.literal("target")
+                        .then(Commands.literal("on")
+                                .executes(ctx -> CampPerfCommands.setTargetDiagnostics(ctx, true)))
+                        .then(Commands.literal("off")
+                                .executes(ctx -> CampPerfCommands.setTargetDiagnostics(ctx, false)))));
     }
 
     /** Служебные команды (внутри пакета, чтобы не плодить публичный API). */
@@ -217,7 +297,25 @@ public class PerfDiagnostics {
             PerfDiagnostics.pathWindowNanos = 0L;
             PerfDiagnostics.ourWindowNanos = 0L;
             PerfDiagnostics.hurtEvents = 0;
+            PerfDiagnostics.guardianTargetCanUseWindow = 0L;
+            PerfDiagnostics.guardianTargetTickWindow = 0L;
+            PerfDiagnostics.guardianTargetLosWindow = 0L;
+            PerfDiagnostics.guardianTargetNanosWindow = 0L;
+            PerfDiagnostics.guardianTargetMaxNanosWindow = 0L;
+            PerfDiagnostics.guardianTargetCanUse = 0L;
+            PerfDiagnostics.guardianTargetTick = 0L;
+            PerfDiagnostics.guardianTargetLos = 0L;
+            PerfDiagnostics.guardianTargetNanos = 0L;
+            PerfDiagnostics.guardianTargetMaxNanos = 0L;
             ctx.getSource().sendSuccess(() -> Component.literal("§aСчётчики сброшены"), false);
+            return 1;
+        }
+
+        static int setTargetDiagnostics(CommandContext<CommandSourceStack> ctx, boolean value) {
+            PerfDiagnostics.setGuardianTargetDiagnosticsEnabled(value);
+            ctx.getSource().sendSuccess(() -> Component.literal(value
+                    ? "§aДиагностика GuardianTargetGoal: ВКЛ"
+                    : "§7Диагностика GuardianTargetGoal: выкл"), false);
             return 1;
         }
     }

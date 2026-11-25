@@ -1,0 +1,79 @@
+warning: in the working copy of 'src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java b/src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java[m
+[1mindex 6cc4361..0cfc3bf 100644[m
+[1m--- a/src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java[m
+[1m+++ b/src/main/java/com/phian404/survivalpoints/init/ModEntityEvents.java[m
+[36m@@ -9,13 +9,17 @@[m [mimport net.minecraft.world.entity.monster.Monster;[m
+ import net.minecraft.world.level.Level;[m
+ import net.minecraft.world.phys.AABB;[m
+ import net.minecraftforge.event.TickEvent;[m
+[32m+[m[32mimport net.minecraftforge.event.level.LevelEvent;[m
+[32m+[m[32mimport net.minecraftforge.event.server.ServerStoppedEvent;[m
+ import net.minecraftforge.event.entity.living.LivingEvent;[m
+ import net.minecraftforge.event.entity.living.LivingHurtEvent;[m
+ import net.minecraftforge.eventbus.api.SubscribeEvent;[m
+ import net.minecraftforge.fml.common.Mod;[m
+ [m
+ import java.util.ArrayList;[m
+[32m+[m[32mimport java.util.IdentityHashMap;[m
+ import java.util.List;[m
+[32m+[m[32mimport java.util.Map;[m
+ [m
+ /**[m
+  * Глобальные события мода.[m
+[36m@@ -27,17 +31,17 @@[m [mimport java.util.List;[m
+  * (включая ванильных зомби) начинали двигаться рывками, потому что их тики[m
+  * выполнялись с задержкой.[m
+  *[m
+[31m- * <p>Теперь список стражей кэшируется один раз на весь мир и обновляется[m
+[32m+[m[32m * <p>Теперь список стражей кэшируется отдельно для каждого уровня и обновляется[m
+  * раз в {@link GuardianTuning#ALLY_SEARCH_INTERVAL} тиков.[m
+  */[m
+ @Mod.EventBusSubscriber(modid = "survivalpoints", bus = Mod.EventBusSubscriber.Bus.FORGE)[m
+ public class ModEntityEvents {[m
+ [m
+[31m-    /** Кэш стражей на текущий уровень. */[m
+[31m-    private static final List<BaseGuardianEntity> GUARDIAN_CACHE = new ArrayList<>();[m
+[32m+[m[32m    /** Кэш стражей по уровням (ключ — идентичность Level). */[m
+[32m+[m[32m    private record GuardianCacheEntry(List<BaseGuardianEntity> guardians, long cachedTime) {[m
+[32m+[m[32m    }[m
+ [m
+[31m-    private static Level cachedLevel = null;[m
+[31m-    private static long cachedTime = Long.MIN_VALUE;[m
+[32m+[m[32m    private static final Map<Level, GuardianCacheEntry> GUARDIAN_CACHES = new IdentityHashMap<>();[m
+ [m
+     /**[m
+      * Список стражей на уровне.[m
+[36m@@ -50,14 +54,26 @@[m [mpublic class ModEntityEvents {[m
+      */[m
+     public static List<BaseGuardianEntity> getGuardians(Level level) {[m
+         long now = level.getGameTime();[m
+[31m-        if (cachedLevel != level || now - cachedTime >= GuardianTuning.ALLY_SEARCH_INTERVAL) {[m
+[31m-            cachedLevel = level;[m
+[31m-            cachedTime = now;[m
+[31m-            GUARDIAN_CACHE.clear();[m
+[31m-            GUARDIAN_CACHE.addAll(level.getEntitiesOfClass([m
+[32m+[m[32m        GuardianCacheEntry entry = GUARDIAN_CACHES.get(level);[m
+[32m+[m[32m        if (entry == null || now - entry.cachedTime() >= GuardianTuning.ALLY_SEARCH_INTERVAL) {[m
+[32m+[m[32m            List<BaseGuardianEntity> snapshot = List.copyOf(level.getEntitiesOfClass([m
+                     BaseGuardianEntity.class, worldBox(level), e -> true));[m
+[32m+[m[32m            entry = new GuardianCacheEntry(snapshot, now);[m
+[32m+[m[32m            GUARDIAN_CACHES.put(level, entry);[m
+[32m+[m[32m        }[m
+[32m+[m[32m        return entry.guardians();[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    @SubscribeEvent[m
+[32m+[m[32m    public static void onLevelUnload(LevelEvent.Unload event) {[m
+[32m+[m[32m        if (event.getLevel() instanceof Level level) {[m
+[32m+[m[32m            GUARDIAN_CACHES.remove(level);[m
+         }[m
+[31m-        return GUARDIAN_CACHE;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    @SubscribeEvent[m
+[32m+[m[32m    public static void onServerStopped(ServerStoppedEvent event) {[m
+[32m+[m[32m        GUARDIAN_CACHES.clear();[m
+     }[m
+ [m
+     /** Габариты мира по вертикали, ширина — максимально возможная. */[m

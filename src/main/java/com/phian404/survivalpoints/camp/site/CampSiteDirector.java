@@ -252,11 +252,17 @@ public final class CampSiteDirector {
             return expired;
         });
 
-        // Приоритет: предпочтительный диапазон 96–140, затем наиболее удалённый.
+        // Приоритет: предпочтительный диапазон 96–140 (внутри — детерминированный
+        // порядок), затем остальные по убыванию расстояния.
         List<FrontierCandidate> ordered = new ArrayList<>(QUEUE);
-        ordered.sort(Comparator.comparingInt((FrontierCandidate c) -> distanceBand(level, c))
+        ordered.sort(Comparator
+                .comparingInt((FrontierCandidate c) -> isPreferred(level, c) ? 0 : 1)
+                .thenComparingDouble(c -> {
+                    double distance = candidateDistance(level, c);
+                    return isPreferred(level, c) ? 0.0D : -distance;
+                })
                 .thenComparingLong(c -> CampSiteCandidates.candidateOrder(worldSeed,
-                        c.chunks().get(0).cx(), c.chunks().get(0).cz(), dimension)));
+                        (int) (c.cellKey() >>> 32), (int) c.cellKey(), dimension)));
 
         // При достижении лимита не тратим бюджет на кандидатов: они остаются
         // в очереди и будут рассмотрены после освобождения места.
@@ -375,21 +381,29 @@ public final class CampSiteDirector {
         }
     }
 
-    /** Группа расстояния: 0 — предпочтительный диапазон, 1 — остальные. */
-    private static int distanceBand(ServerLevel level, FrontierCandidate candidate) {
-        ServerPlayer player = findPlayer(level, candidate.playerId());
-        if (player == null) {
-            return 1;
-        }
-        int affected = CampTuning.CAMP_DEFAULT_RADIUS + CampTuning.CAMP_CLEAR_MARGIN;
-        double distance = distanceToAffected(player,
-                chunkCenter(candidate.chunks().get(0)), affected);
+    /** Попадает ли кандидат в предпочтительный диапазон 96–140 блоков. */
+    private static boolean isPreferred(ServerLevel level, FrontierCandidate candidate) {
+        double distance = candidateDistance(level, candidate);
         return distance >= CampTuning.SITE_PREFERRED_DISTANCE_MIN
-                && distance <= CampTuning.SITE_PREFERRED_DISTANCE_MAX ? 0 : 1;
+                && distance <= CampTuning.SITE_PREFERRED_DISTANCE_MAX;
     }
 
-    private static BlockPos chunkCenter(CampFrontierEvents.ChunkKey chunk) {
-        return new BlockPos(chunk.cx() * 16 + 8, 0, chunk.cz() * 16 + 8);
+    /**
+     * Горизонтальное расстояние от ближайшего игрока до центра ячейки кандидата.
+     *
+     * <p>Ориентир — стабильный {@code cellCenterXZ}, а не первый чанк, добавивший
+     * кандидата в очередь: порядок поступления чанков не влияет на приоритет.
+     * Если игроков нет, расстояние равно 0 и кандидат не preferred.
+     */
+    private static double candidateDistance(ServerLevel level, FrontierCandidate candidate) {
+        BlockPos center = CampSiteCandidates.cellCenterXZ(candidate.cellKey());
+        double best = Double.MAX_VALUE;
+        for (ServerPlayer player : level.players()) {
+            double dx = player.getX() - center.getX();
+            double dz = player.getZ() - center.getZ();
+            best = Math.min(best, Math.sqrt(dx * dx + dz * dz));
+        }
+        return best == Double.MAX_VALUE ? 0.0D : best;
     }
 
     /** Расстояние от игрока до ближайшей точки зоны radius+margin. */

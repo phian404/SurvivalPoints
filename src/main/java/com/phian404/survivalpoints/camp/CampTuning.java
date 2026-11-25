@@ -124,9 +124,11 @@ public final class CampTuning {
      * <p>Кандидат стоит строго в центре ячейки. Минимальное расстояние между
      * центрами соседних лагерей: {@code 2*radius + CAMP_MIN_GAP_BETWEEN = 28}.
      * Смещение итогового центра до {@code SITE_SEARCH_RADIUS = 6} по каждой
-     * оси даёт {@code 28 + 2*6 = 40}.
+     * оси даёт {@code 28 + 2*6 = 40}. Увеличение до 56 даёт запас: минимальная
+     * разность центров соседних лагерей {@code 56 - 2*6 = 44}, то есть зазор
+     * между периметрами {@code 44 - 2*10 = 24} блока.
      */
-    public static final int SITE_CELL_SIZE = 40;
+    public static final int SITE_CELL_SIZE = 56;
     /** Тиков между проходами сканирования ячеек. */
     public static final int SITE_SCAN_INTERVAL = 200;
     /** Сколько лагерей создаётся за один проход. */
