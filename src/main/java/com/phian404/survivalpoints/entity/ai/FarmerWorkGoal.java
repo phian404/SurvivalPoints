@@ -38,9 +38,12 @@ public class FarmerWorkGoal extends Goal {
     /** Дистанция, с которой фермер может работать с участком. */
     private static final double WORK_DISTANCE_SQR = 2.5D * 2.5D;
 
-    /** Пауза после действия. */
+    /** Пауза после успешного действия. */
     private static final int PAUSE_MIN = 30;
     private static final int PAUSE_MAX = 80;
+
+    /** Короткая задержка после неудачного действия. */
+    private static final int RETRY_PAUSE = 10;
 
     /** Скорость движения к участку. */
     private static final double SPEED = 1.0D;
@@ -49,6 +52,10 @@ public class FarmerWorkGoal extends Goal {
     private int pauseTicks = 0;
     @Nullable
     private BlockPos target;
+
+    /** Последняя проблемная цель — чтобы не выбирать её повторно подряд. */
+    @Nullable
+    private BlockPos failedTarget;
 
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
@@ -77,11 +84,16 @@ public class FarmerWorkGoal extends Goal {
         if (this.target == null) {
             return false;
         }
-        if (this.npc.blockPosition().distSqr(this.target) <= WORK_DISTANCE_SQR) {
+        BlockPos approach = approachPos(camp, this.target);
+        if (approach == null) {
+            this.target = null;
+            return false;
+        }
+        if (this.npc.blockPosition().distSqr(approach) <= WORK_DISTANCE_SQR) {
             return true;
         }
-        if (!this.npc.getNavigation().moveTo(this.target.getX() + 0.5D, this.target.getY(),
-                this.target.getZ() + 0.5D, SPEED)) {
+        if (!this.npc.getNavigation().moveTo(approach.getX() + 0.5D, approach.getY(),
+                approach.getZ() + 0.5D, SPEED)) {
             this.target = null;
             return false;
         }
@@ -101,7 +113,11 @@ public class FarmerWorkGoal extends Goal {
             return false;
         }
         CampRecord camp = camp(level);
-        if (camp == null || !insideBorder(camp, this.target)) {
+        if (camp == null) {
+            return false;
+        }
+        BlockPos approach = approachPos(camp, this.target);
+        if (approach == null || !insideBorder(camp, approach)) {
             return false;
         }
         if (this.npc.blockPosition().distSqr(this.target) <= WORK_DISTANCE_SQR) {
@@ -116,23 +132,40 @@ public class FarmerWorkGoal extends Goal {
         if (this.target == null || !(this.npc.level() instanceof ServerLevel level)) {
             return;
         }
-        if (this.npc.blockPosition().distSqr(this.target) > WORK_DISTANCE_SQR) {
-            this.npc.getNavigation().moveTo(this.target.getX() + 0.5D, this.target.getY(),
-                    this.target.getZ() + 0.5D, SPEED);
+        CampRecord camp = camp(level);
+        BlockPos approach = camp == null ? null : approachPos(camp, this.target);
+        if (approach == null) {
+            this.target = null;
+            return;
+        }
+        if (this.npc.blockPosition().distSqr(approach) > WORK_DISTANCE_SQR) {
+            this.npc.getNavigation().moveTo(approach.getX() + 0.5D, approach.getY(),
+                    approach.getZ() + 0.5D, SPEED);
             return;
         }
 
         this.npc.getNavigation().stop();
-        BlockPos cropPos = this.target.above();
+        BlockPos plot = this.target;
+        BlockPos cropPos = plot.above();
         BlockState state = level.getBlockState(cropPos);
         CropAdapter adapter = CropAdapter.find(state);
+        boolean done;
         if (adapter != null && adapter.isMature(state)) {
-            harvest(level, cropPos, state, adapter);
+            done = harvest(level, cropPos, state, adapter);
         } else if (state.isAir()) {
-            plant(level, cropPos);
+            done = plant(level, cropPos);
+        } else {
+            done = false;
         }
+
         this.target = null;
-        this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
+        if (done) {
+            this.failedTarget = null;
+            this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
+        } else {
+            this.failedTarget = plot;
+            this.pauseTicks = RETRY_PAUSE;
+        }
     }
 
     @Override
@@ -142,18 +175,16 @@ public class FarmerWorkGoal extends Goal {
     }
 
     /** Сбор только если весь дроп помещается в инвентарь. */
-    private void harvest(ServerLevel level, BlockPos pos, BlockState state, CropAdapter adapter) {
+    private boolean harvest(ServerLevel level, BlockPos pos, BlockState state, CropAdapter adapter) {
         List<ItemStack> drops = adapter.getDrops(level, pos, state);
-        if (drops.isEmpty()) {
-            return;
-        }
-        if (!fitsInventory(drops)) {
-            return;
+        if (drops.isEmpty() || !fitsInventory(drops)) {
+            return false;
         }
         for (ItemStack drop : drops) {
             this.npc.addItem(drop.copy());
         }
         level.destroyBlock(pos, false);
+        return true;
     }
 
     /**
@@ -162,23 +193,25 @@ public class FarmerWorkGoal extends Goal {
      * <p>Семя списывается только после успешной установки блока; при неудаче
      * извлечённый предмет возвращается обратно в инвентарь.
      */
-    private void plant(ServerLevel level, BlockPos pos) {
+    private boolean plant(ServerLevel level, BlockPos pos) {
         ItemStack seed = findPlantableSeed();
         if (seed == null) {
-            return;
+            return false;
         }
         CropAdapter adapter = CropAdapter.find(seed);
         BlockState crop = adapter == null ? null : adapter.getCropForSeed(seed);
         if (adapter == null || crop == null) {
-            return;
+            return false;
         }
         ItemStack extracted = this.npc.extractItem(seed, 1);
         if (extracted.isEmpty()) {
-            return;
+            return false;
         }
         if (!adapter.plant(level, pos, crop)) {
             this.npc.addItem(extracted);
+            return false;
         }
+        return true;
     }
 
     /** Первое семя из инвентаря, для которого есть адаптер и культура. */
@@ -223,7 +256,11 @@ public class FarmerWorkGoal extends Goal {
     }
 
     /**
-     * Ближайший участок с полезным действием среди POI того же слота.
+     * Выбор цели: сначала зрелые культуры, затем посадка.
+     *
+     * <p>Сбор всегда имеет приоритет — пустая грядка не может перебить зрелую
+     * культуру независимо от расстояния. Участок фермы сам по себе может лежать
+     * вне круга; проверяется достижимость позиции взаимодействия внутри круга.
      */
     @Nullable
     private BlockPos pickWorkTarget(ServerLevel level, CampRecord camp) {
@@ -243,18 +280,41 @@ public class FarmerWorkGoal extends Goal {
         List<BlockPos> plots = new ArrayList<>();
         for (CampPoi poi : camp.getPois()) {
             if (CampStructurePlacer.FARM_PLOT_TYPE.equals(poi.getType())
-                    && slotId.equals(poi.getSlotId()) && insideBorder(camp, poi.getPos())) {
+                    && slotId.equals(poi.getSlotId())) {
                 plots.add(poi.getPos());
             }
         }
 
+        BlockPos harvest = nearest(level, camp, plots, true);
+        if (harvest != null) {
+            return harvest;
+        }
+        return nearest(level, camp, plots, false);
+    }
+
+    /**
+     * Ближайший доступный участок нужного типа.
+     *
+     * @param harvest {@code true} — зрелая культура, {@code false} — посадка
+     */
+    @Nullable
+    private BlockPos nearest(ServerLevel level, CampRecord camp, List<BlockPos> plots,
+                             boolean harvest) {
         BlockPos best = null;
         double bestDistance = Double.MAX_VALUE;
         for (BlockPos plot : plots) {
-            if (!hasWork(level, plot)) {
+            if (plot.equals(this.failedTarget)) {
                 continue;
             }
-            double distance = this.npc.blockPosition().distSqr(plot);
+            boolean ready = harvest ? isHarvestReady(level, plot) : isPlantReady(level, plot);
+            if (!ready) {
+                continue;
+            }
+            BlockPos approach = approachPos(camp, plot);
+            if (approach == null || !insideBorder(camp, approach)) {
+                continue;
+            }
+            double distance = this.npc.blockPosition().distSqr(approach);
             if (distance < bestDistance) {
                 bestDistance = distance;
                 best = plot;
@@ -263,18 +323,40 @@ public class FarmerWorkGoal extends Goal {
         return best;
     }
 
-    /** Есть ли на участке работа: спелая культура или посадка при наличии семян. */
-    private boolean hasWork(ServerLevel level, BlockPos plot) {
-        BlockPos cropPos = plot.above();
-        BlockState state = level.getBlockState(cropPos);
+    /** Зрелая культура на участке, дроп которой помещается в инвентарь. */
+    private boolean isHarvestReady(ServerLevel level, BlockPos plot) {
+        BlockState state = level.getBlockState(plot.above());
         CropAdapter adapter = CropAdapter.find(state);
-        if (adapter != null && adapter.isMature(state)) {
-            return fitsInventory(adapter.getDrops(level, cropPos, state));
+        return adapter != null && adapter.isMature(state)
+                && fitsInventory(adapter.getDrops(level, plot.above(), state));
+    }
+
+    /** Пустая грядка с подходящим семенем в инвентаре. */
+    private boolean isPlantReady(ServerLevel level, BlockPos plot) {
+        return level.getBlockState(plot.above()).isAir() && findPlantableSeed() != null;
+    }
+
+    /**
+     * Позиция взаимодействия: сама грядка, если она внутри круга, иначе ближайшая
+     * точка на линии от центра лагеря к грядке с отступом {@link #BORDER_INSET}.
+     */
+    @Nullable
+    private static BlockPos approachPos(CampRecord camp, BlockPos plot) {
+        BlockPos center = camp.getCenter();
+        if (insideBorder(camp, plot)) {
+            return plot;
         }
-        if (!state.isAir()) {
-            return false;
+        double dx = plot.getX() - center.getX();
+        double dz = plot.getZ() - center.getZ();
+        double length = Math.sqrt(dx * dx + dz * dz);
+        if (length < 1.0E-6D) {
+            return center;
         }
-        return findPlantableSeed() != null;
+        int radius = Math.max(0, camp.getRadius() - BORDER_INSET);
+        int x = center.getX() + (int) Math.round(dx / length * radius);
+        int z = center.getZ() + (int) Math.round(dz / length * radius);
+        BlockPos approach = new BlockPos(x, plot.getY(), z);
+        return insideBorder(camp, approach) ? approach : null;
     }
 
     private static boolean insideBorder(CampRecord camp, BlockPos pos) {
