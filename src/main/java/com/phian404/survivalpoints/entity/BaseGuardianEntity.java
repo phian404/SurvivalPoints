@@ -1612,6 +1612,9 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
      * поэтому страж может одновременно смотреть на врага и от него отходить.
      */
     public void moveDirectly(Vec3 direction, double speed) {
+        if (this.isMeleeActive()) {
+            return;
+        }
         if (direction.lengthSqr() < 1.0E-6D) {
             return;
         }

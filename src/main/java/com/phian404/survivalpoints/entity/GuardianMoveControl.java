@@ -1,5 +1,6 @@
 package com.phian404.survivalpoints.entity;
 
+import com.phian404.survivalpoints.entity.BaseGuardianEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.control.MoveControl;
 
@@ -151,6 +152,17 @@ public class GuardianMoveControl extends MoveControl {
 
     @Override
     public void tick() {
+        // В ближнем бою (ванильный MeleeAttackGoal) самописный шаг не восстанавливаем:
+        // GuardianMoveControl работает как обычный ванильный MoveControl.
+        if (this.mob instanceof BaseGuardianEntity guardian && guardian.isMeleeActive()) {
+            this.ourActive = false;
+            this.keepYaw = false;
+            this.operationBeforeTick = this.operation;
+            super.tick();
+            this.operationAfterTick = this.operation;
+            return;
+        }
+
         // Операция ДО ванильного тика = заказ гола в этом тике.
         // Ванильный tick() в ветках STRAFE и MOVE_TO сразу ставит WAIT,
         // поэтому снаружи (после тика) операция уже сброшена.
