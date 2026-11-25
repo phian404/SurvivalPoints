@@ -6,6 +6,8 @@ import com.phian404.survivalpoints.entity.role.SurvivorProfession;
 import com.phian404.survivalpoints.entity.role.SurvivorRole;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -13,7 +15,9 @@ import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraftforge.items.ItemStackHandler;
 
 import javax.annotation.Nullable;
 import java.util.UUID;
@@ -61,6 +65,9 @@ public abstract class BaseSurvivorEntity extends PathfinderMob {
     /** Диапазон роста для женского NPC. */
     public static final float SCALE_FEMALE_MIN = 0.90F;
     public static final float SCALE_FEMALE_MAX = 0.97F;
+
+    /** Вместимость внутреннего инвентаря NPC. */
+    public static final int INVENTORY_SIZE = 8;
 
     /** Диапазон роста для мужского NPC. */
     public static final float SCALE_MALE_MIN = 0.95F;
@@ -117,6 +124,12 @@ public abstract class BaseSurvivorEntity extends PathfinderMob {
      */
     @Nullable
     private BlockPos workPoiPos;
+
+    /**
+     * Внутренний инвентарь NPC. Отделен от ванильной экипировки и не доступен
+     * внешним системам через capability — только внутренней логике мода.
+     */
+    private final ItemStackHandler inventory = new ItemStackHandler(INVENTORY_SIZE);
 
     protected BaseSurvivorEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
@@ -286,6 +299,74 @@ public abstract class BaseSurvivorEntity extends PathfinderMob {
         this.workPoiPos = workPoiPos;
     }
 
+    // ==================== Внутренний инвентарь ====================
+
+    /** Внутренний инвентарь NPC (8 слотов). */
+    public ItemStackHandler getInventory() {
+        return this.inventory;
+    }
+
+    /** Есть ли хотя бы один предмет в инвентаре. */
+    public boolean hasItem(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return false;
+        }
+        for (int slot = 0; slot < this.inventory.getSlots(); slot++) {
+            ItemStack stored = this.inventory.getStackInSlot(slot);
+            if (!stored.isEmpty() && ItemStack.isSameItemSameTags(stored, stack)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Добавить предмет в инвентарь.
+     *
+     * @return остаток, который не поместился (пустой стек — всё добавлено)
+     */
+    public ItemStack addItem(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack remaining = stack.copy();
+        for (int slot = 0; slot < this.inventory.getSlots() && !remaining.isEmpty(); slot++) {
+            remaining = this.inventory.insertItem(slot, remaining, false);
+        }
+        return remaining;
+    }
+
+    /**
+     * Извлечь предмет из инвентаря.
+     *
+     * @return извлечённый стек (пустой, если предмета нет)
+     */
+    public ItemStack extractItem(ItemStack stack, int amount) {
+        if (stack.isEmpty() || amount <= 0) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack extracted = ItemStack.EMPTY;
+        for (int slot = 0; slot < this.inventory.getSlots(); slot++) {
+            ItemStack stored = this.inventory.getStackInSlot(slot);
+            if (stored.isEmpty() || !ItemStack.isSameItemSameTags(stored, stack)) {
+                continue;
+            }
+            ItemStack part = this.inventory.extractItem(slot, amount - extracted.getCount(), false);
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (extracted.isEmpty()) {
+                extracted = part;
+            } else {
+                extracted.grow(part.getCount());
+            }
+            if (extracted.getCount() >= amount) {
+                break;
+            }
+        }
+        return extracted;
+    }
+
     @Override
     public void addAdditionalSaveData(CompoundTag tag) {
         super.addAdditionalSaveData(tag);
@@ -304,6 +385,7 @@ public abstract class BaseSurvivorEntity extends PathfinderMob {
         if (this.workPoiPos != null) {
             tag.putLong("WorkPoiPos", this.workPoiPos.asLong());
         }
+        tag.put("Inventory", this.inventory.serializeNBT());
     }
 
     @Override
@@ -343,6 +425,21 @@ public abstract class BaseSurvivorEntity extends PathfinderMob {
         // Отсутствующий тег — старое сохранение: безопасное значение по умолчанию.
         this.profession = SurvivorProfession.byName(tag.getString("Profession"));
         this.workPoiPos = tag.contains("WorkPoiPos") ? BlockPos.of(tag.getLong("WorkPoiPos")) : null;
+
+        // Инвентарь грузим вручную, а не inventory.deserializeNBT(): стандартная
+        // реализация берёт Size из тега и сузит handler при расширении слотов
+        // в будущем. Читаем только Items в текущую вместимость.
+        if (tag.contains("Inventory", Tag.TAG_COMPOUND)) {
+            CompoundTag invTag = tag.getCompound("Inventory");
+            ListTag items = invTag.getList("Items", Tag.TAG_COMPOUND);
+            for (int i = 0; i < items.size(); i++) {
+                CompoundTag itemTag = items.getCompound(i);
+                int slot = itemTag.getInt("Slot");
+                if (slot >= 0 && slot < this.inventory.getSlots()) {
+                    this.inventory.setStackInSlot(slot, ItemStack.of(itemTag));
+                }
+            }
+        }
 
         // Имя читается движком из ванильного CustomName до этого метода.
         // ensureName() покрывает только старые сохранения, где имени не было:

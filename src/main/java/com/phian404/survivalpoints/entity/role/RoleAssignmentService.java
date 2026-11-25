@@ -144,6 +144,15 @@ public final class RoleAssignmentService {
         replacement.setProfession(source.getProfession());
         replacement.setWorkPoiPos(source.getWorkPoiPos());
 
+        // Внутренний инвентарь: копируем каждый стек, чтобы новая сущность не
+        // делила изменяемые ItemStack со старой. Пустые слоты остаются пустыми.
+        for (int slot = 0; slot < source.getInventory().getSlots(); slot++) {
+            ItemStack stored = source.getInventory().getStackInSlot(slot);
+            if (!stored.isEmpty() && slot < replacement.getInventory().getSlots()) {
+                replacement.getInventory().setStackInSlot(slot, stored.copy());
+            }
+        }
+
         replacement.moveTo(source.getX(), source.getY(), source.getZ(),
                 source.getYRot(), source.getXRot());
         replacement.setYHeadRot(source.getYHeadRot());
