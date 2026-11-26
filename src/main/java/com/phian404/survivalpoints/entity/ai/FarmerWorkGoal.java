@@ -588,6 +588,6 @@ public class FarmerWorkGoal extends Goal {
                 return false;
             }
         }
-        return CampWorkZoneAccess.isPathAllowed(this.npc, camp, path);
+        return CampWorkZoneAccess.isWorkPathAllowed(this.npc, camp, path);
     }
 }
