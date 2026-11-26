@@ -272,9 +272,11 @@ public class FarmerWorkGoal extends Goal {
         this.npc.getLookControl().setLookAt(plot.getX() + 0.5D, plot.getY() + 1.5D,
                 plot.getZ() + 0.5D);
 
-        // Посадка разрешена только после фактического поворота головы к культуре.
+        // Сбор и посадка разрешены только после фактического поворота головы к культуре.
         // LookControl доворачивает NPC между тиками; здесь мы лишь ждём.
-        if (CampFarmManager.TYPE_PLANT.equals(task.getType()) && !isFacingTarget(plot.above())) {
+        boolean requiresFacing = CampFarmManager.TYPE_PLANT.equals(task.getType())
+                || CampFarmManager.TYPE_HARVEST.equals(task.getType());
+        if (requiresFacing && !isFacingTarget(plot.above())) {
             return;
         }
 
