@@ -37,8 +37,6 @@ import java.util.UUID;
 public class FarmerWorkGoal extends Goal {
 
     /** Предельная дистанция от позиции взаимодействия до грядки. */
-    private static final double REACH_DISTANCE_SQR = 1.5D * 1.5D;
-
     /** Короткая пауза после успешного действия, чтобы NPC не выглядел дёрганым. */
     private static final int PAUSE_MIN = 5;
     private static final int PAUSE_MAX = 10;
@@ -63,12 +61,6 @@ public class FarmerWorkGoal extends Goal {
     }
 
     private State state = State.IDLE;
-
-    /** ВРЕМЕННО: частота сводки и последняя записанная стадия. */
-    private static final int TRACE_INTERVAL = 100;
-    private String lastTraceStage = "";
-    private long lastTraceTick = Long.MIN_VALUE;
-    private boolean wasPaused = false;
 
     /** Позиция NPC на предыдущем тике и счётчик отсутствия прогресса. */
     @Nullable
@@ -109,27 +101,14 @@ public class FarmerWorkGoal extends Goal {
         return this.state;
     }
 
-    /**
-     * ВРЕМЕННО: записать только изменение диагностического состояния.
-     *
-     * <p>Повтор той же стадии в пределах 100 тиков не пишется. Полностью
-     * отключается существующим флагом {@code /sp_trace chat off}.
-     */
-
     @Override
     public boolean canUse() {
         if (this.pauseTicks > 0) {
             this.pauseTicks--;
-            if (!this.wasPaused && this.npc.level() instanceof ServerLevel level) {
-            }
-            this.wasPaused = true;
             return false;
         }
         if (this.npc.level().isClientSide || !(this.npc.level() instanceof ServerLevel level)) {
             return false;
-        }
-        if (this.wasPaused) {
-            this.wasPaused = false;
         }
         if (this.npc.getRole() != SurvivorRole.CIVILIAN) {
             return false;
@@ -151,8 +130,6 @@ public class FarmerWorkGoal extends Goal {
         }
 
         CampFarmManager manager = CampManager.farmManager(camp);
-        int harvest = manager.taskCount(CampFarmManager.TYPE_HARVEST);
-        int plant = manager.taskCount(CampFarmManager.TYPE_PLANT);
         NpcTask task = manager.take(level, camp, this.npc, this.npc.getIdentityId(), level.getGameTime());
         if (task == null || task.getTarget() == null) {
             return false;
@@ -324,11 +301,6 @@ public class FarmerWorkGoal extends Goal {
             CampRecord camp = camp(level);
             NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
             NpcTask task = controller.current();
-            Path path = this.npc.getNavigation().getPath();
-            String reason = this.pauseTicks > 0 ? "PAUSE"
-                    : this.approach == null ? "NO_APPROACH"
-                    : task == null ? "NO_TASK"
-                    : atApproach(this.approach) ? "ARRIVED" : "GOAL_INTERRUPTED";
             if (camp != null && task != null) {
                 CampManager.farmManager(camp).release(task.getId());
             }
@@ -563,18 +535,13 @@ public class FarmerWorkGoal extends Goal {
         // Только четыре стороны: диагональная клетка имеет distSqr=2 до грядки
         // и отсекается порогом TARGET_REACH_SQR=1.0, поэтому её перебор
         // бесполезен. Порог взаимодействия не расширяем.
-        java.util.List<String> diag = new java.util.ArrayList<>();
         for (Direction dir : Direction.Plane.HORIZONTAL) {
             BlockPos candidate = plot.relative(dir);
-            String reason = FarmApproach.validate(level, camp, plot, candidate,
-                    this.npc.getBbWidth(), this.npc.getBbHeight());
-            if (reason == null) {
+            if (FarmApproach.validate(level, camp, plot, candidate,
+                    this.npc.getBbWidth(), this.npc.getBbHeight()) == null) {
                 return candidate;
             }
-            diag.add(candidate + " -> " + reason);
         }
-        // Одна сводка на одну попытку участка: подход вызывается один раз
-        // на взятую задачу, поэтому постоянного потока логов нет.
         return null;
     }
 
