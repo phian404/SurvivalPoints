@@ -49,6 +49,35 @@ public class CampWanderGoal extends Goal {
     /** Выход из фермы должен завершиться, даже если обычная пауза ещё активна. */
     private boolean exitInProgress = false;
 
+    /** Последняя причина запуска/отказа — только для Debug Wand. */
+    private String lastDecision = "NOT_CHECKED";
+    @Nullable
+    private BlockPos lastTarget;
+    private int lastPathNodes = -1;
+    private boolean lastPathDone = true;
+    private int lastExitCandidates;
+    private int lastExitReachable;
+    private int lastExitAccepted;
+    private boolean lastExitUsedFallback;
+    private long lastAttemptTick = -1L;
+
+    /** Краткая диагностика без изменения поведения Goal. */
+    public String diagnosticSummary(long gameTime) {
+        long age = this.lastAttemptTick < 0L ? -1L : Math.max(0L, gameTime - this.lastAttemptTick);
+        CampRecord currentCamp = this.npc.level() instanceof ServerLevel level ? camp(level) : null;
+        return "insideFarm=" + (currentCamp != null
+                && CampWorkZoneAccess.isInsideFarmZone(this.npc, currentCamp))
+                + " decision=" + this.lastDecision
+                + " target=" + (this.lastTarget == null ? "—" : this.lastTarget.toShortString())
+                + " path=" + (this.lastPathNodes < 0 ? "—"
+                : this.lastPathNodes + " nodes/done=" + this.lastPathDone)
+                + " exitCandidates=" + this.lastExitCandidates
+                + " reachable=" + this.lastExitReachable
+                + " accepted=" + this.lastExitAccepted
+                + " fallback=" + this.lastExitUsedFallback
+                + " age=" + age + "t";
+    }
+
     public CampWanderGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
         this.setFlags(EnumSet.of(Goal.Flag.MOVE));
@@ -59,8 +88,17 @@ public class CampWanderGoal extends Goal {
         if (this.npc.level().isClientSide || !(this.npc.level() instanceof ServerLevel level)) {
             return false;
         }
+        this.lastAttemptTick = level.getGameTime();
+        this.lastTarget = null;
+        this.lastPathNodes = -1;
+        this.lastExitCandidates = 0;
+        this.lastExitReachable = 0;
+        this.lastExitAccepted = 0;
+        this.lastExitUsedFallback = false;
+
         CampRecord camp = camp(level);
         if (camp == null) {
+            this.lastDecision = "NO_CAMP";
             return false;
         }
 
@@ -69,24 +107,39 @@ public class CampWanderGoal extends Goal {
         boolean leavingFarm = CampWorkZoneAccess.isInsideFarmZone(this.npc, camp);
         if (this.pauseTicks > 0 && !leavingFarm) {
             this.pauseTicks--;
+            this.lastDecision = "PAUSED";
             return false;
         }
 
         BlockPos target = leavingFarm ? pickFarmExitTarget(camp) : pickTarget(camp);
         if (target == null) {
+            this.lastDecision = leavingFarm ? "NO_EXIT_TARGET" : "NO_WANDER_TARGET";
             return false;
         }
+        this.lastTarget = target;
         if (!this.npc.getNavigation().moveTo(target.getX() + 0.5D, target.getY(),
                 target.getZ() + 0.5D, SPEED)) {
+            this.lastDecision = "MOVE_TO_REJECTED";
             return false;
         }
 
         Path path = this.npc.getNavigation().getPath();
-        if (path == null || !pathInside(camp, path)) {
+        if (path == null) {
+            this.lastDecision = "PATH_NULL";
+            this.npc.getNavigation().stop();
+            return false;
+        }
+        this.lastPathNodes = path.getNodeCount();
+        this.lastPathDone = path.isDone();
+        if (!pathInside(camp, path)) {
+            this.lastDecision = "PATH_REJECTED";
             this.npc.getNavigation().stop();
             return false;
         }
         this.exitInProgress = leavingFarm;
+        this.lastDecision = leavingFarm
+                ? (this.lastExitUsedFallback ? "EXIT_STARTED_FALLBACK" : "EXIT_STARTED")
+                : "WANDER_STARTED";
         return true;
     }
 
@@ -187,12 +240,18 @@ public class CampWanderGoal extends Goal {
         }
         candidates.sort(java.util.Comparator.comparingDouble(
                 pos -> pos.distSqr(this.npc.blockPosition())));
+        this.lastExitCandidates = candidates.size();
         for (BlockPos candidate : candidates) {
             Path path = this.npc.getNavigation().createPath(candidate, 0);
-            if (path != null && path.canReach() && pathInside(camp, path)) {
-                return candidate;
+            if (path != null && path.canReach()) {
+                this.lastExitReachable++;
+                if (pathInside(camp, path)) {
+                    this.lastExitAccepted++;
+                    return candidate;
+                }
             }
         }
+        this.lastExitUsedFallback = true;
         // Если ближайшие точки периметра перекрыты стеной или декорацией,
         // пробуем обычную цель прогулки: маршрут всё равно обязан выйти
         // из фермы и не может войти обратно.
