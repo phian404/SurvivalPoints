@@ -61,6 +61,6 @@ public class CampRestrictedRandomStrollGoal extends RandomStrollGoal {
             return true;
         }
         Path path = this.npc.getNavigation().getPath();
-        return path == null || CampWorkZoneAccess.isPathAllowed(this.npc, camp, path);
+        return path == null || CampWorkZoneAccess.isWanderPathAllowed(this.npc, camp, path);
     }
 }
