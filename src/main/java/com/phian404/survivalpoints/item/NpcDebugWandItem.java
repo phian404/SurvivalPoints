@@ -7,6 +7,7 @@ import com.phian404.survivalpoints.camp.CampStructurePlacer;
 import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.BaseSurvivorNpcEntity;
 import com.phian404.survivalpoints.entity.ai.FarmerWorkGoal;
+import com.phian404.survivalpoints.entity.ai.CampWanderGoal;
 import com.phian404.survivalpoints.entity.ai.task.NpcTask;
 import com.phian404.survivalpoints.entity.ai.task.NpcTaskController;
 import com.phian404.survivalpoints.entity.role.SurvivorProfession;
@@ -73,6 +74,21 @@ public class NpcDebugWandItem extends Item {
         out.append("\n §7Занятость: §f").append(occupation(npc, camp, player.level()));
         out.append("\n §7Задача: §f").append(taskState(npc));
 
+        if (camp != null && player.level() instanceof ServerLevel serverLevel
+                && npc.getProfession() == SurvivorProfession.FARMER) {
+            out.append("\\n §7Ферма: §f")
+                    .append(CampManager.farmManager(camp).diagnosticSummary(serverLevel.getGameTime()));
+        }
+        if (npc instanceof BaseSurvivorNpcEntity civilian) {
+            out.append("\\n §7Goals: §f").append(goalState(civilian));
+        }
+        if (npc.getNavigation().getPath() != null) {
+            out.append("\\n §7Путь: §f").append(npc.getNavigation().getPath().getNodeCount())
+                    .append(" узлов, done=").append(npc.getNavigation().isDone());
+        } else {
+            out.append("\\n §7Путь: §fнет");
+        }
+
         if (camp != null) {
             UUID identity = npc.getIdentityId();
             boolean leader = identity.equals(camp.getLeaderIdentityId());
@@ -138,6 +154,23 @@ public class NpcDebugWandItem extends Item {
             out.append(" → ").append(pos(task.getTarget()));
         }
         return out.toString();
+    }
+
+    /** Состояние зарегистрированных AI Goal, включая не запущенные. */
+    private static String goalState(BaseSurvivorNpcEntity npc) {
+        String farmer = "FarmerWork=missing";
+        String wander = "Wander=missing";
+        for (net.minecraft.world.entity.ai.goal.WrappedGoal wrapped
+                : npc.goalSelector.getAvailableGoals()) {
+            net.minecraft.world.entity.ai.goal.Goal goal = wrapped.getGoal();
+            if (goal instanceof FarmerWorkGoal work) {
+                farmer = "FarmerWork=" + (wrapped.isRunning() ? "RUNNING" : "STOPPED")
+                        + "/" + work.getState();
+            } else if (goal instanceof CampWanderGoal) {
+                wander = "Wander=" + (wrapped.isRunning() ? "RUNNING" : "STOPPED");
+            }
+        }
+        return farmer + ", " + wander;
     }
 
     /**
