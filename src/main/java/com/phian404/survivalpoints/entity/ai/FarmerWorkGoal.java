@@ -80,6 +80,13 @@ public class FarmerWorkGoal extends Goal {
     private int repathTicks = 0;
     /** Корректирующий навигационный шаг уже выпущен по текущему завершённому пути. */
     private boolean correctiveStep = false;
+    /**
+     * Клетка, к которой ведёт принятый путь. Навигатор выбирает ближайшую
+     * достижимую из пригодных клеток, поэтому она может не совпадать с первой
+     * по порядку сторон; прибытие сверяется именно по ней.
+     */
+    @Nullable
+    private BlockPos pathTarget;
 
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
@@ -208,7 +215,14 @@ public class FarmerWorkGoal extends Goal {
             abandon(level, camp, task, RETRY_PAUSE);
             return false;
         }
-        trace(level, "PATH_RESULT", "result=OK nodes=" + path.getNodeCount());
+        // Прибытие сверяем по клетке, в которую действительно ведёт принятый
+        // путь: путь мог быть построен не к первой пригодной клетке, и тогда
+        // atApproach ждал бы клетку, до которой фермер не идёт.
+        if (this.pathTarget != null) {
+            this.approach = this.pathTarget;
+        }
+        trace(level, "PATH_RESULT", "result=OK nodes=" + path.getNodeCount()
+                + " approach=" + this.approach);
         return true;
     }
 
@@ -270,6 +284,9 @@ public class FarmerWorkGoal extends Goal {
                     Path correctivePath = this.approachPath(level, camp, task);
                     boolean started = correctivePath != null
                             && this.npc.getNavigation().moveTo(correctivePath, SPEED);
+                    if (started && this.pathTarget != null) {
+                        this.approach = this.pathTarget;
+                    }
                     trace(level, "CORRECTIVE_STEP",
                             "result=" + (started ? "STARTED" : "NO_PATH")
                                     + " nodes=" + (correctivePath == null ? 0
@@ -288,6 +305,9 @@ public class FarmerWorkGoal extends Goal {
                     Path repath = this.approachPath(level, camp, task);
                     boolean started = repath != null
                             && this.npc.getNavigation().moveTo(repath, SPEED);
+                    if (started && this.pathTarget != null) {
+                        this.approach = this.pathTarget;
+                    }
                     this.repathTicks = REPATH_INTERVAL;
                     if (started) {
                         trace(level, "REPATH", "npc=" + current + " pos=" + this.npc.position()
@@ -401,11 +421,15 @@ public class FarmerWorkGoal extends Goal {
         // допуск 1.
         targets.sort(java.util.Comparator.comparingDouble(
                 cell -> cell.distSqr(this.npc.blockPosition())));
+        this.pathTarget = null;
         for (BlockPos cell : targets) {
             Path path = this.npc.getNavigation().createPath(cell, 0);
             // PathFinder не сигнализирует недостижимость null-ом: он отдаёт
             // частичный путь с canReach() == false — такой не принимаем.
             if (path != null && path.canReach()) {
+                // Путь ведёт именно в эту клетку — прибытие сверяется по ней,
+                // а не по первой пригодной по порядку сторон.
+                this.pathTarget = cell;
                 return path;
             }
         }
