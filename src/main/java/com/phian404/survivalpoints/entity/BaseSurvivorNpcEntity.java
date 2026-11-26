@@ -100,4 +100,12 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
                 .add(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH, 20.0D)
                 .add(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED, 0.25D);
     }
+
+    @Override
+    public void tick() {
+        super.tick();
+        // Mob, в отличие от Monster и Player, сам не тикает замах:
+        // без этого swing() не проигрывает анимацию руки.
+        this.updateSwingTime();
+    }
 }
