@@ -201,20 +201,18 @@ public class FarmerWorkGoal extends Goal {
         if (!this.npc.getNavigation().moveTo(approach.getX() + 0.5D, approach.getY(),
                 approach.getZ() + 0.5D, SPEED)) {
             trace(level, "PATH_RESULT", "result=NO_PATH approach=" + approach);
-            cancel(level, manager, taskId, false);
+            abandon(level, camp, task, false, RETRY_PAUSE);
             return false;
         }
         Path path = this.npc.getNavigation().getPath();
         if (path == null) {
             trace(level, "PATH_RESULT", "result=NULL_PATH");
-            this.npc.getNavigation().stop();
-            cancel(level, manager, taskId, false);
+            abandon(level, camp, task, false, RETRY_PAUSE);
             return false;
         }
         if (!pathInside(camp, path)) {
             trace(level, "PATH_RESULT", "result=OUTSIDE_BORDER nodes=" + path.getNodeCount());
-            this.npc.getNavigation().stop();
-            cancel(level, manager, taskId, false);
+            abandon(level, camp, task, false, RETRY_PAUSE);
             return false;
         }
         trace(level, "PATH_RESULT", "result=OK nodes=" + path.getNodeCount());
@@ -258,13 +256,7 @@ public class FarmerWorkGoal extends Goal {
             if (this.stuckTicks >= STUCK_TIMEOUT) {
                 trace(level, "STUCK", "result=GIVE_UP approach=" + this.approach
                         + " npc=" + current + " ticks=" + this.stuckTicks);
-                manager.markUnavailable(task.getId(), level.getGameTime());
-                controller.cancel();
-                this.approach = null;
-                this.state = State.IDLE;
-                this.stuckTicks = 0;
-                this.lastNpcPos = null;
-                this.pauseTicks = RETRY_PAUSE;
+                abandon(level, camp, task, true, RETRY_PAUSE);
                 return;
             }
 
@@ -302,11 +294,7 @@ public class FarmerWorkGoal extends Goal {
         if (targetDistance > TARGET_REACH_SQR) {
             trace(level, "TARGET_DISTANCE", "result=TOO_FAR target=" + plot
                     + " distSqr=" + String.format("%.2f", targetDistance));
-            manager.markUnavailable(task.getId(), level.getGameTime());
-            controller.cancel();
-            this.approach = null;
-            this.state = State.IDLE;
-            this.pauseTicks = RETRY_PAUSE;
+            abandon(level, camp, task, true, RETRY_PAUSE);
             return;
         }
 
@@ -317,13 +305,11 @@ public class FarmerWorkGoal extends Goal {
         if (done) {
             controller.complete();
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
+            this.approach = null;
+            this.state = State.IDLE;
         } else {
-            manager.markUnavailable(task.getId(), level.getGameTime());
-            controller.cancel();
-            this.pauseTicks = RETRY_PAUSE;
+            abandon(level, camp, task, true, RETRY_PAUSE);
         }
-        this.approach = null;
-        this.state = State.IDLE;
     }
 
     @Override
@@ -359,6 +345,39 @@ public class FarmerWorkGoal extends Goal {
         this.stuckTicks = 0;
         this.lastNpcPos = null;
         this.repathTicks = 0;
+    }
+
+    /**
+     * Единая точка отказа от начатой задачи.
+     *
+     * <p>Снимает резервацию у диспетчера (с cooldown при неудаче исполнения или
+     * сразу при провале пути), отменяет задачу в контроллере, останавливает
+     * навигацию и приводит Goal в состояние покоя. Раньше эта логика была
+     * размазана по веткам STUCK, TOO_FAR, неудачного действия и трёх провалов
+     * пути с немного разными наборами вызовов — из-за чего задачу можно было
+     * забыть освободить.
+     *
+     * @param markUnavailable true — задача получает cooldown перед повторной
+     *                        попыткой; false — резервация снимается сразу
+     * @param pause           пауза в тиках перед следующим поиском задачи
+     */
+    private void abandon(ServerLevel level, CampRecord camp, NpcTask task,
+                         boolean markUnavailable, int pause) {
+        CampFarmManager manager = CampManager.farmManager(camp);
+        if (markUnavailable) {
+            manager.markUnavailable(task.getId(), level.getGameTime());
+        } else {
+            manager.release(task.getId());
+        }
+        trace(level, "RELEASE", "result=CANCEL taskId=" + task.getId());
+        CampManager.taskController(this.npc.getIdentityId()).cancel();
+        this.npc.getNavigation().stop();
+        this.approach = null;
+        this.state = State.IDLE;
+        this.stuckTicks = 0;
+        this.lastNpcPos = null;
+        this.repathTicks = 0;
+        this.pauseTicks = pause;
     }
 
     /** Повторная проверка и выполнение действия. */
@@ -452,7 +471,6 @@ public class FarmerWorkGoal extends Goal {
         this.repathTicks = 0;
         this.pauseTicks = done ? PAUSE_MIN : RETRY_PAUSE;
     }
-
     @Nullable
     private CampRecord camp(ServerLevel level) {
         UUID campId = this.npc.getCampId();
