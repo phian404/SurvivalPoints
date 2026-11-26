@@ -314,6 +314,12 @@ public static CampFarmManager farmManager(CampRecord record) {
     return FARM_MANAGERS.computeIfAbsent(record.getId(), id -> new CampFarmManager());
 }
 
+/** Диспетчер без создания нового runtime-состояния — только для диагностики. */
+@Nullable
+public static CampFarmManager peekFarmManager(CampRecord record) {
+    return FARM_MANAGERS.get(record.getId());
+}
+
 /** Убрать runtime-диспетчер удалённого лагеря. */
 public static void removeFarmManager(UUID campId) {
     CampFarmManager manager = FARM_MANAGERS.remove(campId);
