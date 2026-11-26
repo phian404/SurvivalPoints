@@ -188,9 +188,15 @@ public class FarmerWorkGoal extends Goal {
                 || !(this.npc.level() instanceof ServerLevel level)) {
             return false;
         }
+        CampRecord camp = camp(level);
+        if (camp == null) {
+            return false;
+        }
         NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
         NpcTask task = controller.current();
-        return task != null && task.getTarget() != null;
+        Path path = this.npc.getNavigation().getPath();
+        return task != null && task.getTarget() != null
+                && (path == null || pathInside(camp, path));
     }
 
     @Override
@@ -250,7 +256,11 @@ public class FarmerWorkGoal extends Goal {
                     this.correctiveStep = true;
                     Path correctivePath = this.approachPath(level, camp, task);
                     boolean started = correctivePath != null
-                            && this.npc.getNavigation().moveTo(correctivePath, SPEED);
+                            && this.npc.getNavigation().moveTo(correctivePath, SPEED)
+                            && pathInside(camp, correctivePath);
+                    if (!started) {
+                        this.npc.getNavigation().stop();
+                    }
                     if (started && this.pathTarget != null) {
                         this.approach = this.pathTarget;
                     }
