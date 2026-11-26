@@ -91,7 +91,10 @@ public class FarmerWorkGoal extends Goal {
 
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
-        this.setFlags(EnumSet.of(Goal.Flag.MOVE));
+        // Flag.LOOK: без него во время движения и работы параллельно выполняются
+        // RandomLookAroundGoal/LookAtPlayerGoal, и они вместе с setLookAt(plot)
+        // каждый тик перетягивают LookControl — голова NPC кивает вверх-вниз.
+        this.setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
     }
 
     /** Текущее состояние исполнения. */
@@ -570,24 +573,25 @@ public class FarmerWorkGoal extends Goal {
     /**
      * NPC физически находится в выбранной клетке подхода.
      *
-     * <p>Сравнение по {@code blockPosition()} — без «почти прибыл»: иначе Goal
-     * останавливается на расстоянии 1.5 блока от позиции и затем получает
-     * TOO_FAR до самой грядки.
+     * <p>Допуск — полблока от центра клетки (остановка навигатора), вертикаль
+     * до 1.5 блоков. Клетка подхода всегда соседняя с грядкой, поэтому
+     * прибытие согласовано с порогом TARGET_REACH_SQR до грядки.
      */
     private boolean atApproach(BlockPos approach) {
-        // Точное равенство клеток не срабатывает: навигатор считает путь
-        // завершённым, остановившись на полблока в соседней клетке (см.
-        // REPATH done=true idx=1 при blockPosition != approach). Прибытием
-        // считаем горизонтальное расстояние до центра клетки подхода
-        // не больше 1 клетки; достижимость самой грядки отдельно проверяет
-        // TARGET_REACH_SQR перед действием.
+        // Прибытие — NPC фактически внутри клетки подхода. Допуск только
+        // полблока от её центра (остановка навигатора): допуск в целую клетку
+        // засчитывал прибытие из соседней клетки, и TASK начинался с
+        // TARGET_DISTANCE=TOO_FAR (distSqr=4) — цикл ALREADY_THERE -> TOO_FAR.
+        // Клетка подхода по построению соседняя с грядкой, поэтому прибытие
+        // здесь гарантирует horizontalDistSqr <= TARGET_REACH_SQR: критерии
+        // согласованы, радиус взаимодействия не расширяется.
         if (this.npc.blockPosition().equals(approach)) {
             return true;
         }
         double dx = this.npc.getX() - (approach.getX() + 0.5D);
         double dz = this.npc.getZ() - (approach.getZ() + 0.5D);
         double dy = this.npc.getY() - approach.getY();
-        return dx * dx + dz * dz <= 1.0D && Math.abs(dy) <= 1.5D;
+        return dx * dx + dz * dz <= 0.25D && Math.abs(dy) <= 1.5D;
     }
 
     /** Горизонтальное расстояние между центрами клеток, без компоненты Y. */
