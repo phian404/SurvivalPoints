@@ -89,7 +89,7 @@ public class NpcDebugWandItem extends Item {
             out.append("\n §7Путь: §f").append(npc.getNavigation().getPath().getNodeCount())
                     .append(" узлов, done=").append(npc.getNavigation().isDone());
         } else {
-            out.append("\\n §7Путь: §fнет");
+            out.append("\n §7Путь: §fнет");
         }
 
         if (camp != null) {
