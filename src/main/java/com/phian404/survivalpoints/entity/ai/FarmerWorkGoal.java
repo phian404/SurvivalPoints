@@ -217,6 +217,10 @@ public class FarmerWorkGoal extends Goal {
         CampFarmManager manager = CampManager.farmManager(camp);
         manager.keepAlive(task.getId(), level.getGameTime());
 
+        // Начинаем переводить взгляд на следующую грядку уже во время подхода:
+        // LookControl доворачивает голову из текущего положения, без возврата в нейтраль.
+        NpcLookHelper.lookAtBlock(this.npc, task.getTarget().above());
+
         if (!atApproach(this.approach)) {
             BlockPos current = this.npc.blockPosition();
             if (current.equals(this.lastNpcPos)) {
