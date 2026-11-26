@@ -386,22 +386,30 @@ public class FarmerWorkGoal extends Goal {
     @Nullable
     private Path approachPath(ServerLevel level, CampRecord camp, NpcTask task) {
         BlockPos target = task.getTarget();
-        java.util.Set<BlockPos> targets = new java.util.LinkedHashSet<>(
+        java.util.List<BlockPos> targets = new java.util.ArrayList<>(
                 FarmApproach.findApproaches(level, camp, target,
                         this.npc.getBbWidth(), this.npc.getBbHeight()));
-        if (targets.isEmpty()) {
-            if (this.approach == null
-                    || FarmApproach.validate(level, camp, target, this.approach,
-                            this.npc.getBbWidth(), this.npc.getBbHeight()) != null) {
-                return null;
-            }
+        if (targets.isEmpty() && this.approach != null
+                && FarmApproach.validate(level, camp, target, this.approach,
+                        this.npc.getBbWidth(), this.npc.getBbHeight()) == null) {
             targets.add(this.approach);
         }
-        Path path = this.npc.getNavigation().createPath(targets, 0);
-        if (path == null || !path.canReach()) {
-            return null;
+        // Ближайшие клетки первыми: у PathFinder ограниченный радиус поиска, и
+        // дальняя цель может оказаться вне него. Перебираем через
+        // createPath(BlockPos, 0): у этой перегрузки радиус шире, чем у варианта
+        // с набором клеток, и она строит настоящий маршрут, а не манхэттенский
+        // допуск 1.
+        targets.sort(java.util.Comparator.comparingDouble(
+                cell -> cell.distSqr(this.npc.blockPosition())));
+        for (BlockPos cell : targets) {
+            Path path = this.npc.getNavigation().createPath(cell, 0);
+            // PathFinder не сигнализирует недостижимость null-ом: он отдаёт
+            // частичный путь с canReach() == false — такой не принимаем.
+            if (path != null && path.canReach()) {
+                return path;
+            }
         }
-        return path;
+        return null;
     }
 
     /**
