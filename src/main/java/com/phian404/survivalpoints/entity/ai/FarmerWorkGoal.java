@@ -140,11 +140,9 @@ public class FarmerWorkGoal extends Goal {
             this.wasPaused = false;
         }
         if (this.npc.getRole() != SurvivorRole.CIVILIAN) {
-            trace(level, "ROLE", "result=NOT_CIVILIAN");
             return false;
         }
         if (this.npc.getProfession() != SurvivorProfession.FARMER) {
-            trace(level, "PROFESSION", "result=NOT_FARMER");
             return false;
         }
         CampRecord camp = camp(level);
@@ -502,10 +500,15 @@ public class FarmerWorkGoal extends Goal {
     }
 
     /** Проверить одного кандидата; вернуть его, если он пригоден. */
-    @Nullable
+        @Nullable
     private BlockPos considerApproach(ServerLevel level, CampRecord camp, BlockPos plot,
                                       BlockPos pos) {
-        if (!insideBorder(camp, pos)) {
+        // Кандидат — соседняя с грядкой клетка на уровне земли фермы.
+        // Грядка выдана сканером POI внутри лагеря, повторный строгий
+        // border-круг (radius - BORDER_INSET) для соседней клетки не нужен:
+        // он отбраковывал стороны грядок у края фермы и фермер вставал.
+        // Путь до кандидата всё равно проверяется pathInside().
+        if (level.getBlockState(pos).isSolidRender(level, pos)) {
             return null;
         }
         if (!level.getBlockState(pos.below()).blocksMotion()) {
@@ -514,19 +517,39 @@ public class FarmerWorkGoal extends Goal {
         if (horizontalDistSqr(pos, plot) > TARGET_REACH_SQR) {
             return null;
         }
-        // Проверяем реальный объём тела NPC в целевой клетке: одной проверки
-        // «над головой нет блока» недостаточно — культура или забор могут
-        // пересекать хитбокс. Пашня не мешает: у неё нет коллизии тела, а
-        // вытаптывание перехватывается CampEvents.
+        // Проверяем реальный объём тела NPC в клетке стояния: ...
         double half = this.npc.getBbWidth() / 2.0D;
         net.minecraft.world.phys.AABB body = new net.minecraft.world.phys.AABB(
                 pos.getX() + 0.5D - half, pos.getY(), pos.getZ() + 0.5D - half,
                 pos.getX() + 0.5D + half, pos.getY() + this.npc.getBbHeight(),
                 pos.getZ() + 0.5D + half);
         if (!level.noCollision(body)) {
+            reportBodyCollision(level, pos, body);
             return null;
         }
         return pos;
+    }
+
+    /**
+     * Диагностика BODY_COLLISION: перечислить конкретные блоки, чьи боксы
+     * пересекают AABB NPC в клетке подхода. Без этого причина не различима:
+     * noCollision() возвращает только факт неудачи.
+     */
+    private void reportBodyCollision(ServerLevel level, BlockPos pos,
+                                     net.minecraft.world.phys.AABB body) {
+        java.util.List<String> hits = new java.util.ArrayList<>();
+        for (net.minecraft.world.phys.shapes.VoxelShape shape : level.getBlockCollisions(null, body)) {
+            for (net.minecraft.world.phys.AABB box : shape.toAabbs()) {
+                net.minecraft.world.level.block.state.BlockState state = level.getBlockState(
+                        BlockPos.containing(box.getCenter()));
+                if (hits.size() < 4) {
+                    hits.add(state.getBlock() + "@" + BlockPos.containing(box.getCenter())
+                            + " box=" + box);
+                }
+            }
+        }
+        trace(level, "BODY_COLLISION_DETAIL", "cand=" + pos
+                + " body=" + body + " hits=" + hits);
     }
 
     /**
