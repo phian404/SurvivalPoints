@@ -1,6 +1,8 @@
 package com.phian404.survivalpoints.entity.ai;
 
+import com.phian404.survivalpoints.camp.CampGenerator;
 import com.phian404.survivalpoints.camp.CampManager;
+import com.phian404.survivalpoints.camp.CampModuleSlot;
 import com.phian404.survivalpoints.camp.CampRecord;
 import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import net.minecraft.core.BlockPos;
@@ -51,10 +53,6 @@ public class CampWanderGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (this.pauseTicks > 0) {
-            this.pauseTicks--;
-            return false;
-        }
         if (this.npc.level().isClientSide || !(this.npc.level() instanceof ServerLevel level)) {
             return false;
         }
@@ -63,7 +61,15 @@ public class CampWanderGoal extends Goal {
             return false;
         }
 
-        BlockPos target = pickTarget(camp);
+        // После окончания работы фермер должен покинуть ферму сразу,
+        // а не ждать окончания обычной паузы между прогулками.
+        boolean leavingFarm = CampWorkZoneAccess.isInsideFarmZone(this.npc, camp);
+        if (this.pauseTicks > 0 && !leavingFarm) {
+            this.pauseTicks--;
+            return false;
+        }
+
+        BlockPos target = leavingFarm ? pickFarmExitTarget(camp) : pickTarget(camp);
         if (target == null) {
             return false;
         }
@@ -140,6 +146,47 @@ public class CampWanderGoal extends Goal {
                 continue;
             }
             return pos;
+        }
+        return null;
+    }
+
+    /**
+     * Выбрать ближайшую достижимую точку за границей фермы. Проверяем
+     * периметр bounds, чтобы выход не зависел от случайного выбора цели.
+     */
+    @Nullable
+    private BlockPos pickFarmExitTarget(CampRecord camp) {
+        CampModuleSlot farm = camp.getModuleSlot(CampGenerator.FARM_SLOT);
+        if (farm == null) {
+            return pickTarget(camp);
+        }
+        CampModuleSlot.SlotBounds bounds = farm.getBounds();
+        int y = this.npc.blockPosition().getY();
+        java.util.List<BlockPos> candidates = new java.util.ArrayList<>();
+        for (int x = bounds.getMinX() - 1; x <= bounds.getMaxX() + 1; x++) {
+            for (int z = bounds.getMinZ() - 1; z <= bounds.getMaxZ() + 1; z++) {
+                if (x != bounds.getMinX() - 1 && x != bounds.getMaxX() + 1
+                        && z != bounds.getMinZ() - 1 && z != bounds.getMaxZ() + 1) {
+                    continue;
+                }
+                BlockPos pos = new BlockPos(x, y, z);
+                if (!insideCircle(camp.getCenter(), camp.getRadius(), pos)
+                        || !CampWorkZoneAccess.isPositionAllowed(this.npc, camp, pos)
+                        || !this.npc.level().getBlockState(pos).isAir()
+                        || !this.npc.level().getBlockState(pos.above()).isAir()
+                        || !this.npc.level().getBlockState(pos.below()).blocksMotion()) {
+                    continue;
+                }
+                candidates.add(pos);
+            }
+        }
+        candidates.sort(java.util.Comparator.comparingDouble(
+                pos -> pos.distSqr(this.npc.blockPosition())));
+        for (BlockPos candidate : candidates) {
+            Path path = this.npc.getNavigation().createPath(candidate, 0);
+            if (path != null && path.canReach() && pathInside(camp, path)) {
+                return candidate;
+            }
         }
         return null;
     }

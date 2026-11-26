@@ -303,7 +303,9 @@ public class FarmerWorkGoal extends Goal {
         this.state = State.WORKING;
         boolean done = perform(level, task, plot);
         if (done) {
-            CampManager.farmManager(camp).markSucceeded(task.getId());
+            CampFarmManager manager = CampManager.farmManager(camp);
+            manager.markSucceeded(task.getId());
+            manager.refreshPlot(level, camp, plot, level.getGameTime());
             controller.complete();
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
             this.pauseLookTarget = plot;
@@ -434,12 +436,15 @@ public class FarmerWorkGoal extends Goal {
         if (drops.isEmpty() || !fitsInventory(drops)) {
             return false;
         }
+        // Сначала убедиться, что блок действительно удалён: иначе нельзя
+        // считать задачу завершённой и добавлять дроп в инвентарь NPC.
+        if (!level.destroyBlock(pos, false)) {
+            return false;
+        }
         for (ItemStack drop : drops) {
             this.npc.addItem(drop.copy());
         }
-        if (level.destroyBlock(pos, false)) {
-            this.npc.swing(InteractionHand.MAIN_HAND);
-        }
+        this.npc.swing(InteractionHand.MAIN_HAND);
         return true;
     }
 

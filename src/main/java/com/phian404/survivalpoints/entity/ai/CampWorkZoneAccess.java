@@ -35,6 +35,12 @@ public final class CampWorkZoneAccess {
         return tower == null || hasTowerAccess(npc, camp, tower) || !tower.getBounds().contains(pos);
     }
 
+    /** Находится ли NPC внутри габаритов фермерского модуля. */
+    public static boolean isInsideFarmZone(BaseSurvivorEntity npc, CampRecord camp) {
+        CampModuleSlot farm = camp.getModuleSlot(CampGenerator.FARM_SLOT);
+        return farm != null && farm.getBounds().contains(npc.blockPosition());
+    }
+
     /** Проверяет путь свободной прогулки: ферма закрыта даже для фермера. */
     public static boolean isWanderPathAllowed(BaseSurvivorEntity npc, CampRecord camp, Path path) {
         CampModuleSlot farm = camp.getModuleSlot(CampGenerator.FARM_SLOT);

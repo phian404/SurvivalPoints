@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkStatus;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -160,6 +161,34 @@ public final class CampFarmManager {
         }
     }
 
+    /** Немедленно пересчитать одну грядку после известного изменения мира. */
+    public void refreshPlot(ServerLevel level, CampRecord record, BlockPos plot, long gameTime) {
+        BlockPos key = plot.immutable();
+        FarmTask previous = this.tasks.get(key);
+        FarmTask current = createTaskForPlot(level, record, key);
+        if (current == null) {
+            this.tasks.remove(key);
+            return;
+        }
+        if (previous != null && previous.task.getType().equals(current.task.getType())) {
+            if (previous.reservedBy != null && gameTime - previous.reservedAt < RESERVATION_TTL) {
+                this.tasks.put(key, previous);
+                return;
+            }
+            if (gameTime < previous.availableAt) {
+                current.failures = previous.failures;
+                current.availableAt = previous.availableAt;
+            }
+        }
+        this.tasks.put(key, current);
+    }
+
+    /** Удалить задачу грядки до завершения внешнего разрушения блока. */
+    public void invalidatePlotAt(BlockPos changedPos) {
+        this.tasks.remove(changedPos);
+        this.tasks.remove(changedPos.below());
+    }
+
     /** Проверка выполнимости задачи конкретным NPC. */
     private boolean isExecutable(ServerLevel level, FarmTask task, BaseSurvivorEntity npc) {
         BlockPos plot = task.task.getTarget();
@@ -169,7 +198,7 @@ public final class CampFarmManager {
             return adapter != null && adapter.isMature(state)
                     && fitsInventory(npc, adapter.getDrops(level, plot.above(), state));
         }
-        if (!state.isAir()) {
+        if (!state.isAir() || !level.getBlockState(plot).is(Blocks.FARMLAND)) {
             return false;
         }
         // Предмет в основной руке имеет приоритет: не подменяем экипировку
@@ -246,9 +275,8 @@ public final class CampFarmManager {
             CropAdapter adapter = CropAdapter.find(cropState);
             if (adapter != null && adapter.isMature(cropState)) {
                 add(fresh, plot, poi.getSlotId(), TYPE_HARVEST, record.getId());
-            } else if (cropState.isAir()) {
+            } else if (cropState.isAir() && level.getBlockState(plot).is(Blocks.FARMLAND)) {
                 add(fresh, plot, poi.getSlotId(), TYPE_PLANT, record.getId());
-            } else {
             }
         }
 
@@ -279,6 +307,33 @@ public final class CampFarmManager {
         target.put(plot, new FarmTask(task, slotId));
     }
 
+    /** Создать актуальную задачу для одной зарегистрированной и загруженной грядки. */
+    @Nullable
+    private static FarmTask createTaskForPlot(ServerLevel level, CampRecord record, BlockPos plot) {
+        if (!FarmApproach.insideBorder(record, plot) || !isChunkReady(level, plot)) {
+            return null;
+        }
+        CampPoi farmPoi = null;
+        for (CampPoi poi : record.getPois()) {
+            if (CampStructurePlacer.FARM_PLOT_TYPE.equals(poi.getType()) && plot.equals(poi.getPos())) {
+                farmPoi = poi;
+                break;
+            }
+        }
+        if (farmPoi == null) {
+            return null;
+        }
+        BlockState cropState = level.getBlockState(plot.above());
+        CropAdapter adapter = CropAdapter.find(cropState);
+        if (adapter != null && adapter.isMature(cropState)) {
+            return new FarmTask(new NpcTask(NpcTaskPriority.WORK, TYPE_HARVEST, plot, record.getId()), farmPoi.getSlotId());
+        }
+        if (cropState.isAir() && level.getBlockState(plot).is(Blocks.FARMLAND)) {
+            return new FarmTask(new NpcTask(NpcTaskPriority.WORK, TYPE_PLANT, plot, record.getId()), farmPoi.getSlotId());
+        }
+        return null;
+    }
+
     /** Задача всё ещё соответствует состоянию мира. */
     private boolean isStillValid(ServerLevel level, CampRecord record, FarmTask task) {
         if (!isChunkReady(level, task.task.getTarget())) {
@@ -301,7 +356,7 @@ public final class CampFarmManager {
             CropAdapter adapter = CropAdapter.find(state);
             return adapter != null && adapter.isMature(state);
         }
-        return state.isAir();
+        return state.isAir() && level.getBlockState(plot).is(Blocks.FARMLAND);
     }
 
     private void dropExpired(long gameTime) {
