@@ -500,9 +500,12 @@ public class FarmerWorkGoal extends Goal {
     }
 
     /** Проверить одного кандидата; вернуть его, если он пригоден. */
-        @Nullable
+    @Nullable
     private BlockPos considerApproach(ServerLevel level, CampRecord camp, BlockPos plot,
                                       BlockPos pos) {
+        if (!insideBorder(camp, pos)) {
+            return null;
+        }
         // Кандидат — соседняя с грядкой клетка на уровне земли фермы.
         // Грядка выдана сканером POI внутри лагеря, повторный строгий
         // border-круг (radius - BORDER_INSET) для соседней клетки не нужен:
@@ -517,11 +520,23 @@ public class FarmerWorkGoal extends Goal {
         if (horizontalDistSqr(pos, plot) > TARGET_REACH_SQR) {
             return null;
         }
-        // Проверяем реальный объём тела NPC в клетке стояния: ...
+        // Проверяем реальный объём тела NPC в клетке стояния: одной проверки
+        // «над головой нет блока» недостаточно — культура или забор могут
+        // пересекать хитбокс. Пашня не мешает: у неё нет коллизии тела, а
+        // вытаптывание перехватывается CampEvents.
         double half = this.npc.getBbWidth() / 2.0D;
+        // Низ тела — верхняя грань коллизии опорного блока (пашня 0.9375,
+        // полный блок 1.0), а не основание клетки: иначе бокс пересекает
+        // саму опору и каждая сторона пашни даёт фальшивую BODY_COLLISION.
+        double bottom = pos.getY() + 1.0D;
+        net.minecraft.world.phys.shapes.VoxelShape supportShape = level.getBlockState(pos)
+                .getCollisionShape(level, pos);
+        if (!supportShape.isEmpty()) {
+            bottom = pos.getY() + supportShape.max((net.minecraft.core.Direction.Axis.Y));
+        }
         net.minecraft.world.phys.AABB body = new net.minecraft.world.phys.AABB(
-                pos.getX() + 0.5D - half, pos.getY(), pos.getZ() + 0.5D - half,
-                pos.getX() + 0.5D + half, pos.getY() + this.npc.getBbHeight(),
+                pos.getX() + 0.5D - half, bottom, pos.getZ() + 0.5D - half,
+                pos.getX() + 0.5D + half, bottom + this.npc.getBbHeight(),
                 pos.getZ() + 0.5D + half);
         if (!level.noCollision(body)) {
             reportBodyCollision(level, pos, body);
