@@ -172,6 +172,12 @@ public final class CampFarmManager {
         if (!state.isAir()) {
             return false;
         }
+        // Предмет в основной руке имеет приоритет: не подменяем экипировку
+        // семенами из внутреннего инвентаря, если рука занята.
+        ItemStack held = npc.getMainHandItem();
+        if (!held.isEmpty()) {
+            return CropAdapter.find(held) != null;
+        }
         for (int slot = 0; slot < npc.getInventory().getSlots(); slot++) {
             ItemStack stack = npc.getInventory().getStackInSlot(slot);
             if (!stack.isEmpty() && CropAdapter.find(stack) != null) {
