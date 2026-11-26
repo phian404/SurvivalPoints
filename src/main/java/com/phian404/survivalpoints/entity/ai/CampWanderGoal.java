@@ -153,7 +153,7 @@ public class CampWanderGoal extends Goal {
                 return false;
             }
         }
-        return CampWorkZoneAccess.isPathAllowed(this.npc, camp, path);
+        return CampWorkZoneAccess.isWanderPathAllowed(this.npc, camp, path);
     }
 
     /** Горизонтальная проверка точки по кругу, без радиуса тревоги. */
