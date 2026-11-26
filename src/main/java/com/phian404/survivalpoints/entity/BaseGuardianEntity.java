@@ -10,6 +10,7 @@ import com.phian404.survivalpoints.entity.ai.GuardianMeleeAttackGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianRangedAttackGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianRetreatGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianTargetGoal;
+import com.phian404.survivalpoints.entity.ai.CampRestrictedRandomStrollGoal;
 import com.phian404.survivalpoints.init.GuardianFeatureFlags;
 import com.phian404.survivalpoints.init.GuardianHangDetector;
 import com.phian404.survivalpoints.init.GuardianSnapshot;
@@ -32,7 +33,6 @@ import net.minecraft.world.entity.ai.control.MoveControl;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
-import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.item.ItemStack;
@@ -552,7 +552,7 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         this.goalSelector.addGoal(1, new GuardianMeleeAttackGoal(this));   // меч
         this.goalSelector.addGoal(2, new GuardianRangedAttackGoal(this));  // арбалет
         this.goalSelector.addGoal(3, new GuardianEatBreadGoal(this));      // еда
-        this.goalSelector.addGoal(4, new RandomStrollGoal(this, 1.0D));     // покой
+        this.goalSelector.addGoal(4, new CampRestrictedRandomStrollGoal(this, 1.0D));     // покой
 
         // Взгляд на игрока — только в покое. Ванильный LookAtPlayerGoal при
         // появлении цели продолжает работать: его canUse() требует отсутствия
