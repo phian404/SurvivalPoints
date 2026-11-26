@@ -255,20 +255,28 @@ public class FarmerWorkGoal extends Goal {
             Path path = this.npc.getNavigation().getPath();
             if (path == null || path.isDone()) {
                 // Навигатор считает маршрут завершённым, но atApproach() ещё
-                // не true: NPC остановился, не дойдя до центра клетки подхода.
-                // Один корректирующий шаг через ту же систему навигации
-                // (moveTo заново ищет путь с учётом коллизий и препятствий,
-                // MoveControl в обход навигатора не используется). Идентичный
-                // путь не перестраивается каждый тик: повторная попытка только
-                // после того, как новый путь начался и снова завершился.
-                // STUCK остаётся финальной страховкой.
+                // не true. Причина — поведение ванильного PathFinder:
+                // moveTo(x,y,z,speed) ищет путь с точностью 1, а цель на
+                // манхэттенском расстоянии <= 1 от стартовой вершины считается
+                // достигнутой сразу, поэтому маршрут до соседней клетки —
+                // единственная стартовая вершина (nodes=1, done) и повторный
+                // moveTo возвращает false (isDone). Корректирующий шаг делаем
+                // той же системой навигации, но с точностью 0: createPath с
+                // accuracy 0 строит настоящий путь из двух вершин, который
+                // навигатор реально ведёт (коллизии, срезание углов и таймаут
+                // остались в навигаторе, MoveControl в обход не используется).
+                // Повтор — только после того, как новый путь начался и снова
+                // завершился. STUCK остаётся финальной страховкой.
                 if (!this.correctiveStep) {
                     this.correctiveStep = true;
-                    boolean started = this.npc.getNavigation().moveTo(
-                            this.approach.getX() + 0.5D, this.approach.getY(),
-                            this.approach.getZ() + 0.5D, SPEED);
+                    Path correctivePath = this.npc.getNavigation().createPath(
+                            this.approach, 0);
+                    boolean started = correctivePath != null
+                            && this.npc.getNavigation().moveTo(correctivePath, SPEED);
                     trace(level, "CORRECTIVE_STEP",
                             "result=" + (started ? "STARTED" : "NO_PATH")
+                                    + " nodes=" + (correctivePath == null ? 0
+                                            : correctivePath.getNodeCount())
                                     + " npc=" + this.npc.blockPosition()
                                     + " pos=" + this.npc.position()
                                     + " approach=" + this.approach);
