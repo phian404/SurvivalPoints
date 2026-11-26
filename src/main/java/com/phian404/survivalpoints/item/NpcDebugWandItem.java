@@ -1,6 +1,7 @@
 package com.phian404.survivalpoints.item;
 
 import com.phian404.survivalpoints.camp.CampManager;
+import com.phian404.survivalpoints.camp.CampFarmManager;
 import com.phian404.survivalpoints.camp.CampPoi;
 import com.phian404.survivalpoints.camp.CampRecord;
 import com.phian404.survivalpoints.camp.CampStructurePlacer;
@@ -76,14 +77,16 @@ public class NpcDebugWandItem extends Item {
 
         if (camp != null && player.level() instanceof ServerLevel serverLevel
                 && npc.getProfession() == SurvivorProfession.FARMER) {
-            out.append("\\n §7Ферма: §f")
-                    .append(CampManager.farmManager(camp).diagnosticSummary(serverLevel.getGameTime()));
+            CampFarmManager farmManager = CampManager.peekFarmManager(camp);
+            out.append("\n §7Ферма: §f")
+                    .append(farmManager == null ? "manager=not_initialized"
+                            : farmManager.diagnosticSummary(serverLevel.getGameTime()));
         }
         if (npc instanceof BaseSurvivorNpcEntity civilian) {
-            out.append("\\n §7Goals: §f").append(goalState(civilian));
+            out.append("\n §7Goals: §f").append(goalState(civilian));
         }
         if (npc.getNavigation().getPath() != null) {
-            out.append("\\n §7Путь: §f").append(npc.getNavigation().getPath().getNodeCount())
+            out.append("\n §7Путь: §f").append(npc.getNavigation().getPath().getNodeCount())
                     .append(" узлов, done=").append(npc.getNavigation().isDone());
         } else {
             out.append("\\n §7Путь: §fнет");
