@@ -575,7 +575,19 @@ public class FarmerWorkGoal extends Goal {
      * TOO_FAR до самой грядки.
      */
     private boolean atApproach(BlockPos approach) {
-        return this.npc.blockPosition().equals(approach);
+        // Точное равенство клеток не срабатывает: навигатор считает путь
+        // завершённым, остановившись на полблока в соседней клетке (см.
+        // REPATH done=true idx=1 при blockPosition != approach). Прибытием
+        // считаем горизонтальное расстояние до центра клетки подхода
+        // не больше 1 клетки; достижимость самой грядки отдельно проверяет
+        // TARGET_REACH_SQR перед действием.
+        if (this.npc.blockPosition().equals(approach)) {
+            return true;
+        }
+        double dx = this.npc.getX() - (approach.getX() + 0.5D);
+        double dz = this.npc.getZ() - (approach.getZ() + 0.5D);
+        double dy = this.npc.getY() - approach.getY();
+        return dx * dx + dz * dz <= 1.0D && Math.abs(dy) <= 1.5D;
     }
 
     /** Горизонтальное расстояние между центрами клеток, без компоненты Y. */
