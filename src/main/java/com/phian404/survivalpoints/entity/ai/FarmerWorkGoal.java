@@ -582,12 +582,12 @@ public class FarmerWorkGoal extends Goal {
         return FarmApproach.insideBorder(camp, pos);
     }
 
-    private static boolean pathInside(CampRecord camp, Path path) {
+    private boolean pathInside(CampRecord camp, Path path) {
         for (int i = path.getNextNodeIndex(); i < path.getNodeCount(); i++) {
             if (!insideBorder(camp, path.getNodePos(i))) {
                 return false;
             }
         }
-        return true;
+        return CampWorkZoneAccess.isPathAllowed(this.npc, camp, path);
     }
 }
