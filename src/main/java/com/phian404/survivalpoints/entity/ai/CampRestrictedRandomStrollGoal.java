@@ -25,15 +25,13 @@ public class CampRestrictedRandomStrollGoal extends RandomStrollGoal {
     }
 
     @Override
-    public boolean canUse() {
-        if (!super.canUse()) {
-            return false;
-        }
+    public void start() {
+        super.start();
+        // RandomStrollGoal строит путь только в start(), поэтому проверять его
+        // нужно после вызова super.start(), а не в canUse().
         if (!pathAllowed()) {
             this.npc.getNavigation().stop();
-            return false;
         }
-        return true;
     }
 
     @Override
