@@ -169,8 +169,9 @@ public class NpcDebugWandItem extends Item {
             if (goal instanceof FarmerWorkGoal work) {
                 farmer = "FarmerWork=" + (wrapped.isRunning() ? "RUNNING" : "STOPPED")
                         + "/" + work.getState();
-            } else if (goal instanceof CampWanderGoal) {
-                wander = "Wander=" + (wrapped.isRunning() ? "RUNNING" : "STOPPED");
+            } else if (goal instanceof CampWanderGoal campWander) {
+                wander = "Wander=" + (wrapped.isRunning() ? "RUNNING" : "STOPPED")
+                        + " [" + campWander.diagnosticSummary(npc.level().getGameTime()) + "]";
             }
         }
         return farmer + ", " + wander;
