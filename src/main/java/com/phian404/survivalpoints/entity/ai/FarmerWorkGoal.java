@@ -64,6 +64,12 @@ public class FarmerWorkGoal extends Goal {
 
     private State state = State.IDLE;
 
+    /** ВРЕМЕННО: частота сводки и последняя записанная стадия. */
+    private static final int TRACE_INTERVAL = 100;
+    private String lastTraceStage = "";
+    private long lastTraceTick = Long.MIN_VALUE;
+    private boolean wasPaused = false;
+
     /** Позиция NPC на предыдущем тике и счётчик отсутствия прогресса. */
     @Nullable
     private BlockPos lastNpcPos;
@@ -115,7 +121,6 @@ public class FarmerWorkGoal extends Goal {
         if (this.pauseTicks > 0) {
             this.pauseTicks--;
             if (!this.wasPaused && this.npc.level() instanceof ServerLevel level) {
-
             }
             this.wasPaused = true;
             return false;
@@ -124,7 +129,6 @@ public class FarmerWorkGoal extends Goal {
             return false;
         }
         if (this.wasPaused) {
-
             this.wasPaused = false;
         }
         if (this.npc.getRole() != SurvivorRole.CIVILIAN) {
@@ -135,38 +139,32 @@ public class FarmerWorkGoal extends Goal {
         }
         CampRecord camp = camp(level);
         if (camp == null) {
-
             return false;
         }
         if (this.npc.getWorkPoiPos() == null) {
-
             return false;
         }
 
         NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
         if (controller.current() != null) {
-
             return false;
         }
 
         CampFarmManager manager = CampManager.farmManager(camp);
-
+        int harvest = manager.taskCount(CampFarmManager.TYPE_HARVEST);
+        int plant = manager.taskCount(CampFarmManager.TYPE_PLANT);
         NpcTask task = manager.take(level, camp, this.npc, this.npc.getIdentityId(), level.getGameTime());
         if (task == null || task.getTarget() == null) {
-
             return false;
         }
-
         BlockPos approach = approachPos(level, camp, task.getTarget());
         if (approach == null) {
-
             manager.markFailed(task.getId(), level.getGameTime());
             return false;
         }
 
         UUID taskId = task.getId();
         if (!controller.tryStart(task, () -> manager.release(taskId))) {
-
             manager.release(taskId);
             return false;
         }
@@ -175,7 +173,6 @@ public class FarmerWorkGoal extends Goal {
         showHeldSeed(task);
         this.state = State.MOVING;
         if (atApproach(approach)) {
-
             return true;
         }
         // Путь строим сразу к набору всех пригодных клеток подхода: ванильная
@@ -186,12 +183,10 @@ public class FarmerWorkGoal extends Goal {
         // частичный путь с canReach() == false — это проверяет approachPath.
         Path path = approachPath(level, camp, task);
         if (path == null || !this.npc.getNavigation().moveTo(path, SPEED)) {
-
             abandon(level, camp, task, RETRY_PAUSE);
             return false;
         }
         if (!pathInside(camp, path)) {
-
             abandon(level, camp, task, RETRY_PAUSE);
             return false;
         }
@@ -201,7 +196,6 @@ public class FarmerWorkGoal extends Goal {
         if (this.pathTarget != null) {
             this.approach = this.pathTarget;
         }
-
         return true;
     }
 
@@ -255,13 +249,11 @@ public class FarmerWorkGoal extends Goal {
                 this.lastNpcPos = current;
             }
             if (this.stuckTicks >= STUCK_TIMEOUT) {
-
                 abandon(level, camp, task, RETRY_PAUSE);
                 return;
             }
 
             Path path = this.npc.getNavigation().getPath();
-            // Не сбрасываем прогресс навигации повторным moveTo каждые 20 тиков.
             if (path == null || path.isDone()) {
                 // Страховка: навигатор считает маршрут завершённым, но
                 // atApproach() ещё не true (например, остановился в зоне
@@ -281,7 +273,6 @@ public class FarmerWorkGoal extends Goal {
                     if (started && this.pathTarget != null) {
                         this.approach = this.pathTarget;
                     }
-
                     if (!started) {
                         abandon(level, camp, task, RETRY_PAUSE);
                     }
@@ -307,14 +298,12 @@ public class FarmerWorkGoal extends Goal {
         // абстрактной позиции подхода.
         double targetDistance = FarmApproach.horizontalDistSqr(this.npc.blockPosition(), plot);
         if (targetDistance > FarmApproach.TARGET_REACH_SQR) {
-
             abandon(level, camp, task, RETRY_PAUSE);
             return;
         }
 
         this.state = State.WORKING;
         boolean done = perform(level, task, plot);
-
         if (done) {
             CampManager.farmManager(camp).markSucceeded(task.getId());
             controller.complete();
@@ -340,9 +329,7 @@ public class FarmerWorkGoal extends Goal {
                     : this.approach == null ? "NO_APPROACH"
                     : task == null ? "NO_TASK"
                     : atApproach(this.approach) ? "ARRIVED" : "GOAL_INTERRUPTED";
-
             if (camp != null && task != null) {
-
                 CampManager.farmManager(camp).release(task.getId());
             }
             controller.cancel();
@@ -416,7 +403,6 @@ public class FarmerWorkGoal extends Goal {
     private void abandon(ServerLevel level, CampRecord camp, NpcTask task, int pause) {
         CampFarmManager manager = CampManager.farmManager(camp);
         manager.markFailed(task.getId(), level.getGameTime());
-
         CampManager.taskController(this.npc.getIdentityId()).cancel();
         this.npc.getNavigation().stop();
         clearHeldItem();
@@ -545,7 +531,6 @@ public class FarmerWorkGoal extends Goal {
     }
 
     private void cancel(ServerLevel level, CampFarmManager manager, UUID taskId, boolean done) {
-
         manager.release(taskId);
         CampManager.taskController(this.npc.getIdentityId()).cancel();
         this.approach = null;
@@ -578,16 +563,18 @@ public class FarmerWorkGoal extends Goal {
         // Только четыре стороны: диагональная клетка имеет distSqr=2 до грядки
         // и отсекается порогом TARGET_REACH_SQR=1.0, поэтому её перебор
         // бесполезен. Порог взаимодействия не расширяем.
+        java.util.List<String> diag = new java.util.ArrayList<>();
         for (Direction dir : Direction.Plane.HORIZONTAL) {
             BlockPos candidate = plot.relative(dir);
-            if (FarmApproach.validate(level, camp, plot, candidate,
-                    this.npc.getBbWidth(), this.npc.getBbHeight()) == null) {
+            String reason = FarmApproach.validate(level, camp, plot, candidate,
+                    this.npc.getBbWidth(), this.npc.getBbHeight());
+            if (reason == null) {
                 return candidate;
             }
+            diag.add(candidate + " -> " + reason);
         }
         // Одна сводка на одну попытку участка: подход вызывается один раз
         // на взятую задачу, поэтому постоянного потока логов нет.
-
         return null;
     }
 
