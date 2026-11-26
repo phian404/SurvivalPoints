@@ -46,6 +46,9 @@ public class CampWanderGoal extends Goal {
     /** Оставшиеся тики паузы. */
     private int pauseTicks = 0;
 
+    /** Выход из фермы должен завершиться, даже если обычная пауза ещё активна. */
+    private boolean exitInProgress = false;
+
     public CampWanderGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
         this.setFlags(EnumSet.of(Goal.Flag.MOVE));
@@ -83,12 +86,13 @@ public class CampWanderGoal extends Goal {
             this.npc.getNavigation().stop();
             return false;
         }
+        this.exitInProgress = leavingFarm;
         return true;
     }
 
     @Override
     public boolean canContinueToUse() {
-        if (this.pauseTicks > 0 || this.npc.level().isClientSide
+        if ((this.pauseTicks > 0 && !this.exitInProgress) || this.npc.level().isClientSide
                 || !(this.npc.level() instanceof ServerLevel level)) {
             return false;
         }
@@ -103,6 +107,7 @@ public class CampWanderGoal extends Goal {
     @Override
     public void stop() {
         this.npc.getNavigation().stop();
+        this.exitInProgress = false;
         this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
     }
 
