@@ -92,6 +92,15 @@ public class FarmerWorkGoal extends Goal {
     /** В руку положено семя только для отображения (копия из инвентаря). */
     private boolean heldDisplaySeed = false;
 
+    /**
+     * Грядка, на которую смотрим во время паузы после успешной работы: без
+     * этого цель гаснет (LookControl доворачивает голову лишь пару тиков),
+     * цель останавливается и взгляд перехватывают RandomLookAroundGoal /
+     * LookAtPlayerGoal.
+     */
+    @Nullable
+    private BlockPos pauseLookTarget;
+
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
         // Flag.LOOK: без него во время движения и работы параллельно выполняются
@@ -228,6 +237,11 @@ public class FarmerWorkGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
+        // Пауза после успешной работы — держим цель живой, чтобы NPC стоял и
+        // смотрел на обработанную грядку (тик паузы обслуживает tick()).
+        if (this.pauseLookTarget != null) {
+            return true;
+        }
         if (this.pauseTicks > 0 || this.approach == null || this.npc.level().isClientSide
                 || !(this.npc.level() instanceof ServerLevel level)) {
             return false;
@@ -239,6 +253,16 @@ public class FarmerWorkGoal extends Goal {
 
     @Override
     public void tick() {
+        if (this.pauseLookTarget != null) {
+            this.pauseTicks--;
+            this.npc.getNavigation().stop();
+            this.npc.getLookControl().setLookAt(this.pauseLookTarget.getX() + 0.5D,
+                    this.pauseLookTarget.getY() + 1.5D, this.pauseLookTarget.getZ() + 0.5D);
+            if (this.pauseTicks <= 0) {
+                this.pauseLookTarget = null;
+            }
+            return;
+        }
         if (this.approach == null || !(this.npc.level() instanceof ServerLevel level)) {
             return;
         }
@@ -356,6 +380,7 @@ public class FarmerWorkGoal extends Goal {
             controller.complete();
             clearHeldItem();
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
+            this.pauseLookTarget = plot;
             this.approach = null;
             this.correctiveStep = false;
             this.state = State.IDLE;
@@ -394,6 +419,7 @@ public class FarmerWorkGoal extends Goal {
         this.npc.getNavigation().stop();
         clearHeldItem();
         this.approach = null;
+        this.pauseLookTarget = null;
         this.state = State.IDLE;
         this.stuckTicks = 0;
         this.lastNpcPos = null;
@@ -464,6 +490,7 @@ public class FarmerWorkGoal extends Goal {
         this.npc.getNavigation().stop();
         clearHeldItem();
         this.approach = null;
+        this.pauseLookTarget = null;
         this.state = State.IDLE;
         this.stuckTicks = 0;
         this.lastNpcPos = null;
@@ -591,6 +618,7 @@ public class FarmerWorkGoal extends Goal {
         manager.release(taskId);
         CampManager.taskController(this.npc.getIdentityId()).cancel();
         this.approach = null;
+        this.pauseLookTarget = null;
         this.state = State.IDLE;
         this.stuckTicks = 0;
         this.lastNpcPos = null;
