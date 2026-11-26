@@ -38,6 +38,8 @@ public final class CampFarmManager {
 
     /** Задержка повторного предложения недоступной задачи. */
     private static final int UNAVAILABLE_COOLDOWN = 60;
+    /** Потолок нарастающего cooldown отказов по одной грядке. */
+    private static final int MAX_FAIL_COOLDOWN = 600;
 
     /** Тип задачи сбора. */
     public static final String TYPE_HARVEST = "farm_harvest";
@@ -138,13 +140,30 @@ public final class CampFarmManager {
         }
     }
 
-    /** Пометить задачу временно недоступной и снять резервацию. */
-    public void markUnavailable(UUID taskId, long gameTime) {
+    /**
+     * Отказ исполнителя от задачи: снимает резервацию и откладывает повторное
+     * предложение на нарастающий cooldown (UNAVAILABLE_COOLDOWN * failures,
+     * до MAX_FAIL_COOLDOWN), чтобы фермер не зацикливался на одной
+     * недоступной грядке. Идемпотентно.
+     */
+    public void markFailed(UUID taskId, long gameTime) {
         for (FarmTask task : this.tasks.values()) {
             if (task.task.getId().equals(taskId)) {
+                task.failures++;
                 task.reservedBy = null;
                 task.reservedAt = Long.MIN_VALUE;
-                task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
+                task.availableAt = gameTime
+                        + Math.min(UNAVAILABLE_COOLDOWN * task.failures, MAX_FAIL_COOLDOWN);
+                return;
+            }
+        }
+    }
+
+    /** Успешное выполнение: счётчик отказов грядки обнуляется. */
+    public void markSucceeded(UUID taskId) {
+        for (FarmTask task : this.tasks.values()) {
+            if (task.task.getId().equals(taskId)) {
+                task.failures = 0;
                 return;
             }
         }
@@ -302,12 +321,19 @@ public final class CampFarmManager {
                 + " skippedOther=" + skippedOther, level);
 
         // Переносятся только ещё не истёкшие резервации по живым задачам.
+        // Счётчик отказов живёт, пока не истёк его backoff: если время вышло,
+        // считаем, что ситуация в мире могла измениться, и начинаем отсчёт
+        // заново.
         for (Map.Entry<BlockPos, FarmTask> entry : fresh.entrySet()) {
             FarmTask old = this.tasks.get(entry.getKey());
-            if (old != null && old.reservedBy != null
-                    && gameTime - old.reservedAt < RESERVATION_TTL
-                    && old.task.getType().equals(entry.getValue().task.getType())) {
-                entry.setValue(old);
+            if (old != null) {
+                if (old.reservedBy != null
+                        && gameTime - old.reservedAt < RESERVATION_TTL
+                        && old.task.getType().equals(entry.getValue().task.getType())) {
+                    entry.setValue(old);
+                } else if (gameTime < old.availableAt) {
+                    entry.getValue().failures = old.failures;
+                }
             }
         }
         this.tasks.clear();
@@ -373,6 +399,8 @@ public final class CampFarmManager {
         private UUID reservedBy;
         private long reservedAt = Long.MIN_VALUE;
         private long availableAt = Long.MIN_VALUE;
+        /** Сколько раз подряд задача по этой грядке провалилась у исполнителя. */
+        private int failures;
 
         private FarmTask(NpcTask task, String slotId) {
             this.task = task;

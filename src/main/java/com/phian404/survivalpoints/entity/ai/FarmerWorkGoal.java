@@ -171,7 +171,7 @@ public class FarmerWorkGoal extends Goal {
         if (approach == null) {
             trace(level, "APPROACH", "result=NO_POSITION target=" + task.getTarget()
                     + " reason=NO_SAFE_SIDE_INSIDE_BORDER");
-            manager.markUnavailable(task.getId(), level.getGameTime());
+            manager.markFailed(task.getId(), level.getGameTime());
             return false;
         }
         trace(level, "APPROACH", "result=OK target=" + task.getTarget()
@@ -191,21 +191,22 @@ public class FarmerWorkGoal extends Goal {
             trace(level, "PATH_RESULT", "result=ALREADY_THERE");
             return true;
         }
-        if (!this.npc.getNavigation().moveTo(approach.getX() + 0.5D, approach.getY(),
-                approach.getZ() + 0.5D, SPEED)) {
+        // Первичный путь строим с точностью 0: createPath(approach, 0) даёт
+        // настоящий маршрут, который навигатор реально ведёт до центра клетки
+        // подхода. moveTo(x,y,z,speed) с точностью 1 считал цель достигнутой на
+        // манхэттенском расстоянии <= 1 и отдавал one-node partial path — из-за
+        // этого фермер останавливался в полублоке от цели. Корректирующий шаг
+        // в tick() остаётся страховкой на случай, если навигатор всё же
+        // завершит путь раньше критерия прибытия.
+        Path path = this.npc.getNavigation().createPath(approach, 0);
+        if (path == null || !this.npc.getNavigation().moveTo(path, SPEED)) {
             trace(level, "PATH_RESULT", "result=NO_PATH approach=" + approach);
-            abandon(level, camp, task, false, RETRY_PAUSE);
-            return false;
-        }
-        Path path = this.npc.getNavigation().getPath();
-        if (path == null) {
-            trace(level, "PATH_RESULT", "result=NULL_PATH");
-            abandon(level, camp, task, false, RETRY_PAUSE);
+            abandon(level, camp, task, RETRY_PAUSE);
             return false;
         }
         if (!pathInside(camp, path)) {
             trace(level, "PATH_RESULT", "result=OUTSIDE_BORDER nodes=" + path.getNodeCount());
-            abandon(level, camp, task, false, RETRY_PAUSE);
+            abandon(level, camp, task, RETRY_PAUSE);
             return false;
         }
         trace(level, "PATH_RESULT", "result=OK nodes=" + path.getNodeCount());
@@ -249,21 +250,18 @@ public class FarmerWorkGoal extends Goal {
             if (this.stuckTicks >= STUCK_TIMEOUT) {
                 trace(level, "STUCK", "result=GIVE_UP approach=" + this.approach
                         + " npc=" + current + " ticks=" + this.stuckTicks);
-                abandon(level, camp, task, true, RETRY_PAUSE);
+                abandon(level, camp, task, RETRY_PAUSE);
                 return;
             }
 
             Path path = this.npc.getNavigation().getPath();
             if (path == null || path.isDone()) {
-                // Навигатор считает маршрут завершённым, но atApproach() ещё
-                // не true. Причина — поведение ванильного PathFinder:
-                // moveTo(x,y,z,speed) ищет путь с точностью 1, а цель на
-                // манхэттенском расстоянии <= 1 от стартовой вершины считается
-                // достигнутой сразу, поэтому маршрут до соседней клетки —
-                // единственная стартовая вершина (nodes=1, done) и повторный
-                // moveTo возвращает false (isDone). Корректирующий шаг делаем
-                // той же системой навигации, но с точностью 0: createPath с
-                // accuracy 0 строит настоящий путь из двух вершин, который
+                // Страховка: навигатор считает маршрут завершённым, но
+                // atApproach() ещё не true (например, остановился в зоне
+                // advance узла). Первичный путь теперь строится с точностью 0,
+                // так что в штатном сценарии эта ветка не срабатывает.
+                // Корректирующий шаг делаем той же системой навигации:
+                // createPath с accuracy 0 строит настоящий путь, который
                 // навигатор реально ведёт (коллизии, срезание углов и таймаут
                 // остались в навигаторе, MoveControl в обход не используется).
                 // Повтор — только после того, как новый путь начался и снова
@@ -282,20 +280,35 @@ public class FarmerWorkGoal extends Goal {
                                     + " pos=" + this.npc.position()
                                     + " approach=" + this.approach);
                     if (!started) {
-                        abandon(level, camp, task, false, RETRY_PAUSE);
+                        trace(level, "CORRECTIVE_STEP",
+                                "blocks approach=" + level.getBlockState(this.approach)
+                                        + " below=" + level.getBlockState(this.approach.below())
+                                        + " npc=" + level.getBlockState(this.npc.blockPosition()));
+                        abandon(level, camp, task, RETRY_PAUSE);
                     }
                 }
             } else {
                 this.correctiveStep = false;
                 this.repathTicks--;
                 if (this.repathTicks <= 0) {
-                    this.npc.getNavigation().moveTo(this.approach.getX() + 0.5D,
-                            this.approach.getY(), this.approach.getZ() + 0.5D, SPEED);
+                    // Повторный путь — тоже с точностью 0, чтобы REPATH не
+                    // подсовывал навигатору one-node partial path.
+                    Path repath = this.npc.getNavigation().createPath(this.approach, 0);
+                    boolean started = repath != null
+                            && this.npc.getNavigation().moveTo(repath, SPEED);
                     this.repathTicks = REPATH_INTERVAL;
-                    trace(level, "REPATH", "npc=" + current + " pos=" + this.npc.position()
-                            + " approach=" + this.approach
-                            + " nodes=" + path.getNodeCount()
-                            + " idx=" + path.getNextNodeIndex());
+                    if (started) {
+                        trace(level, "REPATH", "npc=" + current + " pos=" + this.npc.position()
+                                + " approach=" + this.approach
+                                + " nodes=" + repath.getNodeCount()
+                                + " idx=" + repath.getNextNodeIndex()
+                                + (repath.getNodeCount() > 0
+                                        ? " node0=" + repath.getNodePos(0)
+                                        : ""));
+                    } else {
+                        trace(level, "REPATH", "result=NO_PATH npc=" + current
+                                + " approach=" + this.approach);
+                    }
                 }
             }
             this.state = State.MOVING;
@@ -319,7 +332,7 @@ public class FarmerWorkGoal extends Goal {
         if (targetDistance > FarmApproach.TARGET_REACH_SQR) {
             trace(level, "TARGET_DISTANCE", "result=TOO_FAR target=" + plot
                     + " distSqr=" + String.format("%.2f", targetDistance));
-            abandon(level, camp, task, true, RETRY_PAUSE);
+            abandon(level, camp, task, RETRY_PAUSE);
             return;
         }
 
@@ -328,13 +341,14 @@ public class FarmerWorkGoal extends Goal {
         trace(level, "INTERACT", "target=" + plot + " task=" + task.getType()
                 + " result=" + (done ? "DONE" : "FAILED"));
         if (done) {
+            CampManager.farmManager(camp).markSucceeded(task.getId());
             controller.complete();
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
             this.approach = null;
             this.correctiveStep = false;
             this.state = State.IDLE;
         } else {
-            abandon(level, camp, task, true, RETRY_PAUSE);
+            abandon(level, camp, task, RETRY_PAUSE);
         }
     }
 
@@ -377,25 +391,22 @@ public class FarmerWorkGoal extends Goal {
     /**
      * Единая точка отказа от начатой задачи.
      *
-     * <p>Снимает резервацию у диспетчера (с cooldown при неудаче исполнения или
-     * сразу при провале пути), отменяет задачу в контроллере, останавливает
-     * навигацию и приводит Goal в состояние покоя. Раньше эта логика была
-     * размазана по веткам STUCK, TOO_FAR, неудачного действия и трёх провалов
-     * пути с немного разными наборами вызовов — из-за чего задачу можно было
-     * забыть освободить.
+     * <p>Снимает резервацию у диспетчера, отменяет задачу в контроллере,
+     * останавливает навигацию и приводит Goal в состояние покоя. Раньше эта
+     * логика была размазана по веткам STUCK, TOO_FAR, неудачного действия и
+     * трёх провалов пути с немного разными наборами вызовов — из-за чего
+     * задачу можно было забыть освободить.
      *
-     * @param markUnavailable true — задача получает cooldown перед повторной
-     *                        попыткой; false — резервация снимается сразу
-     * @param pause           пауза в тиках перед следующим поиском задачи
+     * <p>Каждый отказ увеличивает счётчик отказов грядки: повторное
+     * предложение задачи сдвигается на нарастающий cooldown, чтобы фермер не
+     * зацикливался на одной упорно недоступной грядке. Успешное выполнение
+     * счётчик обнуляет ({@link CampFarmManager#markSucceeded}).
+     *
+     * @param pause пауза в тиках перед следующим поиском задачи
      */
-    private void abandon(ServerLevel level, CampRecord camp, NpcTask task,
-                         boolean markUnavailable, int pause) {
+    private void abandon(ServerLevel level, CampRecord camp, NpcTask task, int pause) {
         CampFarmManager manager = CampManager.farmManager(camp);
-        if (markUnavailable) {
-            manager.markUnavailable(task.getId(), level.getGameTime());
-        } else {
-            manager.release(task.getId());
-        }
+        manager.markFailed(task.getId(), level.getGameTime());
         trace(level, "RELEASE", "result=CANCEL taskId=" + task.getId());
         CampManager.taskController(this.npc.getIdentityId()).cancel();
         this.npc.getNavigation().stop();
