@@ -80,6 +80,8 @@ public class FarmerWorkGoal extends Goal {
     private int repathTicks = 0;
     /** Корректирующий навигационный шаг уже выпущен по текущему завершённому пути. */
     private boolean correctiveStep = false;
+    /** Один добавочный шанс при диагональном NO_PATH на задачу. */
+    private boolean correctiveRetry = false;
 
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
@@ -280,7 +282,27 @@ public class FarmerWorkGoal extends Goal {
                                     + " pos=" + this.npc.position()
                                     + " approach=" + this.approach);
                     if (!started) {
-                        abandon(level, camp, task, RETRY_PAUSE);
+                        // Из диагональной клетки ванильный pathfinder не строит
+                        // маршрут к цели (срезание угла запрещено), хотя путь
+                        // ортогонально существует. Даём один добавочный шанс:
+                        // обычный moveTo с точностью 1 — это одиночный шаг в
+                        // сторону подхода, который выводит NPC из диагонали.
+                        // Затем точный путь строится заново. Не помогло —
+                        // прежний отказ.
+                        boolean nudged = !this.correctiveRetry
+                                && this.npc.getNavigation().moveTo(
+                                        this.approach.getX() + 0.5D, this.approach.getY(),
+                                        this.approach.getZ() + 0.5D, SPEED);
+                        if (nudged) {
+                            this.correctiveRetry = true;
+                            this.correctiveStep = false;
+                            this.repathTicks = REPATH_INTERVAL;
+                            trace(level, "CORRECTIVE_STEP", "result=NUDGE npc="
+                                    + this.npc.blockPosition()
+                                    + " approach=" + this.approach);
+                        } else {
+                            abandon(level, camp, task, RETRY_PAUSE);
+                        }
                     }
                 }
             } else {
@@ -339,6 +361,7 @@ public class FarmerWorkGoal extends Goal {
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
             this.approach = null;
             this.correctiveStep = false;
+            this.correctiveRetry = false;
             this.state = State.IDLE;
         } else {
             abandon(level, camp, task, RETRY_PAUSE);
@@ -379,6 +402,7 @@ public class FarmerWorkGoal extends Goal {
         this.lastNpcPos = null;
         this.repathTicks = 0;
         this.correctiveStep = false;
+        this.correctiveRetry = false;
     }
 
     /**
@@ -409,6 +433,7 @@ public class FarmerWorkGoal extends Goal {
         this.lastNpcPos = null;
         this.repathTicks = 0;
         this.correctiveStep = false;
+        this.correctiveRetry = false;
         this.pauseTicks = pause;
     }
 
@@ -504,6 +529,7 @@ public class FarmerWorkGoal extends Goal {
         this.lastNpcPos = null;
         this.repathTicks = 0;
         this.correctiveStep = false;
+        this.correctiveRetry = false;
         this.pauseTicks = done ? PAUSE_MIN : RETRY_PAUSE;
     }
     @Nullable
