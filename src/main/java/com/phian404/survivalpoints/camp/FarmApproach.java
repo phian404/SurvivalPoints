@@ -42,13 +42,25 @@ public final class FarmApproach {
     @Nullable
     public static BlockPos findApproach(ServerLevel level, CampRecord camp, BlockPos plot,
                                         double bodyWidth, double bodyHeight) {
+        List<BlockPos> cells = findApproaches(level, camp, plot, bodyWidth, bodyHeight);
+        return cells.isEmpty() ? null : cells.get(0);
+    }
+
+    /**
+     * Все пригодные клетки подхода (от 0 до 4). Исполнителю нужен весь набор:
+     * навигация умеет строить путь сразу к нескольким целям и выбирает
+     * ближайшую достижимую, а не первую по порядку сторон.
+     */
+    public static List<BlockPos> findApproaches(ServerLevel level, CampRecord camp, BlockPos plot,
+                                                double bodyWidth, double bodyHeight) {
+        List<BlockPos> cells = new ArrayList<>(4);
         for (Direction dir : Direction.Plane.HORIZONTAL) {
             BlockPos candidate = plot.relative(dir);
             if (validate(level, camp, plot, candidate, bodyWidth, bodyHeight) == null) {
-                return candidate;
+                cells.add(candidate);
             }
         }
-        return null;
+        return cells;
     }
 
     /**

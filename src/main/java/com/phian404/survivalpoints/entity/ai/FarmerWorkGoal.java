@@ -80,8 +80,6 @@ public class FarmerWorkGoal extends Goal {
     private int repathTicks = 0;
     /** Корректирующий навигационный шаг уже выпущен по текущему завершённому пути. */
     private boolean correctiveStep = false;
-    /** Один добавочный шанс при диагональном NO_PATH на задачу. */
-    private boolean correctiveRetry = false;
 
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
@@ -193,14 +191,13 @@ public class FarmerWorkGoal extends Goal {
             trace(level, "PATH_RESULT", "result=ALREADY_THERE");
             return true;
         }
-        // Первичный путь строим с точностью 0: createPath(approach, 0) даёт
-        // настоящий маршрут, который навигатор реально ведёт до центра клетки
-        // подхода. moveTo(x,y,z,speed) с точностью 1 считал цель достигнутой на
-        // манхэттенском расстоянии <= 1 и отдавал one-node partial path — из-за
-        // этого фермер останавливался в полублоке от цели. Корректирующий шаг
-        // в tick() остаётся страховкой на случай, если навигатор всё же
-        // завершит путь раньше критерия прибытия.
-        Path path = this.npc.getNavigation().createPath(approach, 0);
+        // Путь строим сразу к набору всех пригодных клеток подхода: ванильная
+        // навигация выбирает ближайшую достижимую, а не первую по порядку
+        // сторон. Точность 0 — цель должна совпасть с клеткой, а не оказаться
+        // в манхэттенском радиусе 1 (иначе получается one-node partial path).
+        // PathFinder не сигнализирует недостижимость null-ом: он отдаёт
+        // частичный путь с canReach() == false — это проверяет approachPath.
+        Path path = approachPath(level, camp, task);
         if (path == null || !this.npc.getNavigation().moveTo(path, SPEED)) {
             trace(level, "PATH_RESULT", "result=NO_PATH approach=" + approach);
             abandon(level, camp, task, RETRY_PAUSE);
@@ -270,8 +267,7 @@ public class FarmerWorkGoal extends Goal {
                 // завершился. STUCK остаётся финальной страховкой.
                 if (!this.correctiveStep) {
                     this.correctiveStep = true;
-                    Path correctivePath = this.npc.getNavigation().createPath(
-                            this.approach, 0);
+                    Path correctivePath = this.approachPath(level, camp, task);
                     boolean started = correctivePath != null
                             && this.npc.getNavigation().moveTo(correctivePath, SPEED);
                     trace(level, "CORRECTIVE_STEP",
@@ -282,36 +278,14 @@ public class FarmerWorkGoal extends Goal {
                                     + " pos=" + this.npc.position()
                                     + " approach=" + this.approach);
                     if (!started) {
-                        // Из диагональной клетки ванильный pathfinder не строит
-                        // маршрут к цели (срезание угла запрещено), хотя путь
-                        // ортогонально существует. Даём один добавочный шанс:
-                        // обычный moveTo с точностью 1 — это одиночный шаг в
-                        // сторону подхода, который выводит NPC из диагонали.
-                        // Затем точный путь строится заново. Не помогло —
-                        // прежний отказ.
-                        boolean nudged = !this.correctiveRetry
-                                && this.npc.getNavigation().moveTo(
-                                        this.approach.getX() + 0.5D, this.approach.getY(),
-                                        this.approach.getZ() + 0.5D, SPEED);
-                        if (nudged) {
-                            this.correctiveRetry = true;
-                            this.correctiveStep = false;
-                            this.repathTicks = REPATH_INTERVAL;
-                            trace(level, "CORRECTIVE_STEP", "result=NUDGE npc="
-                                    + this.npc.blockPosition()
-                                    + " approach=" + this.approach);
-                        } else {
-                            abandon(level, camp, task, RETRY_PAUSE);
-                        }
+                        abandon(level, camp, task, RETRY_PAUSE);
                     }
                 }
             } else {
                 this.correctiveStep = false;
                 this.repathTicks--;
                 if (this.repathTicks <= 0) {
-                    // Повторный путь — тоже с точностью 0, чтобы REPATH не
-                    // подсовывал навигатору one-node partial path.
-                    Path repath = this.npc.getNavigation().createPath(this.approach, 0);
+                    Path repath = this.approachPath(level, camp, task);
                     boolean started = repath != null
                             && this.npc.getNavigation().moveTo(repath, SPEED);
                     this.repathTicks = REPATH_INTERVAL;
@@ -361,7 +335,6 @@ public class FarmerWorkGoal extends Goal {
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
             this.approach = null;
             this.correctiveStep = false;
-            this.correctiveRetry = false;
             this.state = State.IDLE;
         } else {
             abandon(level, camp, task, RETRY_PAUSE);
@@ -402,7 +375,33 @@ public class FarmerWorkGoal extends Goal {
         this.lastNpcPos = null;
         this.repathTicks = 0;
         this.correctiveStep = false;
-        this.correctiveRetry = false;
+    }
+
+    /**
+     * Путь к грядке: цель — любая пригодная клетка подхода. Навигация сама
+     * выбирает ближайшую достижимую; точность 0, чтобы цель совпала с клеткой,
+     * а не попала в манхэттенский радиус. Возвращает null, если пути к
+     * достижимой клетке нет (частичный путь отбрасывается по canReach).
+     */
+    @Nullable
+    private Path approachPath(ServerLevel level, CampRecord camp, NpcTask task) {
+        BlockPos target = task.getTarget();
+        java.util.Set<BlockPos> targets = new java.util.LinkedHashSet<>(
+                FarmApproach.findApproaches(level, camp, target,
+                        this.npc.getBbWidth(), this.npc.getBbHeight()));
+        if (targets.isEmpty()) {
+            if (this.approach == null
+                    || FarmApproach.validate(level, camp, target, this.approach,
+                            this.npc.getBbWidth(), this.npc.getBbHeight()) != null) {
+                return null;
+            }
+            targets.add(this.approach);
+        }
+        Path path = this.npc.getNavigation().createPath(targets, 0);
+        if (path == null || !path.canReach()) {
+            return null;
+        }
+        return path;
     }
 
     /**
@@ -433,7 +432,6 @@ public class FarmerWorkGoal extends Goal {
         this.lastNpcPos = null;
         this.repathTicks = 0;
         this.correctiveStep = false;
-        this.correctiveRetry = false;
         this.pauseTicks = pause;
     }
 
@@ -529,7 +527,6 @@ public class FarmerWorkGoal extends Goal {
         this.lastNpcPos = null;
         this.repathTicks = 0;
         this.correctiveStep = false;
-        this.correctiveRetry = false;
         this.pauseTicks = done ? PAUSE_MIN : RETRY_PAUSE;
     }
     @Nullable
