@@ -50,6 +50,39 @@ public final class CampFarmManager {
     private final Map<BlockPos, FarmTask> tasks = new LinkedHashMap<>();
     private long lastScanTick = Long.MIN_VALUE;
 
+    /** Последний результат запроса задачи — только диагностические данные. */
+    private String lastTakeResult = "NOT_REQUESTED";
+    private long lastTakeTick = Long.MIN_VALUE;
+
+    /**
+     * Сводка runtime-пула для Debug Wand. Метод только читает состояние.
+     */
+    public String diagnosticSummary(long gameTime) {
+        int harvest = 0;
+        int plant = 0;
+        int reserved = 0;
+        int cooling = 0;
+        for (FarmTask task : this.tasks.values()) {
+            if (TYPE_HARVEST.equals(task.task.getType())) {
+                harvest++;
+            } else if (TYPE_PLANT.equals(task.task.getType())) {
+                plant++;
+            }
+            if (task.reservedBy != null) {
+                reserved++;
+            }
+            if (gameTime < task.availableAt) {
+                cooling++;
+            }
+        }
+        String scan = this.lastScanTick == Long.MIN_VALUE
+                ? "never" : Long.toString(Math.max(0L, gameTime - this.lastScanTick)) + "t ago";
+        String request = this.lastTakeTick == Long.MIN_VALUE
+                ? "never" : this.lastTakeResult + " (" + Math.max(0L, gameTime - this.lastTakeTick) + "t ago)";
+        return "H=" + harvest + " P=" + plant + " reserved=" + reserved
+                + " cooldown=" + cooling + " scan=" + scan + " take=" + request;
+    }
+
     /** Обновить пул задач, если прошёл интервал сканирования. */
     public void refresh(ServerLevel level, CampRecord record, long gameTime) {
         // Long.MIN_VALUE — признак «скана ещё не было». Вычитание из него
@@ -80,6 +113,8 @@ public final class CampFarmManager {
     public NpcTask take(ServerLevel level, CampRecord record, @Nullable BaseSurvivorEntity npc,
                         UUID npcId, long gameTime) {
         dropExpired(gameTime);
+        this.lastTakeTick = gameTime;
+        this.lastTakeResult = this.tasks.isEmpty() ? "POOL_EMPTY" : "NO_ELIGIBLE_TASK";
         // Сначала разбираем зрелые культуры, затем пустые грядки. Внутри
         // каждого типа выбираем ближайшую к NPC задачу; при равной дистанции
         // сохраняется исходный порядок POI.
@@ -93,16 +128,20 @@ public final class CampFarmManager {
                                 task.task.getTarget().getZ() + 0.5D)));
         for (FarmTask task : candidates) {
             if (task.reservedBy != null) {
+                this.lastTakeResult = "ALL_OR_NEXT_RESERVED";
                 continue;
             }
             if (gameTime < task.availableAt) {
+                this.lastTakeResult = "COOLDOWN";
                 continue;
             }
             if (!isStillValid(level, record, task)) {
+                this.lastTakeResult = "TASK_INVALID";
                 continue;
             }
             if (npc != null && !isExecutable(level, task, npc)) {
                 task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
+                this.lastTakeResult = "NOT_EXECUTABLE";
                 continue;
             }
             // Общая с исполнителем проверка подхода ДО резервации: диспетчер не
@@ -113,9 +152,11 @@ public final class CampFarmManager {
             if (npc != null && FarmApproach.findApproach(level, record, task.task.getTarget(),
                     npc.getBbWidth(), npc.getBbHeight()) == null) {
                 task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
+                this.lastTakeResult = "NO_APPROACH";
                 continue;
             }
             task.reservedBy = npcId;
+            this.lastTakeResult = "ASSIGNED:" + task.task.getType() + "@" + task.task.getTarget().toShortString();
             task.reservedAt = gameTime;
             return task.task;
         }
