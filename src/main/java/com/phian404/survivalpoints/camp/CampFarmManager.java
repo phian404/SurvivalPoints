@@ -386,6 +386,7 @@ public final class CampFarmManager {
                     entry.setValue(old);
                 } else if (gameTime < old.availableAt) {
                     entry.getValue().failures = old.failures;
+                    entry.getValue().availableAt = old.availableAt;
                 }
             }
         }
