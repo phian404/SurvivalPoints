@@ -112,7 +112,7 @@ public final class CampTuning {
     /** Как часто тикают лагеря (раз в секунду). */
     public static final int CAMP_TICK_INTERVAL = 20;
     /** Как часто диспетчер фермы обновляет пул задач (в тиках). */
-    public static final int FARM_SCAN_INTERVAL = 200;
+    public static final int FARM_SCAN_INTERVAL = 60;
     /** Максимальная длина названия лагеря. */
     public static final int CAMP_NAME_MAX_LENGTH = 24;
     /** Имя файла данных в мире. */

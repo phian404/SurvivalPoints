@@ -15,6 +15,8 @@ import net.minecraft.world.level.chunk.LevelChunk;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -96,7 +98,18 @@ public final class CampFarmManager {
         int notExecutable = 0;
         @Nullable BlockPos blockedTarget = null;
         @Nullable String blockedReason = null;
-        for (FarmTask task : this.tasks.values()) {
+        // Сначала разбираем зрелые культуры, затем пустые грядки. Внутри
+        // каждого типа выбираем ближайшую к NPC задачу; при равной дистанции
+        // сохраняется исходный порядок POI.
+        List<FarmTask> candidates = new ArrayList<>(this.tasks.values());
+        candidates.sort(Comparator
+                .comparingInt((FarmTask task) ->
+                        TYPE_HARVEST.equals(task.task.getType()) ? 0 : 1)
+                .thenComparingDouble(task -> npc == null ? 0.0D
+                        : npc.distanceToSqr(task.task.getTarget().getX() + 0.5D,
+                                task.task.getTarget().getY() + 0.5D,
+                                task.task.getTarget().getZ() + 0.5D)));
+        for (FarmTask task : candidates) {
             if (task.reservedBy != null) {
                 reserved++;
                 if (blockedTarget == null) {

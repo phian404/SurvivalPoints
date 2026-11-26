@@ -40,9 +40,9 @@ public class FarmerWorkGoal extends Goal {
     /** Предельная дистанция от позиции взаимодействия до грядки. */
     private static final double REACH_DISTANCE_SQR = 1.5D * 1.5D;
 
-    /** Пауза после успешного действия (уменьшена вдвое для отзывчивости). */
-    private static final int PAUSE_MIN = 15;
-    private static final int PAUSE_MAX = 40;
+    /** Короткая пауза после успешного действия, чтобы NPC не выглядел дёрганым. */
+    private static final int PAUSE_MIN = 5;
+    private static final int PAUSE_MAX = 10;
 
     /** Короткая задержка после неудачного действия. */
     private static final int RETRY_PAUSE = 10;
