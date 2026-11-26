@@ -95,4 +95,27 @@ public final class GuardianTrace {
     public static void always(String message) {
         LOGGER.info("[SP] " + message);
     }
+
+    /**
+     * Записать событие без привязки к сущности (ферма, диспетчер задач).
+     *
+     * <p>Как и {@link #event(BaseGuardianEntity, String)}: лог-файл — всегда,
+     * чат — при включённом {@code /sp_trace chat}. Частоту (дедупликацию)
+     * решает вызывающая сторона — у неё свои счётчики.
+     *
+     * @param level   серверный уровень для рассылки в чат
+     * @param message текст события
+     */
+    public static void always(ServerLevel level, String message) {
+        always(message);
+        if (!chatEnabled) {
+            return;
+        }
+        Component component = Component.literal("§8[SP] §7" + message);
+        for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+            if (player.level() == level) {
+                player.sendSystemMessage(component);
+            }
+        }
+    }
 }

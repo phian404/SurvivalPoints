@@ -108,9 +108,6 @@ public class FarmerWorkGoal extends Goal {
      * отключается существующим флагом {@code /sp_trace chat off}.
      */
     private void trace(ServerLevel level, String stage, String detail) {
-        if (!GuardianTrace.isChatEnabled()) {
-            return;
-        }
         long now = level.getGameTime();
         String key = stage + "|" + detail;
         if (key.equals(this.lastTraceStage) && now - this.lastTraceTick < TRACE_INTERVAL) {
@@ -118,10 +115,8 @@ public class FarmerWorkGoal extends Goal {
         }
         this.lastTraceStage = key;
         this.lastTraceTick = now;
-        String message = "FarmerWorkGoal: identity=" + this.npc.getIdentityId()
-                + " stage=" + stage + " " + detail;
-        level.getServer().getPlayerList().broadcastSystemMessage(
-                net.minecraft.network.chat.Component.literal("§8[SP] §7" + message), false);
+        GuardianTrace.always(level, "FarmerWorkGoal: identity=" + this.npc.getIdentityId()
+                + " stage=" + stage + " " + detail);
     }
 
     @Override

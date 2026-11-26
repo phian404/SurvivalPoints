@@ -4,6 +4,7 @@ import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.ai.crop.CropAdapter;
 import com.phian404.survivalpoints.entity.ai.task.NpcTask;
 import com.phian404.survivalpoints.entity.ai.task.NpcTaskPriority;
+import com.phian404.survivalpoints.init.GuardianTrace;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
@@ -271,11 +272,9 @@ public final class CampFarmManager {
         trace("TAKE", detail, level);
     }
 
-    /** ВРЕМЕННО: вывод диагностики в чат сервера. */
+    /** ВРЕМЕННО: вывод диагностики (лог-файл и чат) через GuardianTrace. */
     private static void trace(String stage, String detail, ServerLevel level) {
-        level.getServer().getPlayerList().broadcastSystemMessage(
-                net.minecraft.network.chat.Component.literal("§8[SP] §7CampFarmManager: "
-                        + stage + " " + detail), false);
+        GuardianTrace.always(level, "CampFarmManager: " + stage + " " + detail);
     }
 
     /** ВРЕМЕННО: имя блока для диагностики. */
