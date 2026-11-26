@@ -303,7 +303,6 @@ public class FarmerWorkGoal extends Goal {
         this.state = State.WORKING;
         boolean done = perform(level, task, plot);
         if (done) {
-            CampFarmManager manager = CampManager.farmManager(camp);
             manager.markSucceeded(task.getId());
             manager.refreshPlot(level, camp, plot, level.getGameTime());
             controller.complete();
