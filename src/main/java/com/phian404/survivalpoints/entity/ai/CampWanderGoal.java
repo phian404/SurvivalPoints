@@ -127,7 +127,8 @@ public class CampWanderGoal extends Goal {
             int z = center.getZ() + Mth.floor(Mth.sin(angle) * distance);
             BlockPos pos = new BlockPos(x, floorY, z);
 
-            if (!insideCircle(center, camp.getRadius(), pos)) {
+            if (!insideCircle(center, camp.getRadius(), pos)
+                    || !CampWorkZoneAccess.isPositionAllowed(this.npc, camp, pos)) {
                 continue;
             }
             if (pos.distSqr(this.npc.blockPosition()) < MIN_TARGET_DISTANCE_SQR) {
@@ -144,7 +145,7 @@ public class CampWanderGoal extends Goal {
     }
 
     /** Все узлы маршрута внутри круга лагеря. */
-    private static boolean pathInside(CampRecord camp, Path path) {
+    private boolean pathInside(CampRecord camp, Path path) {
         BlockPos center = camp.getCenter();
         int radius = camp.getRadius();
         for (int i = path.getNextNodeIndex(); i < path.getNodeCount(); i++) {
@@ -152,7 +153,7 @@ public class CampWanderGoal extends Goal {
                 return false;
             }
         }
-        return true;
+        return CampWorkZoneAccess.isPathAllowed(this.npc, camp, path);
     }
 
     /** Горизонтальная проверка точки по кругу, без радиуса тревоги. */
