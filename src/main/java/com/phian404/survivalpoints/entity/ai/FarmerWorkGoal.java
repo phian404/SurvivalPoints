@@ -14,6 +14,7 @@ import com.phian404.survivalpoints.init.GuardianTrace;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.item.ItemStack;
@@ -87,6 +88,9 @@ public class FarmerWorkGoal extends Goal {
      */
     @Nullable
     private BlockPos pathTarget;
+
+    /** В руку положено семя только для отображения (копия из инвентаря). */
+    private boolean heldDisplaySeed = false;
 
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
@@ -188,6 +192,7 @@ public class FarmerWorkGoal extends Goal {
         trace(level, "TRY_START", "result=OK");
 
         this.approach = approach;
+        showHeldSeed(task);
         this.state = State.MOVING;
         if (atApproach(approach)) {
             trace(level, "PATH_RESULT", "result=ALREADY_THERE");
@@ -326,7 +331,9 @@ public class FarmerWorkGoal extends Goal {
 
         this.npc.getNavigation().stop();
         BlockPos plot = task.getTarget();
-        this.npc.getLookControl().setLookAt(plot.getX() + 0.5D, plot.getY() + 0.5D,
+        // Смотрим на саму культуру (блок над грядкой), а не на пашню под ней:
+        // иначе при сборе и посадке голова опущена в землю.
+        this.npc.getLookControl().setLookAt(plot.getX() + 0.5D, plot.getY() + 1.5D,
                 plot.getZ() + 0.5D);
 
         // Повторная проверка непосредственно перед изменением блока: NPC обязан
@@ -347,6 +354,7 @@ public class FarmerWorkGoal extends Goal {
         if (done) {
             CampManager.farmManager(camp).markSucceeded(task.getId());
             controller.complete();
+            clearHeldItem();
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
             this.approach = null;
             this.correctiveStep = false;
@@ -384,6 +392,7 @@ public class FarmerWorkGoal extends Goal {
             controller.cancel();
         }
         this.npc.getNavigation().stop();
+        clearHeldItem();
         this.approach = null;
         this.state = State.IDLE;
         this.stuckTicks = 0;
@@ -453,6 +462,7 @@ public class FarmerWorkGoal extends Goal {
         trace(level, "RELEASE", "result=CANCEL taskId=" + task.getId());
         CampManager.taskController(this.npc.getIdentityId()).cancel();
         this.npc.getNavigation().stop();
+        clearHeldItem();
         this.approach = null;
         this.state = State.IDLE;
         this.stuckTicks = 0;
@@ -517,6 +527,7 @@ public class FarmerWorkGoal extends Goal {
             this.npc.addItem(extracted);
             return false;
         }
+        this.npc.swing(InteractionHand.MAIN_HAND);
         return true;
     }
 
@@ -529,6 +540,37 @@ public class FarmerWorkGoal extends Goal {
             }
         }
         return null;
+    }
+
+    /**
+     * Показывает семя в главной руке на время задачи посадки.
+     *
+     * <p>Это только отображение: в руку кладётся копия предмета из инвентаря,
+     * запас не тратится. Если NPC уже что-то держит (например, предмет,
+     * подаренный игроком), его рука не трогается.
+     */
+    private void showHeldSeed(NpcTask task) {
+        if (!CampFarmManager.TYPE_PLANT.equals(task.getType())) {
+            clearHeldItem();
+            return;
+        }
+        if (!this.heldDisplaySeed && !this.npc.getMainHandItem().isEmpty()) {
+            return;
+        }
+        ItemStack seed = findPlantableSeed();
+        if (seed == null) {
+            return;
+        }
+        this.npc.setItemSlot(EquipmentSlot.MAINHAND, seed.copyWithCount(1));
+        this.heldDisplaySeed = true;
+    }
+
+    /** Убирает из руки только то семя, которое гол положил сам. */
+    private void clearHeldItem() {
+        if (this.heldDisplaySeed) {
+            this.npc.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+            this.heldDisplaySeed = false;
+        }
     }
 
     private boolean fitsInventory(java.util.List<ItemStack> drops) {

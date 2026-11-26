@@ -15,6 +15,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.MobRenderer;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
+import net.minecraft.client.renderer.entity.layers.ItemInHandLayer;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
@@ -254,6 +255,9 @@ public class ModEntityRenderers {
                     new HumanoidArmorModel<>(context.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
                     new HumanoidArmorModel<>(context.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)),
                     context.getModelManager()));
+            // Предмет в руке мирного NPC рисует ванильный слой: модель уже
+            // ArmedModel, а экипировка мобов синхронизируется ServerEntity.
+            renderer.addLayer(new ItemInHandLayer<>(renderer, context.getItemInHandRenderer()));
             return renderer;
         });
     }
