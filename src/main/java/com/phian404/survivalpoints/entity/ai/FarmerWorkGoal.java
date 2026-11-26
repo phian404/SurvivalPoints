@@ -14,7 +14,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.util.Mth;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.item.ItemStack;
@@ -199,8 +198,7 @@ public class FarmerWorkGoal extends Goal {
         if (this.pauseLookTarget != null) {
             this.pauseTicks--;
             this.npc.getNavigation().stop();
-            this.npc.getLookControl().setLookAt(this.pauseLookTarget.getX() + 0.5D,
-                    this.pauseLookTarget.getY() + 1.5D, this.pauseLookTarget.getZ() + 0.5D);
+            NpcLookHelper.lookAtBlock(this.npc, this.pauseLookTarget.above());
             if (this.pauseTicks <= 0) {
                 this.pauseLookTarget = null;
             }
@@ -269,14 +267,13 @@ public class FarmerWorkGoal extends Goal {
         BlockPos plot = task.getTarget();
         // Смотрим на саму культуру (блок над грядкой), а не на пашню под ней:
         // иначе при сборе и посадке голова опущена в землю.
-        this.npc.getLookControl().setLookAt(plot.getX() + 0.5D, plot.getY() + 1.5D,
-                plot.getZ() + 0.5D);
+        NpcLookHelper.lookAtBlock(this.npc, plot.above());
 
         // Сбор и посадка разрешены только после фактического поворота головы к культуре.
         // LookControl доворачивает NPC между тиками; здесь мы лишь ждём.
         boolean requiresFacing = CampFarmManager.TYPE_PLANT.equals(task.getType())
                 || CampFarmManager.TYPE_HARVEST.equals(task.getType());
-        if (requiresFacing && !isFacingTarget(plot.above())) {
+        if (requiresFacing && !NpcLookHelper.isFacingBlock(this.npc, plot.above(), 12.0F)) {
             return;
         }
 
@@ -570,17 +567,6 @@ public class FarmerWorkGoal extends Goal {
         double dz = this.npc.getZ() - (approach.getZ() + 0.5D);
         double dy = this.npc.getY() - approach.getY();
         return dx * dx + dz * dz <= 0.25D && Math.abs(dy) <= 1.5D;
-    }
-
-    /**
-     * Проверяет направление головы к целевому блоку по горизонтали.
-     * Допуск нужен для плавного поворота LookControl, а не для точного пиксельного наведения.
-     */
-    private boolean isFacingTarget(BlockPos target) {
-        double dx = target.getX() + 0.5D - this.npc.getX();
-        double dz = target.getZ() + 0.5D - this.npc.getZ();
-        float targetYaw = (float) (Math.atan2(dz, dx) * (180.0D / Math.PI)) - 90.0F;
-        return Math.abs(Mth.wrapDegrees(targetYaw - this.npc.getYHeadRot())) <= 12.0F;
     }
 
     /** Горизонтальное расстояние между центрами клеток — общее с FarmApproach. */
