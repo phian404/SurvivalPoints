@@ -13,6 +13,7 @@ import com.phian404.survivalpoints.entity.role.SurvivorRole;
 import com.phian404.survivalpoints.init.GuardianTrace;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.item.ItemStack;
@@ -438,7 +439,9 @@ public class FarmerWorkGoal extends Goal {
         for (ItemStack drop : drops) {
             this.npc.addItem(drop.copy());
         }
-        level.destroyBlock(pos, false);
+        if (level.destroyBlock(pos, false)) {
+            this.npc.swing(InteractionHand.MAIN_HAND);
+        }
         return true;
     }
 
