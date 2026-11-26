@@ -10,7 +10,6 @@ import com.phian404.survivalpoints.entity.ai.task.NpcTask;
 import com.phian404.survivalpoints.entity.ai.task.NpcTaskController;
 import com.phian404.survivalpoints.entity.role.SurvivorProfession;
 import com.phian404.survivalpoints.entity.role.SurvivorRole;
-import com.phian404.survivalpoints.init.GuardianTrace;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
@@ -50,9 +49,6 @@ public class FarmerWorkGoal extends Goal {
     /** Сколько тиков без прогресса считается застреванием. */
     private static final int STUCK_TIMEOUT = 100;
 
-    /** Интервал принудительного перестроения пути. */
-    private static final int REPATH_INTERVAL = 20;
-
     /** Скорость движения к участку. */
     private static final double SPEED = 1.0D;
 
@@ -68,17 +64,10 @@ public class FarmerWorkGoal extends Goal {
 
     private State state = State.IDLE;
 
-    /** ВРЕМЕННО: частота сводки и последняя записанная стадия. */
-    private static final int TRACE_INTERVAL = 100;
-    private String lastTraceStage = "";
-    private long lastTraceTick = Long.MIN_VALUE;
-    private boolean wasPaused = false;
-
     /** Позиция NPC на предыдущем тике и счётчик отсутствия прогресса. */
     @Nullable
     private BlockPos lastNpcPos;
     private int stuckTicks = 0;
-    private int repathTicks = 0;
     /** Корректирующий навигационный шаг уже выпущен по текущему завершённому пути. */
     private boolean correctiveStep = false;
     /**
@@ -120,24 +109,13 @@ public class FarmerWorkGoal extends Goal {
      * <p>Повтор той же стадии в пределах 100 тиков не пишется. Полностью
      * отключается существующим флагом {@code /sp_trace chat off}.
      */
-    private void trace(ServerLevel level, String stage, String detail) {
-        long now = level.getGameTime();
-        String key = stage + "|" + detail;
-        if (key.equals(this.lastTraceStage) && now - this.lastTraceTick < TRACE_INTERVAL) {
-            return;
-        }
-        this.lastTraceStage = key;
-        this.lastTraceTick = now;
-        GuardianTrace.always(level, "FarmerWorkGoal: identity=" + this.npc.getIdentityId()
-                + " stage=" + stage + " " + detail);
-    }
 
     @Override
     public boolean canUse() {
         if (this.pauseTicks > 0) {
             this.pauseTicks--;
             if (!this.wasPaused && this.npc.level() instanceof ServerLevel level) {
-                trace(level, "PAUSE", "result=ENTER ticks=" + this.pauseTicks);
+
             }
             this.wasPaused = true;
             return false;
@@ -146,7 +124,7 @@ public class FarmerWorkGoal extends Goal {
             return false;
         }
         if (this.wasPaused) {
-            trace(level, "PAUSE", "result=EXIT");
+
             this.wasPaused = false;
         }
         if (this.npc.getRole() != SurvivorRole.CIVILIAN) {
@@ -157,54 +135,47 @@ public class FarmerWorkGoal extends Goal {
         }
         CampRecord camp = camp(level);
         if (camp == null) {
-            trace(level, "CAMP", "result=NO_RECORD campId=" + this.npc.getCampId());
+
             return false;
         }
         if (this.npc.getWorkPoiPos() == null) {
-            trace(level, "WORK_POI", "result=NULL");
+
             return false;
         }
 
         NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
         if (controller.current() != null) {
-            trace(level, "CONTROLLER", "result=BUSY task=" + controller.current().getType());
+
             return false;
         }
 
         CampFarmManager manager = CampManager.farmManager(camp);
-        int harvest = manager.taskCount(CampFarmManager.TYPE_HARVEST);
-        int plant = manager.taskCount(CampFarmManager.TYPE_PLANT);
+
         NpcTask task = manager.take(level, camp, this.npc, this.npc.getIdentityId(), level.getGameTime());
         if (task == null || task.getTarget() == null) {
-            trace(level, "TAKE_RESULT", "harvest=" + harvest + " plant=" + plant
-                    + " result=NO_TASK" + manager.takeSummary());
+
             return false;
         }
-        trace(level, "TAKE_RESULT", "harvest=" + harvest + " plant=" + plant
-                + " result=" + task.getType() + " target=" + task.getTarget());
+
         BlockPos approach = approachPos(level, camp, task.getTarget());
         if (approach == null) {
-            trace(level, "APPROACH", "result=NO_POSITION target=" + task.getTarget()
-                    + " reason=NO_SAFE_SIDE_INSIDE_BORDER");
+
             manager.markFailed(task.getId(), level.getGameTime());
             return false;
         }
-        trace(level, "APPROACH", "result=OK target=" + task.getTarget()
-                + " approach=" + approach + " task=" + task.getType());
 
         UUID taskId = task.getId();
         if (!controller.tryStart(task, () -> manager.release(taskId))) {
-            trace(level, "TRY_START", "result=REJECTED");
+
             manager.release(taskId);
             return false;
         }
-        trace(level, "TRY_START", "result=OK");
 
         this.approach = approach;
         showHeldSeed(task);
         this.state = State.MOVING;
         if (atApproach(approach)) {
-            trace(level, "PATH_RESULT", "result=ALREADY_THERE");
+
             return true;
         }
         // Путь строим сразу к набору всех пригодных клеток подхода: ванильная
@@ -215,12 +186,12 @@ public class FarmerWorkGoal extends Goal {
         // частичный путь с canReach() == false — это проверяет approachPath.
         Path path = approachPath(level, camp, task);
         if (path == null || !this.npc.getNavigation().moveTo(path, SPEED)) {
-            trace(level, "PATH_RESULT", "result=NO_PATH approach=" + approach);
+
             abandon(level, camp, task, RETRY_PAUSE);
             return false;
         }
         if (!pathInside(camp, path)) {
-            trace(level, "PATH_RESULT", "result=OUTSIDE_BORDER nodes=" + path.getNodeCount());
+
             abandon(level, camp, task, RETRY_PAUSE);
             return false;
         }
@@ -230,8 +201,7 @@ public class FarmerWorkGoal extends Goal {
         if (this.pathTarget != null) {
             this.approach = this.pathTarget;
         }
-        trace(level, "PATH_RESULT", "result=OK nodes=" + path.getNodeCount()
-                + " approach=" + this.approach);
+
         return true;
     }
 
@@ -285,13 +255,13 @@ public class FarmerWorkGoal extends Goal {
                 this.lastNpcPos = current;
             }
             if (this.stuckTicks >= STUCK_TIMEOUT) {
-                trace(level, "STUCK", "result=GIVE_UP approach=" + this.approach
-                        + " npc=" + current + " ticks=" + this.stuckTicks);
+
                 abandon(level, camp, task, RETRY_PAUSE);
                 return;
             }
 
             Path path = this.npc.getNavigation().getPath();
+            // Не сбрасываем прогресс навигации повторным moveTo каждые 20 тиков.
             if (path == null || path.isDone()) {
                 // Страховка: навигатор считает маршрут завершённым, но
                 // atApproach() ещё не true (например, остановился в зоне
@@ -311,47 +281,19 @@ public class FarmerWorkGoal extends Goal {
                     if (started && this.pathTarget != null) {
                         this.approach = this.pathTarget;
                     }
-                    trace(level, "CORRECTIVE_STEP",
-                            "result=" + (started ? "STARTED" : "NO_PATH")
-                                    + " nodes=" + (correctivePath == null ? 0
-                                            : correctivePath.getNodeCount())
-                                    + " npc=" + this.npc.blockPosition()
-                                    + " pos=" + this.npc.position()
-                                    + " approach=" + this.approach);
+
                     if (!started) {
                         abandon(level, camp, task, RETRY_PAUSE);
                     }
                 }
             } else {
                 this.correctiveStep = false;
-                this.repathTicks--;
-                if (this.repathTicks <= 0) {
-                    Path repath = this.approachPath(level, camp, task);
-                    boolean started = repath != null
-                            && this.npc.getNavigation().moveTo(repath, SPEED);
-                    if (started && this.pathTarget != null) {
-                        this.approach = this.pathTarget;
-                    }
-                    this.repathTicks = REPATH_INTERVAL;
-                    if (started) {
-                        trace(level, "REPATH", "npc=" + current + " pos=" + this.npc.position()
-                                + " approach=" + this.approach
-                                + " nodes=" + repath.getNodeCount()
-                                + " idx=" + repath.getNextNodeIndex());
-                    } else {
-                        trace(level, "REPATH", "result=NO_PATH npc=" + current
-                                + " approach=" + this.approach);
-                    }
-                }
             }
             this.state = State.MOVING;
             return;
         }
         this.stuckTicks = 0;
         this.lastNpcPos = null;
-        this.repathTicks = 0;
-        trace(level, "ARRIVED", "npc=" + this.npc.blockPosition()
-                + " pos=" + this.npc.position() + " approach=" + this.approach);
 
         this.npc.getNavigation().stop();
         BlockPos plot = task.getTarget();
@@ -365,16 +307,14 @@ public class FarmerWorkGoal extends Goal {
         // абстрактной позиции подхода.
         double targetDistance = FarmApproach.horizontalDistSqr(this.npc.blockPosition(), plot);
         if (targetDistance > FarmApproach.TARGET_REACH_SQR) {
-            trace(level, "TARGET_DISTANCE", "result=TOO_FAR target=" + plot
-                    + " distSqr=" + String.format("%.2f", targetDistance));
+
             abandon(level, camp, task, RETRY_PAUSE);
             return;
         }
 
         this.state = State.WORKING;
         boolean done = perform(level, task, plot);
-        trace(level, "INTERACT", "target=" + plot + " task=" + task.getType()
-                + " result=" + (done ? "DONE" : "FAILED"));
+
         if (done) {
             CampManager.farmManager(camp).markSucceeded(task.getId());
             controller.complete();
@@ -400,18 +340,9 @@ public class FarmerWorkGoal extends Goal {
                     : this.approach == null ? "NO_APPROACH"
                     : task == null ? "NO_TASK"
                     : atApproach(this.approach) ? "ARRIVED" : "GOAL_INTERRUPTED";
-            trace(level, "STOP_DIAG", "reason=" + reason
-                    + " npcBlock=" + this.npc.blockPosition()
-                    + " npcPos=" + this.npc.position()
-                    + " approach=" + this.approach
-                    + " atApproach=" + (this.approach != null && atApproach(this.approach))
-                    + " path=" + (path != null)
-                    + " done=" + (path != null && path.isDone())
-                    + " nodes=" + (path == null ? 0 : path.getNodeCount())
-                    + " idx=" + (path == null ? 0 : path.getNextNodeIndex()));
+
             if (camp != null && task != null) {
-                trace(level, "RELEASE", "result=STOP task=" + task.getType()
-                        + " target=" + task.getTarget() + " reason=" + reason);
+
                 CampManager.farmManager(camp).release(task.getId());
             }
             controller.cancel();
@@ -423,7 +354,7 @@ public class FarmerWorkGoal extends Goal {
         this.state = State.IDLE;
         this.stuckTicks = 0;
         this.lastNpcPos = null;
-        this.repathTicks = 0;
+
         this.correctiveStep = false;
     }
 
@@ -485,7 +416,7 @@ public class FarmerWorkGoal extends Goal {
     private void abandon(ServerLevel level, CampRecord camp, NpcTask task, int pause) {
         CampFarmManager manager = CampManager.farmManager(camp);
         manager.markFailed(task.getId(), level.getGameTime());
-        trace(level, "RELEASE", "result=CANCEL taskId=" + task.getId());
+
         CampManager.taskController(this.npc.getIdentityId()).cancel();
         this.npc.getNavigation().stop();
         clearHeldItem();
@@ -494,7 +425,7 @@ public class FarmerWorkGoal extends Goal {
         this.state = State.IDLE;
         this.stuckTicks = 0;
         this.lastNpcPos = null;
-        this.repathTicks = 0;
+
         this.correctiveStep = false;
         this.pauseTicks = pause;
     }
@@ -614,7 +545,7 @@ public class FarmerWorkGoal extends Goal {
     }
 
     private void cancel(ServerLevel level, CampFarmManager manager, UUID taskId, boolean done) {
-        trace(level, "RELEASE", "result=CANCEL taskId=" + taskId);
+
         manager.release(taskId);
         CampManager.taskController(this.npc.getIdentityId()).cancel();
         this.approach = null;
@@ -622,7 +553,7 @@ public class FarmerWorkGoal extends Goal {
         this.state = State.IDLE;
         this.stuckTicks = 0;
         this.lastNpcPos = null;
-        this.repathTicks = 0;
+
         this.correctiveStep = false;
         this.pauseTicks = done ? PAUSE_MIN : RETRY_PAUSE;
     }
@@ -647,19 +578,16 @@ public class FarmerWorkGoal extends Goal {
         // Только четыре стороны: диагональная клетка имеет distSqr=2 до грядки
         // и отсекается порогом TARGET_REACH_SQR=1.0, поэтому её перебор
         // бесполезен. Порог взаимодействия не расширяем.
-        java.util.List<String> diag = new java.util.ArrayList<>();
         for (Direction dir : Direction.Plane.HORIZONTAL) {
             BlockPos candidate = plot.relative(dir);
-            String reason = FarmApproach.validate(level, camp, plot, candidate,
-                    this.npc.getBbWidth(), this.npc.getBbHeight());
-            if (reason == null) {
+            if (FarmApproach.validate(level, camp, plot, candidate,
+                    this.npc.getBbWidth(), this.npc.getBbHeight()) == null) {
                 return candidate;
             }
-            diag.add(candidate + " -> " + reason);
         }
         // Одна сводка на одну попытку участка: подход вызывается один раз
         // на взятую задачу, поэтому постоянного потока логов нет.
-        trace(level, "APPROACH_DIAG", "plot=" + plot + " candidates=" + diag);
+
         return null;
     }
 

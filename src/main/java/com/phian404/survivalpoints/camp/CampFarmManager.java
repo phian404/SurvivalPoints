@@ -4,7 +4,6 @@ import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.ai.crop.CropAdapter;
 import com.phian404.survivalpoints.entity.ai.task.NpcTask;
 import com.phian404.survivalpoints.entity.ai.task.NpcTaskPriority;
-import com.phian404.survivalpoints.init.GuardianTrace;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
@@ -43,11 +42,6 @@ public final class CampFarmManager {
     private static final int UNAVAILABLE_COOLDOWN = 60;
     /** Потолок нарастающего cooldown отказов по одной грядке. */
     private static final int MAX_FAIL_COOLDOWN = 600;
-    /** Цель и причина последней неотданной задачи — для диагностики NO_TASK. */
-    @Nullable
-    private BlockPos blockedTarget;
-    @Nullable
-    private String blockedReason;
 
     /** Тип задачи сбора. */
     public static final String TYPE_HARVEST = "farm_harvest";
@@ -56,8 +50,6 @@ public final class CampFarmManager {
 
     private final Map<BlockPos, FarmTask> tasks = new LinkedHashMap<>();
     private long lastScanTick = Long.MIN_VALUE;
-    private long lastTakeTraceTick = Long.MIN_VALUE;
-    private String lastTakeTraceKey = "";
 
     /** Обновить пул задач, если прошёл интервал сканирования. */
     public void refresh(ServerLevel level, CampRecord record, long gameTime) {
@@ -70,9 +62,7 @@ public final class CampFarmManager {
         }
         this.lastScanTick = gameTime;
         scan(level, record, gameTime);
-        trace("REFRESH", "camp=" + record.getId() + " interval=" + CampTuning.FARM_SCAN_INTERVAL
-                + " harvest=" + taskCount(TYPE_HARVEST) + " plant=" + taskCount(TYPE_PLANT)
-                + " total=" + this.tasks.size(), level);
+
     }
 
     /** Доступная задача для NPC; {@code null}, если работы нет. */
@@ -92,12 +82,7 @@ public final class CampFarmManager {
     public NpcTask take(ServerLevel level, CampRecord record, @Nullable BaseSurvivorEntity npc,
                         UUID npcId, long gameTime) {
         dropExpired(gameTime);
-        int reserved = 0;
-        int cooldown = 0;
-        int stale = 0;
-        int notExecutable = 0;
-        @Nullable BlockPos blockedTarget = null;
-        @Nullable String blockedReason = null;
+
         // Сначала разбираем зрелые культуры, затем пустые грядки. Внутри
         // каждого типа выбираем ближайшую к NPC задачу; при равной дистанции
         // сохраняется исходный порядок POI.
@@ -111,37 +96,21 @@ public final class CampFarmManager {
                                 task.task.getTarget().getZ() + 0.5D)));
         for (FarmTask task : candidates) {
             if (task.reservedBy != null) {
-                reserved++;
-                if (blockedTarget == null) {
-                    blockedTarget = task.task.getTarget();
-                    blockedReason = "reserved";
-                }
+
                 continue;
             }
             if (gameTime < task.availableAt) {
-                cooldown++;
-                if (blockedTarget == null) {
-                    blockedTarget = task.task.getTarget();
-                    blockedReason = "cooldown=" + (task.availableAt - gameTime)
-                            + " failures=" + task.failures;
-                }
+
                 continue;
             }
             if (!isStillValid(level, record, task)) {
-                stale++;
-                if (blockedTarget == null) {
-                    blockedTarget = task.task.getTarget();
-                    blockedReason = "stale";
-                }
+
                 continue;
             }
             if (npc != null && !isExecutable(level, task, npc)) {
-                notExecutable++;
+
                 task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
-                if (blockedTarget == null) {
-                    blockedTarget = task.task.getTarget();
-                    blockedReason = "not_executable";
-                }
+
                 continue;
             }
             // Общая с исполнителем проверка подхода ДО резервации: диспетчер не
@@ -151,29 +120,17 @@ public final class CampFarmManager {
             // UNAVAILABLE_COOLDOWN, на случай изменения мира.
             if (npc != null && FarmApproach.findApproach(level, record, task.task.getTarget(),
                     npc.getBbWidth(), npc.getBbHeight()) == null) {
-                notExecutable++;
+
                 task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
-                if (blockedTarget == null) {
-                    blockedTarget = task.task.getTarget();
-                    blockedReason = "no_approach";
-                }
+
                 continue;
             }
             task.reservedBy = npcId;
             task.reservedAt = gameTime;
-            traceTake(level, "camp=" + record.getId() + " npc=" + npcId
-                    + " result=" + task.task.getType() + " target=" + task.task.getTarget());
+
             return task.task;
         }
-        traceTake(level, "camp=" + record.getId() + " npc=" + npcId + " result=NO_TASK"
-                + " total=" + this.tasks.size() + " reserved=" + reserved
-                + " cooldown=" + cooldown + " stale=" + stale
-                + " notExecutable=" + notExecutable
-                + (blockedTarget != null
-                        ? " blocked=" + blockedTarget + " reason=" + blockedReason
-                        : ""));
-        this.blockedTarget = blockedTarget;
-        this.blockedReason = blockedReason;
+
         return null;
     }
 
@@ -181,12 +138,6 @@ public final class CampFarmManager {
      * Причина последнего отказа take(): какая грядка и почему не выдана.
      * Пустая строка, если задач не было вовсе.
      */
-    public String takeSummary() {
-        if (this.blockedTarget == null) {
-            return "";
-        }
-        return " blocked=" + this.blockedTarget + " reason=" + this.blockedReason;
-    }
 
     /** Продлить резервацию активной задачи. */
     public void keepAlive(UUID taskId, long gameTime) {
@@ -275,36 +226,6 @@ public final class CampFarmManager {
     }
 
     /** ВРЕМЕННО: диагностика take() не чаще раза в 100 тиков для одного NPC. */
-    private void traceTake(ServerLevel level, String detail) {
-        long now = level.getGameTime();
-        if (detail.equals(this.lastTakeTraceKey) && now - this.lastTakeTraceTick < 100) {
-            return;
-        }
-        this.lastTakeTraceKey = detail;
-        this.lastTakeTraceTick = now;
-        trace("TAKE", detail, level);
-    }
-
-    /** ВРЕМЕННО: вывод диагностики (лог-файл и чат) через GuardianTrace. */
-    private static void trace(String stage, String detail, ServerLevel level) {
-        GuardianTrace.always(level, "CampFarmManager: " + stage + " " + detail);
-    }
-
-    /** ВРЕМЕННО: имя блока для диагностики. */
-    private static String blockName(BlockState state) {
-        return state.getBlock().builtInRegistryHolder().key().location().toString();
-    }
-
-    /** ВРЕМЕННО: количество задач по типам для диагностики. */
-    public int taskCount(String type) {
-        int count = 0;
-        for (FarmTask task : this.tasks.values()) {
-            if (type.equals(task.task.getType())) {
-                count++;
-            }
-        }
-        return count;
-    }
 
     /** Полный сброс runtime-пула (например, при выгрузке лагеря). */
     public void clear() {
@@ -315,76 +236,44 @@ public final class CampFarmManager {
     /** Сканирование POI лагеря без принудительной загрузки чанков. */
     private void scan(ServerLevel level, CampRecord record, long gameTime) {
         Map<BlockPos, FarmTask> fresh = new LinkedHashMap<>();
-        int total = 0;
-        int loaded = 0;
-        int recognized = 0;
-        int mature = 0;
-        int empty = 0;
-        int harvestCreated = 0;
-        int plantCreated = 0;
-        int skippedType = 0;
-        int skippedChunk = 0;
-        int skippedOther = 0;
 
         for (CampPoi poi : record.getPois()) {
             if (!CampStructurePlacer.FARM_PLOT_TYPE.equals(poi.getType())) {
-                skippedType++;
+
                 continue;
             }
-            total++;
+
             BlockPos plot = poi.getPos();
             boolean isLoaded = level.isLoaded(plot);
             ChunkPos cp = new ChunkPos(plot);
             LevelChunk chunk = isLoaded ? level.getChunkSource().getChunkNow(cp.x, cp.z) : null;
             boolean chunkReady = chunk != null && chunk.getStatus().isOrAfter(ChunkStatus.FULL);
             if (!isLoaded || !chunkReady) {
-                skippedChunk++;
-                trace("POI", "pos=" + plot + " result=SKIPPED reason=CHUNK_NOT_LOADED"
-                        + " isLoaded=" + isLoaded + " getChunkNow=" + (chunk != null), level);
+
                 continue;
             }
-            loaded++;
+
             // Грядки вне рабочего круга лагеря (радиус минус BORDER_INSET) не
             // получают задач: фермер к ним всё равно не подойдёт — клетка
             // подхода отбраковывается border-критерием FarmApproach. POI
             // остаётся зарегистрированным: при расширении лагеря грядка
             // оживёт на следующем скане.
             if (!FarmApproach.insideBorder(record, plot)) {
-                skippedOther++;
-                trace("POI", "pos=" + plot + " result=SKIPPED reason=OUTSIDE_WORK_BORDER", level);
+
                 continue;
             }
-            BlockState soil = level.getBlockState(plot);
             BlockState cropState = level.getBlockState(plot.above());
             CropAdapter adapter = CropAdapter.find(cropState);
-            String base = "POI=" + plot + " block=" + blockName(soil)
-                    + " above=" + blockName(cropState);
-            if (adapter != null) {
-                recognized++;
-            }
-            if (adapter != null && adapter.isMature(cropState)) {
-                mature++;
-                add(fresh, plot, poi.getSlotId(), TYPE_HARVEST, record.getId());
-                harvestCreated++;
-                trace("POI", base + " adapter=" + adapter.getClass().getSimpleName()
-                        + " result=HARVEST_CREATED", level);
-            } else if (cropState.isAir()) {
-                empty++;
-                add(fresh, plot, poi.getSlotId(), TYPE_PLANT, record.getId());
-                plantCreated++;
-                trace("POI", base + " result=PLANT_CREATED", level);
-            } else {
-                skippedOther++;
-                trace("POI", base + " adapter=" + (adapter == null ? "NONE"
-                        : adapter.getClass().getSimpleName()) + " result=SKIPPED reason=NO_WORK", level);
-            }
-        }
 
-        trace("SCAN_SUMMARY", "camp=" + record.getId() + " totalPOI=" + total
-                + " loaded=" + loaded + " recognized=" + recognized + " mature=" + mature
-                + " empty=" + empty + " harvest=" + harvestCreated + " plant=" + plantCreated
-                + " skippedType=" + skippedType + " skippedChunk=" + skippedChunk
-                + " skippedOther=" + skippedOther, level);
+            if (adapter != null && adapter.isMature(cropState)) {
+
+                add(fresh, plot, poi.getSlotId(), TYPE_HARVEST, record.getId());
+
+            } else if (cropState.isAir()) {
+
+                add(fresh, plot, poi.getSlotId(), TYPE_PLANT, record.getId());
+
+        }
 
         // Переносятся только ещё не истёкшие резервации по живым задачам.
         // Счётчик отказов живёт, пока не истёк его backoff: если время вышло,
