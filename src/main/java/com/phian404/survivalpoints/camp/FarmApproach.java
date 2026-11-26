@@ -70,8 +70,13 @@ public final class FarmApproach {
             return "SOLID_RENDER block=" + state.getBlock()
                     + " distToCenter=" + String.format("%.2f", distToCenter);
         }
+        // Сама клетка может быть водой (мостки из воды): стоять в источнике
+        // можно, течения нет, тело проверяется обычным порядком ниже.
         var below = level.getBlockState(pos.below());
-        if (!below.blocksMotion()) {
+        // Вода — допустимая опора: ферма стоит на воде, и крайние клетки
+        // подхода опираются на водяные секции. Требуем источник (не поток),
+        // иначе фермера унесёт течением.
+        if (!below.blocksMotion() && !below.getFluidState().isSource()) {
             return "NO_SUPPORT block=" + below.getBlock() + "@" + pos.below()
                     + " blocksMotion=false";
         }

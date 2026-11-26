@@ -280,10 +280,6 @@ public class FarmerWorkGoal extends Goal {
                                     + " pos=" + this.npc.position()
                                     + " approach=" + this.approach);
                     if (!started) {
-                        trace(level, "CORRECTIVE_STEP",
-                                "blocks approach=" + level.getBlockState(this.approach)
-                                        + " below=" + level.getBlockState(this.approach.below())
-                                        + " npc=" + level.getBlockState(this.npc.blockPosition()));
                         abandon(level, camp, task, RETRY_PAUSE);
                     }
                 }
@@ -301,10 +297,7 @@ public class FarmerWorkGoal extends Goal {
                         trace(level, "REPATH", "npc=" + current + " pos=" + this.npc.position()
                                 + " approach=" + this.approach
                                 + " nodes=" + repath.getNodeCount()
-                                + " idx=" + repath.getNextNodeIndex()
-                                + (repath.getNodeCount() > 0
-                                        ? " node0=" + repath.getNodePos(0)
-                                        : ""));
+                                + " idx=" + repath.getNextNodeIndex());
                     } else {
                         trace(level, "REPATH", "result=NO_PATH npc=" + current
                                 + " approach=" + this.approach);
