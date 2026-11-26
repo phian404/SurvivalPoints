@@ -14,6 +14,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.util.Mth;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.item.ItemStack;
@@ -75,9 +76,6 @@ public class FarmerWorkGoal extends Goal {
      */
     @Nullable
     private BlockPos pathTarget;
-
-    /** В руку положено семя только для отображения (копия из инвентаря). */
-    private boolean heldDisplaySeed = false;
 
     /**
      * Грядка, на которую смотрим во время паузы после успешной работы: без
@@ -146,8 +144,12 @@ public class FarmerWorkGoal extends Goal {
             return false;
         }
 
+        if (!preparePlantingItem(task)) {
+            manager.markFailed(taskId, level.getGameTime());
+            controller.cancel();
+            return false;
+        }
         this.approach = approach;
-        showHeldSeed(task);
         this.state = State.MOVING;
         if (atApproach(approach)) {
             return true;
@@ -270,6 +272,12 @@ public class FarmerWorkGoal extends Goal {
         this.npc.getLookControl().setLookAt(plot.getX() + 0.5D, plot.getY() + 1.5D,
                 plot.getZ() + 0.5D);
 
+        // Посадка разрешена только после фактического поворота головы к культуре.
+        // LookControl доворачивает NPC между тиками; здесь мы лишь ждём.
+        if (CampFarmManager.TYPE_PLANT.equals(task.getType()) && !isFacingTarget(plot.above())) {
+            return;
+        }
+
         // Повторная проверка непосредственно перед изменением блока: NPC обязан
         // физически находиться рядом с целевой грядкой, а не только около
         // абстрактной позиции подхода.
@@ -284,7 +292,6 @@ public class FarmerWorkGoal extends Goal {
         if (done) {
             CampManager.farmManager(camp).markSucceeded(task.getId());
             controller.complete();
-            clearHeldItem();
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
             this.pauseLookTarget = plot;
             this.approach = null;
@@ -307,7 +314,6 @@ public class FarmerWorkGoal extends Goal {
             controller.cancel();
         }
         this.npc.getNavigation().stop();
-        clearHeldItem();
         this.approach = null;
         this.pauseLookTarget = null;
         this.state = State.IDLE;
@@ -377,7 +383,6 @@ public class FarmerWorkGoal extends Goal {
         manager.markFailed(task.getId(), level.getGameTime());
         CampManager.taskController(this.npc.getIdentityId()).cancel();
         this.npc.getNavigation().stop();
-        clearHeldItem();
         this.approach = null;
         this.pauseLookTarget = null;
         this.state = State.IDLE;
@@ -426,23 +431,20 @@ public class FarmerWorkGoal extends Goal {
     }
 
     private boolean plant(ServerLevel level, BlockPos pos) {
-        ItemStack seed = findPlantableSeed();
-        if (seed == null) {
+        ItemStack seed = this.npc.getMainHandItem();
+        if (seed.isEmpty()) {
             return false;
         }
         CropAdapter adapter = CropAdapter.find(seed);
         BlockState crop = adapter == null ? null : adapter.getCropForSeed(seed);
-        if (adapter == null || crop == null) {
+        if (adapter == null || crop == null || !adapter.plant(level, pos, crop)) {
             return false;
         }
-        ItemStack extracted = this.npc.extractItem(seed, 1);
-        if (extracted.isEmpty()) {
-            return false;
-        }
-        if (!adapter.plant(level, pos, crop)) {
-            this.npc.addItem(extracted);
-            return false;
-        }
+
+        // Расходуем предмет только после успешной установки блока.
+        ItemStack remaining = seed.copy();
+        remaining.shrink(1);
+        this.npc.setItemSlot(EquipmentSlot.MAINHAND, remaining);
         this.npc.swing(InteractionHand.MAIN_HAND);
         return true;
     }
@@ -459,34 +461,32 @@ public class FarmerWorkGoal extends Goal {
     }
 
     /**
-     * Показывает семя в главной руке на время задачи посадки.
+     * Подготавливает настоящий предмет для посадки.
      *
-     * <p>Это только отображение: в руку кладётся копия предмета из инвентаря,
-     * запас не тратится. Если NPC уже что-то держит (например, предмет,
-     * подаренный игроком), его рука не трогается.
+     * <p>Существующую экипировку не перезаписываем. Если рука пуста,
+     * переносим ровно одно подходящее семя из внутреннего инвентаря.
+     * Предмет остаётся в руке при прерывании задачи и расходуется только
+     * после успешной посадки.
      */
-    private void showHeldSeed(NpcTask task) {
+    private boolean preparePlantingItem(NpcTask task) {
         if (!CampFarmManager.TYPE_PLANT.equals(task.getType())) {
-            clearHeldItem();
-            return;
+            return true;
         }
-        if (!this.heldDisplaySeed && !this.npc.getMainHandItem().isEmpty()) {
-            return;
+        ItemStack held = this.npc.getMainHandItem();
+        if (!held.isEmpty()) {
+            return CropAdapter.find(held) != null;
         }
+
         ItemStack seed = findPlantableSeed();
         if (seed == null) {
-            return;
+            return false;
         }
-        this.npc.setItemSlot(EquipmentSlot.MAINHAND, seed.copyWithCount(1));
-        this.heldDisplaySeed = true;
-    }
-
-    /** Убирает из руки только то семя, которое гол положил сам. */
-    private void clearHeldItem() {
-        if (this.heldDisplaySeed) {
-            this.npc.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
-            this.heldDisplaySeed = false;
+        ItemStack extracted = this.npc.extractItem(seed, 1);
+        if (extracted.isEmpty()) {
+            return false;
         }
+        this.npc.setItemSlot(EquipmentSlot.MAINHAND, extracted);
+        return true;
     }
 
     private boolean fitsInventory(java.util.List<ItemStack> drops) {
@@ -568,6 +568,17 @@ public class FarmerWorkGoal extends Goal {
         double dz = this.npc.getZ() - (approach.getZ() + 0.5D);
         double dy = this.npc.getY() - approach.getY();
         return dx * dx + dz * dz <= 0.25D && Math.abs(dy) <= 1.5D;
+    }
+
+    /**
+     * Проверяет направление головы к целевому блоку по горизонтали.
+     * Допуск нужен для плавного поворота LookControl, а не для точного пиксельного наведения.
+     */
+    private boolean isFacingTarget(BlockPos target) {
+        double dx = target.getX() + 0.5D - this.npc.getX();
+        double dz = target.getZ() + 0.5D - this.npc.getZ();
+        float targetYaw = (float) (Math.atan2(dz, dx) * (180.0D / Math.PI)) - 90.0F;
+        return Math.abs(Mth.wrapDegrees(targetYaw - this.npc.getYHeadRot())) <= 12.0F;
     }
 
     /** Горизонтальное расстояние между центрами клеток — общее с FarmApproach. */
