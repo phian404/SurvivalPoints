@@ -3,6 +3,7 @@ package com.phian404.survivalpoints.entity.ai;
 import com.phian404.survivalpoints.camp.CampFarmManager;
 import com.phian404.survivalpoints.camp.CampManager;
 import com.phian404.survivalpoints.camp.CampRecord;
+import com.phian404.survivalpoints.camp.FarmApproach;
 import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.ai.crop.CropAdapter;
 import com.phian404.survivalpoints.entity.ai.task.NpcTask;
@@ -34,20 +35,8 @@ import java.util.UUID;
  */
 public class FarmerWorkGoal extends Goal {
 
-    /** Отступ от границы лагеря. */
-    private static final int BORDER_INSET = 2;
-
     /** Предельная дистанция от позиции взаимодействия до грядки. */
     private static final double REACH_DISTANCE_SQR = 1.5D * 1.5D;
-
-    /**
-     * Предельная дистанция от центра NPC до центра целевого блока.
-     *
-     * <p>Соседняя клетка по горизонтали даёт ровно 1 блок между центрами —
-     * этого достаточно, чтобы взаимодействовать с грядкой, не вставая на неё.
-     * Значение не подбирается «для вида»: оно равно геометрии одной клетки.
-     */
-    private static final double TARGET_REACH_SQR = 1.0D * 1.0D;
 
     /** Пауза после успешного действия (уменьшена вдвое для отзывчивости). */
     private static final int PAUSE_MIN = 15;
@@ -88,6 +77,8 @@ public class FarmerWorkGoal extends Goal {
     private BlockPos lastNpcPos;
     private int stuckTicks = 0;
     private int repathTicks = 0;
+    /** Корректирующий навигационный шаг уже выпущен по текущему завершённому пути. */
+    private boolean correctiveStep = false;
 
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
@@ -262,17 +253,41 @@ public class FarmerWorkGoal extends Goal {
             }
 
             Path path = this.npc.getNavigation().getPath();
-            boolean needRepath = path == null || path.isDone() || this.repathTicks <= 0;
-            if (needRepath) {
-                this.npc.getNavigation().moveTo(this.approach.getX() + 0.5D,
-                        this.approach.getY(), this.approach.getZ() + 0.5D, SPEED);
-                this.repathTicks = REPATH_INTERVAL;
-                trace(level, "REPATH", "npc=" + current + " pos=" + this.npc.position()
-                        + " approach=" + this.approach + " done=" + (path != null && path.isDone())
-                        + " nodes=" + (path == null ? 0 : path.getNodeCount())
-                        + " idx=" + (path == null ? 0 : path.getNextNodeIndex()));
+            if (path == null || path.isDone()) {
+                // Навигатор считает маршрут завершённым, но atApproach() ещё
+                // не true: NPC остановился, не дойдя до центра клетки подхода.
+                // Один корректирующий шаг через ту же систему навигации
+                // (moveTo заново ищет путь с учётом коллизий и препятствий,
+                // MoveControl в обход навигатора не используется). Идентичный
+                // путь не перестраивается каждый тик: повторная попытка только
+                // после того, как новый путь начался и снова завершился.
+                // STUCK остаётся финальной страховкой.
+                if (!this.correctiveStep) {
+                    this.correctiveStep = true;
+                    boolean started = this.npc.getNavigation().moveTo(
+                            this.approach.getX() + 0.5D, this.approach.getY(),
+                            this.approach.getZ() + 0.5D, SPEED);
+                    trace(level, "CORRECTIVE_STEP",
+                            "result=" + (started ? "STARTED" : "NO_PATH")
+                                    + " npc=" + this.npc.blockPosition()
+                                    + " pos=" + this.npc.position()
+                                    + " approach=" + this.approach);
+                    if (!started) {
+                        abandon(level, camp, task, false, RETRY_PAUSE);
+                    }
+                }
             } else {
+                this.correctiveStep = false;
                 this.repathTicks--;
+                if (this.repathTicks <= 0) {
+                    this.npc.getNavigation().moveTo(this.approach.getX() + 0.5D,
+                            this.approach.getY(), this.approach.getZ() + 0.5D, SPEED);
+                    this.repathTicks = REPATH_INTERVAL;
+                    trace(level, "REPATH", "npc=" + current + " pos=" + this.npc.position()
+                            + " approach=" + this.approach
+                            + " nodes=" + path.getNodeCount()
+                            + " idx=" + path.getNextNodeIndex());
+                }
             }
             this.state = State.MOVING;
             return;
@@ -291,8 +306,8 @@ public class FarmerWorkGoal extends Goal {
         // Повторная проверка непосредственно перед изменением блока: NPC обязан
         // физически находиться рядом с целевой грядкой, а не только около
         // абстрактной позиции подхода.
-        double targetDistance = horizontalDistSqr(this.npc.blockPosition(), plot);
-        if (targetDistance > TARGET_REACH_SQR) {
+        double targetDistance = FarmApproach.horizontalDistSqr(this.npc.blockPosition(), plot);
+        if (targetDistance > FarmApproach.TARGET_REACH_SQR) {
             trace(level, "TARGET_DISTANCE", "result=TOO_FAR target=" + plot
                     + " distSqr=" + String.format("%.2f", targetDistance));
             abandon(level, camp, task, true, RETRY_PAUSE);
@@ -307,6 +322,7 @@ public class FarmerWorkGoal extends Goal {
             controller.complete();
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
             this.approach = null;
+            this.correctiveStep = false;
             this.state = State.IDLE;
         } else {
             abandon(level, camp, task, true, RETRY_PAUSE);
@@ -346,6 +362,7 @@ public class FarmerWorkGoal extends Goal {
         this.stuckTicks = 0;
         this.lastNpcPos = null;
         this.repathTicks = 0;
+        this.correctiveStep = false;
     }
 
     /**
@@ -378,6 +395,7 @@ public class FarmerWorkGoal extends Goal {
         this.stuckTicks = 0;
         this.lastNpcPos = null;
         this.repathTicks = 0;
+        this.correctiveStep = false;
         this.pauseTicks = pause;
     }
 
@@ -470,6 +488,7 @@ public class FarmerWorkGoal extends Goal {
         this.stuckTicks = 0;
         this.lastNpcPos = null;
         this.repathTicks = 0;
+        this.correctiveStep = false;
         this.pauseTicks = done ? PAUSE_MIN : RETRY_PAUSE;
     }
     @Nullable
@@ -495,10 +514,13 @@ public class FarmerWorkGoal extends Goal {
         // бесполезен. Порог взаимодействия не расширяем.
         java.util.List<String> diag = new java.util.ArrayList<>();
         for (Direction dir : Direction.Plane.HORIZONTAL) {
-            BlockPos candidate = considerApproach(level, camp, plot, plot.relative(dir), diag);
-            if (candidate != null) {
+            BlockPos candidate = plot.relative(dir);
+            String reason = FarmApproach.validate(level, camp, plot, candidate,
+                    this.npc.getBbWidth(), this.npc.getBbHeight());
+            if (reason == null) {
                 return candidate;
             }
+            diag.add(candidate + " -> " + reason);
         }
         // Одна сводка на одну попытку участка: подход вызывается один раз
         // на взятую задачу, поэтому постоянного потока логов нет.
@@ -506,87 +528,7 @@ public class FarmerWorkGoal extends Goal {
         return null;
     }
 
-    /** Проверить одного кандидата; вернуть его, если он пригоден. */
-    @Nullable
-    private BlockPos considerApproach(ServerLevel level, CampRecord camp, BlockPos plot,
-                                      BlockPos pos, java.util.List<String> diag) {
-        String reason = approachRejection(level, camp, plot, pos);
-        if (reason != null) {
-            diag.add(pos + " -> " + reason);
-            return null;
-        }
-        return pos;
-    }
-
     /**
-     * Диагностика одного кандидата: пройти по всем критериям отбора и
-     * вернуть описание первой причины отказа (null — кандидат пригоден).
-     * Критерии и их порядок идентичны рабочим проверкам, ничего не ослаблено.
-     */
-    @Nullable
-    private String approachRejection(ServerLevel level, CampRecord camp, BlockPos plot,
-                                     BlockPos pos) {
-        // insideBorder и расстояние до центра лагеря
-        BlockPos center = camp.getCenter();
-        double dx = pos.getX() - center.getX();
-        double dz = pos.getZ() - center.getZ();
-        double distToCenter = Math.sqrt(dx * dx + dz * dz);
-        if (!insideBorder(camp, pos)) {
-            return "INSIDE_BORDER=false distToCenter=" + String.format("%.2f", distToCenter);
-        }
-        net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
-        boolean solidRender = state.isSolidRender(level, pos);
-        if (solidRender) {
-            return "SOLID_RENDER block=" + state.getBlock()
-                    + " distToCenter=" + String.format("%.2f", distToCenter);
-        }
-        net.minecraft.world.level.block.state.BlockState below = level.getBlockState(pos.below());
-        boolean support = below.blocksMotion();
-        if (!support) {
-            return "NO_SUPPORT block=" + below.getBlock() + "@" + pos.below()
-                    + " blocksMotion=false";
-        }
-        if (horizontalDistSqr(pos, plot) > TARGET_REACH_SQR) {
-            return "TOO_FAR distSqr=" + horizontalDistSqr(pos, plot);
-        }
-        double half = this.npc.getBbWidth() / 2.0D;
-        double bottom = pos.getY() + 1.0D;
-        net.minecraft.world.phys.shapes.VoxelShape supportShape = state.getCollisionShape(level, pos);
-        if (!supportShape.isEmpty()) {
-            bottom = pos.getY() + supportShape.max((net.minecraft.core.Direction.Axis.Y));
-        }
-        net.minecraft.world.phys.AABB body = new net.minecraft.world.phys.AABB(
-                pos.getX() + 0.5D - half, bottom, pos.getZ() + 0.5D - half,
-                pos.getX() + 0.5D + half, bottom + this.npc.getBbHeight(),
-                pos.getZ() + 0.5D + half);
-        if (!level.noCollision(body)) {
-            return "BODY_COLLISION body=" + body + " hits=" + bodyCollisionHits(level, body);
-        }
-        return null;
-    }
-
-    /**
-     * Диагностика BODY_COLLISION: перечислить конкретные блоки, чьи боксы
-     * пересекают AABB NPC в клетке подхода. Без этого причина не различима:
-     * noCollision() возвращает только факт неудачи.
-     */
-    /** Список блоков, пересекающих AABB тела NPC (не более 4 записей). */
-    private java.util.List<String> bodyCollisionHits(ServerLevel level,
-                                                     net.minecraft.world.phys.AABB body) {
-        java.util.List<String> hits = new java.util.ArrayList<>();
-        for (net.minecraft.world.phys.shapes.VoxelShape shape : level.getBlockCollisions(null, body)) {
-            for (net.minecraft.world.phys.AABB box : shape.toAabbs()) {
-                net.minecraft.world.level.block.state.BlockState state = level.getBlockState(
-                        BlockPos.containing(box.getCenter()));
-                if (hits.size() < 4) {
-                    hits.add(state.getBlock() + "@" + BlockPos.containing(box.getCenter())
-                            + " box=" + box);
-                }
-            }
-        }
-        return hits;
-    }
-
     /**
      * NPC физически находится в выбранной клетке подхода.
      *
@@ -611,19 +553,13 @@ public class FarmerWorkGoal extends Goal {
         return dx * dx + dz * dz <= 0.25D && Math.abs(dy) <= 1.5D;
     }
 
-    /** Горизонтальное расстояние между центрами клеток, без компоненты Y. */
+    /** Горизонтальное расстояние между центрами клеток — общее с FarmApproach. */
     private static double horizontalDistSqr(BlockPos a, BlockPos b) {
-        double dx = a.getX() - b.getX();
-        double dz = a.getZ() - b.getZ();
-        return dx * dx + dz * dz;
+        return FarmApproach.horizontalDistSqr(a, b);
     }
 
     private static boolean insideBorder(CampRecord camp, BlockPos pos) {
-        BlockPos center = camp.getCenter();
-        int radius = Math.max(0, camp.getRadius() - BORDER_INSET);
-        double dx = pos.getX() - center.getX();
-        double dz = pos.getZ() - center.getZ();
-        return dx * dx + dz * dz <= (double) radius * radius;
+        return FarmApproach.insideBorder(camp, pos);
     }
 
     private static boolean pathInside(CampRecord camp, Path path) {

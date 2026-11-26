@@ -104,6 +104,17 @@ public final class CampFarmManager {
                 task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
                 continue;
             }
+            // Общая с исполнителем проверка подхода ДО резервации: диспетчер не
+            // выдаёт задачу, у которой ни одна соседняя клетка не пригодна.
+            // Наличие клетки не гарантирует достижимость пути — это остаётся
+            // за исполнителем. POI не снимается с учёта; повтор через
+            // UNAVAILABLE_COOLDOWN, на случай изменения мира.
+            if (npc != null && FarmApproach.findApproach(level, record, task.task.getTarget(),
+                    npc.getBbWidth(), npc.getBbHeight()) == null) {
+                notExecutable++;
+                task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
+                continue;
+            }
             task.reservedBy = npcId;
             task.reservedAt = gameTime;
             traceTake(level, "camp=" + record.getId() + " npc=" + npcId
