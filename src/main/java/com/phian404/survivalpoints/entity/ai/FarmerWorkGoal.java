@@ -493,47 +493,65 @@ public class FarmerWorkGoal extends Goal {
         // Только четыре стороны: диагональная клетка имеет distSqr=2 до грядки
         // и отсекается порогом TARGET_REACH_SQR=1.0, поэтому её перебор
         // бесполезен. Порог взаимодействия не расширяем.
+        java.util.List<String> diag = new java.util.ArrayList<>();
         for (Direction dir : Direction.Plane.HORIZONTAL) {
-            BlockPos candidate = considerApproach(level, camp, plot, plot.relative(dir));
+            BlockPos candidate = considerApproach(level, camp, plot, plot.relative(dir), diag);
             if (candidate != null) {
                 return candidate;
             }
         }
+        // Одна сводка на одну попытку участка: подход вызывается один раз
+        // на взятую задачу, поэтому постоянного потока логов нет.
+        trace(level, "APPROACH_DIAG", "plot=" + plot + " candidates=" + diag);
         return null;
     }
 
     /** Проверить одного кандидата; вернуть его, если он пригоден. */
     @Nullable
     private BlockPos considerApproach(ServerLevel level, CampRecord camp, BlockPos plot,
-                                      BlockPos pos) {
+                                      BlockPos pos, java.util.List<String> diag) {
+        String reason = approachRejection(level, camp, plot, pos);
+        if (reason != null) {
+            diag.add(pos + " -> " + reason);
+            return null;
+        }
+        return pos;
+    }
+
+    /**
+     * Диагностика одного кандидата: пройти по всем критериям отбора и
+     * вернуть описание первой причины отказа (null — кандидат пригоден).
+     * Критерии и их порядок идентичны рабочим проверкам, ничего не ослаблено.
+     */
+    @Nullable
+    private String approachRejection(ServerLevel level, CampRecord camp, BlockPos plot,
+                                     BlockPos pos) {
+        // insideBorder и расстояние до центра лагеря
+        BlockPos center = camp.getCenter();
+        double dx = pos.getX() - center.getX();
+        double dz = pos.getZ() - center.getZ();
+        double distToCenter = Math.sqrt(dx * dx + dz * dz);
         if (!insideBorder(camp, pos)) {
-            return null;
+            return "INSIDE_BORDER=false distToCenter=" + String.format("%.2f", distToCenter);
         }
-        // Кандидат — соседняя с грядкой клетка на уровне земли фермы.
-        // Грядка выдана сканером POI внутри лагеря, повторный строгий
-        // border-круг (radius - BORDER_INSET) для соседней клетки не нужен:
-        // он отбраковывал стороны грядок у края фермы и фермер вставал.
-        // Путь до кандидата всё равно проверяется pathInside().
-        if (level.getBlockState(pos).isSolidRender(level, pos)) {
-            return null;
+        net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+        boolean solidRender = state.isSolidRender(level, pos);
+        if (solidRender) {
+            return "SOLID_RENDER block=" + state.getBlock()
+                    + " distToCenter=" + String.format("%.2f", distToCenter);
         }
-        if (!level.getBlockState(pos.below()).blocksMotion()) {
-            return null;
+        net.minecraft.world.level.block.state.BlockState below = level.getBlockState(pos.below());
+        boolean support = below.blocksMotion();
+        if (!support) {
+            return "NO_SUPPORT block=" + below.getBlock() + "@" + pos.below()
+                    + " blocksMotion=false";
         }
         if (horizontalDistSqr(pos, plot) > TARGET_REACH_SQR) {
-            return null;
+            return "TOO_FAR distSqr=" + horizontalDistSqr(pos, plot);
         }
-        // Проверяем реальный объём тела NPC в клетке стояния: одной проверки
-        // «над головой нет блока» недостаточно — культура или забор могут
-        // пересекать хитбокс. Пашня не мешает: у неё нет коллизии тела, а
-        // вытаптывание перехватывается CampEvents.
         double half = this.npc.getBbWidth() / 2.0D;
-        // Низ тела — верхняя грань коллизии опорного блока (пашня 0.9375,
-        // полный блок 1.0), а не основание клетки: иначе бокс пересекает
-        // саму опору и каждая сторона пашни даёт фальшивую BODY_COLLISION.
         double bottom = pos.getY() + 1.0D;
-        net.minecraft.world.phys.shapes.VoxelShape supportShape = level.getBlockState(pos)
-                .getCollisionShape(level, pos);
+        net.minecraft.world.phys.shapes.VoxelShape supportShape = state.getCollisionShape(level, pos);
         if (!supportShape.isEmpty()) {
             bottom = pos.getY() + supportShape.max((net.minecraft.core.Direction.Axis.Y));
         }
@@ -542,10 +560,9 @@ public class FarmerWorkGoal extends Goal {
                 pos.getX() + 0.5D + half, bottom + this.npc.getBbHeight(),
                 pos.getZ() + 0.5D + half);
         if (!level.noCollision(body)) {
-            reportBodyCollision(level, pos, body);
-            return null;
+            return "BODY_COLLISION body=" + body + " hits=" + bodyCollisionHits(level, body);
         }
-        return pos;
+        return null;
     }
 
     /**
@@ -553,8 +570,9 @@ public class FarmerWorkGoal extends Goal {
      * пересекают AABB NPC в клетке подхода. Без этого причина не различима:
      * noCollision() возвращает только факт неудачи.
      */
-    private void reportBodyCollision(ServerLevel level, BlockPos pos,
-                                     net.minecraft.world.phys.AABB body) {
+    /** Список блоков, пересекающих AABB тела NPC (не более 4 записей). */
+    private java.util.List<String> bodyCollisionHits(ServerLevel level,
+                                                     net.minecraft.world.phys.AABB body) {
         java.util.List<String> hits = new java.util.ArrayList<>();
         for (net.minecraft.world.phys.shapes.VoxelShape shape : level.getBlockCollisions(null, body)) {
             for (net.minecraft.world.phys.AABB box : shape.toAabbs()) {
@@ -566,8 +584,7 @@ public class FarmerWorkGoal extends Goal {
                 }
             }
         }
-        trace(level, "BODY_COLLISION_DETAIL", "cand=" + pos
-                + " body=" + body + " hits=" + hits);
+        return hits;
     }
 
     /**
