@@ -162,7 +162,7 @@ public class FarmerWorkGoal extends Goal {
         NpcTask task = manager.take(level, camp, this.npc, this.npc.getIdentityId(), level.getGameTime());
         if (task == null || task.getTarget() == null) {
             trace(level, "TAKE_RESULT", "harvest=" + harvest + " plant=" + plant
-                    + " result=NO_TASK");
+                    + " result=NO_TASK" + manager.takeSummary());
             return false;
         }
         trace(level, "TAKE_RESULT", "harvest=" + harvest + " plant=" + plant

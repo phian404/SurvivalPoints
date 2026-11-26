@@ -40,6 +40,11 @@ public final class CampFarmManager {
     private static final int UNAVAILABLE_COOLDOWN = 60;
     /** Потолок нарастающего cooldown отказов по одной грядке. */
     private static final int MAX_FAIL_COOLDOWN = 600;
+    /** Цель и причина последней неотданной задачи — для диагностики NO_TASK. */
+    @Nullable
+    private BlockPos blockedTarget;
+    @Nullable
+    private String blockedReason;
 
     /** Тип задачи сбора. */
     public static final String TYPE_HARVEST = "farm_harvest";
@@ -88,22 +93,41 @@ public final class CampFarmManager {
         int cooldown = 0;
         int stale = 0;
         int notExecutable = 0;
+        @Nullable BlockPos blockedTarget = null;
+        @Nullable String blockedReason = null;
         for (FarmTask task : this.tasks.values()) {
             if (task.reservedBy != null) {
                 reserved++;
+                if (blockedTarget == null) {
+                    blockedTarget = task.task.getTarget();
+                    blockedReason = "reserved";
+                }
                 continue;
             }
             if (gameTime < task.availableAt) {
                 cooldown++;
+                if (blockedTarget == null) {
+                    blockedTarget = task.task.getTarget();
+                    blockedReason = "cooldown=" + (task.availableAt - gameTime)
+                            + " failures=" + task.failures;
+                }
                 continue;
             }
             if (!isStillValid(level, record, task)) {
                 stale++;
+                if (blockedTarget == null) {
+                    blockedTarget = task.task.getTarget();
+                    blockedReason = "stale";
+                }
                 continue;
             }
             if (npc != null && !isExecutable(level, task, npc)) {
                 notExecutable++;
                 task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
+                if (blockedTarget == null) {
+                    blockedTarget = task.task.getTarget();
+                    blockedReason = "not_executable";
+                }
                 continue;
             }
             // Общая с исполнителем проверка подхода ДО резервации: диспетчер не
@@ -115,6 +139,10 @@ public final class CampFarmManager {
                     npc.getBbWidth(), npc.getBbHeight()) == null) {
                 notExecutable++;
                 task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
+                if (blockedTarget == null) {
+                    blockedTarget = task.task.getTarget();
+                    blockedReason = "no_approach";
+                }
                 continue;
             }
             task.reservedBy = npcId;
@@ -128,6 +156,17 @@ public final class CampFarmManager {
                 + " cooldown=" + cooldown + " stale=" + stale
                 + " notExecutable=" + notExecutable);
         return null;
+    }
+
+    /**
+     * Причина последнего отказа take(): какая грядка и почему не выдана.
+     * Пустая строка, если задач не было вовсе.
+     */
+    public String takeSummary() {
+        if (this.blockedTarget == null) {
+            return "";
+        }
+        return " blocked=" + this.blockedTarget + " reason=" + this.blockedReason;
     }
 
     /** Продлить резервацию активной задачи. */
