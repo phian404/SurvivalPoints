@@ -154,7 +154,12 @@ public final class CampFarmManager {
         traceTake(level, "camp=" + record.getId() + " npc=" + npcId + " result=NO_TASK"
                 + " total=" + this.tasks.size() + " reserved=" + reserved
                 + " cooldown=" + cooldown + " stale=" + stale
-                + " notExecutable=" + notExecutable);
+                + " notExecutable=" + notExecutable
+                + (blockedTarget != null
+                        ? " blocked=" + blockedTarget + " reason=" + blockedReason
+                        : ""));
+        this.blockedTarget = blockedTarget;
+        this.blockedReason = blockedReason;
         return null;
     }
 
