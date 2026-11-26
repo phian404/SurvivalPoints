@@ -27,7 +27,7 @@ public final class CampWorkZoneAccess {
     /** Можно ли выбрать позицию как новую цель перемещения. */
     public static boolean isPositionAllowed(BaseSurvivorEntity npc, CampRecord camp, BlockPos pos) {
         CampModuleSlot farm = camp.getModuleSlot(CampGenerator.FARM_SLOT);
-        if (farm != null && !hasFarmAccess(npc, farm) && farm.getBounds().contains(pos)) {
+        if (farm != null && farm.getBounds().contains(pos)) {
             return false;
         }
 
@@ -35,8 +35,19 @@ public final class CampWorkZoneAccess {
         return tower == null || hasTowerAccess(npc, camp, tower) || !tower.getBounds().contains(pos);
     }
 
-    /** Проверяет весь оставшийся путь, включая узлы между NPC и целью. */
-    public static boolean isPathAllowed(BaseSurvivorEntity npc, CampRecord camp, Path path) {
+    /** Проверяет путь свободной прогулки: ферма закрыта даже для фермера. */
+    public static boolean isWanderPathAllowed(BaseSurvivorEntity npc, CampRecord camp, Path path) {
+        CampModuleSlot farm = camp.getModuleSlot(CampGenerator.FARM_SLOT);
+        if (!pathAllowedForSlot(npc, farm, false, path)) {
+            return false;
+        }
+
+        CampModuleSlot tower = camp.getModuleSlot(CampGenerator.WATCHTOWER_SLOT);
+        return pathAllowedForSlot(npc, tower, hasTowerAccess(npc, camp, tower), path);
+    }
+
+    /** Проверяет рабочий путь фермера: ферма разрешена, вышка остаётся закрытой. */
+    public static boolean isWorkPathAllowed(BaseSurvivorEntity npc, CampRecord camp, Path path) {
         CampModuleSlot farm = camp.getModuleSlot(CampGenerator.FARM_SLOT);
         if (!pathAllowedForSlot(npc, farm, hasFarmAccess(npc, farm), path)) {
             return false;
