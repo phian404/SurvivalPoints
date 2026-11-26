@@ -332,6 +332,16 @@ public final class CampFarmManager {
                 continue;
             }
             loaded++;
+            // Грядки вне рабочего круга лагеря (радиус минус BORDER_INSET) не
+            // получают задач: фермер к ним всё равно не подойдёт — клетка
+            // подхода отбраковывается border-критерием FarmApproach. POI
+            // остаётся зарегистрированным: при расширении лагеря грядка
+            // оживёт на следующем скане.
+            if (!FarmApproach.insideBorder(record, plot)) {
+                skippedOther++;
+                trace("POI", "pos=" + plot + " result=SKIPPED reason=OUTSIDE_WORK_BORDER", level);
+                continue;
+            }
             BlockState soil = level.getBlockState(plot);
             BlockState cropState = level.getBlockState(plot.above());
             CropAdapter adapter = CropAdapter.find(cropState);
