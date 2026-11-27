@@ -112,6 +112,16 @@ public final class CampFarmManager {
     @Nullable
     public NpcTask take(ServerLevel level, CampRecord record, @Nullable BaseSurvivorEntity npc,
                         UUID npcId, long gameTime) {
+        return takeForType(level, record, npc, npcId, gameTime, null);
+    }
+
+    /**
+     * Взять задачу заданного типа. Используется рабочей сессией фермера,
+     * чтобы не переключаться со сбора на посадку посреди одной серии.
+     */
+    @Nullable
+    public NpcTask takeForType(ServerLevel level, CampRecord record, @Nullable BaseSurvivorEntity npc,
+                               UUID npcId, long gameTime, @Nullable String requiredType) {
         dropExpired(gameTime);
         this.lastTakeTick = gameTime;
         this.lastTakeResult = this.tasks.isEmpty() ? "POOL_EMPTY" : "NO_ELIGIBLE_TASK";
@@ -127,6 +137,9 @@ public final class CampFarmManager {
                                 task.task.getTarget().getY() + 0.5D,
                                 task.task.getTarget().getZ() + 0.5D)));
         for (FarmTask task : candidates) {
+            if (requiredType != null && !requiredType.equals(task.task.getType())) {
+                continue;
+            }
             if (task.reservedBy != null) {
                 this.lastTakeResult = "ALL_OR_NEXT_RESERVED";
                 continue;
