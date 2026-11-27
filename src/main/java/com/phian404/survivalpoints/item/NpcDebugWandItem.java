@@ -7,7 +7,7 @@ import com.phian404.survivalpoints.camp.CampRecord;
 import com.phian404.survivalpoints.camp.CampStructurePlacer;
 import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.BaseSurvivorNpcEntity;
-import com.phian404.survivalpoints.entity.ai.FarmerWorkGoal;
+import com.phian404.survivalpoints.entity.ai.FarmerStandWorkGoal;
 import com.phian404.survivalpoints.entity.ai.CampWanderGoal;
 import com.phian404.survivalpoints.entity.ai.task.NpcTask;
 import com.phian404.survivalpoints.entity.ai.task.NpcTaskController;
@@ -225,7 +225,7 @@ public class NpcDebugWandItem extends Item {
             for (net.minecraft.world.entity.ai.goal.Goal goal
                     : civilian.goalSelector.getRunningGoals()
                             .map(wrapped -> wrapped.getGoal()).toList()) {
-                if (goal instanceof FarmerWorkGoal farmer) {
+                if (goal instanceof FarmerStandWorkGoal farmer) {
                     state = farmer.getState().name();
                     break;
                 }
@@ -247,9 +247,13 @@ public class NpcDebugWandItem extends Item {
         for (net.minecraft.world.entity.ai.goal.WrappedGoal wrapped
                 : npc.goalSelector.getAvailableGoals()) {
             net.minecraft.world.entity.ai.goal.Goal goal = wrapped.getGoal();
-            if (goal instanceof FarmerWorkGoal work) {
+            if (goal instanceof FarmerStandWorkGoal work) {
                 farmer = "FarmerWork=" + (wrapped.isRunning() ? "RUNNING" : "STOPPED")
-                        + "/" + work.getState();
+                        + "/" + work.getState()
+                        + " session=" + (work.isSessionActive() ? work.getSessionType() : "off")
+                        + "/" + work.getSessionStarts()
+                        + " stand=" + (work.getStand() == null ? "-" : pos(work.getStand()))
+                        + " plan=" + work.getPlannedCount();
             } else if (goal instanceof CampWanderGoal campWander) {
                 wander = "Wander=" + (wrapped.isRunning() ? "RUNNING" : "STOPPED")
                         + " [" + campWander.diagnosticSummary(npc.level().getGameTime()) + "]";

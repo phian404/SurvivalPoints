@@ -1,9 +1,10 @@
 package com.phian404.survivalpoints.entity;
 
 import com.phian404.survivalpoints.entity.ai.CampWanderGoal;
-import com.phian404.survivalpoints.entity.ai.FarmerWorkGoal;
+import com.phian404.survivalpoints.entity.ai.FarmerStandWorkGoal;
 import com.phian404.survivalpoints.entity.role.RoleAssignmentService;
 import com.phian404.survivalpoints.entity.role.SurvivorRole;
+import net.minecraft.util.Mth;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -17,6 +18,7 @@ import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ServerLevelAccessor;
+import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
 
@@ -46,7 +48,7 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
         super.registerGoals();
         this.goalSelector.addGoal(0, new FloatGoal(this));
         // Работа фермера перебивает прогулку; для остальных Goal не активен.
-        FarmerWorkGoal workGoal = new FarmerWorkGoal(this);
+        FarmerStandWorkGoal workGoal = new FarmerStandWorkGoal(this);
         this.workGoal = workGoal;
         this.goalSelector.addGoal(1, workGoal);
         this.goalSelector.addGoal(2, new CampWanderGoal(this));
@@ -56,12 +58,12 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
 
     /** Ссылка на рабочую цель для отладки и тестов; {@code null} до registerGoals. */
     @Nullable
-    public FarmerWorkGoal getWorkGoal() {
+    public FarmerStandWorkGoal getWorkGoal() {
         return this.workGoal;
     }
 
     @Nullable
-    private FarmerWorkGoal workGoal;
+    private FarmerStandWorkGoal workGoal;
 
     /**
      * Назначение роли стража при клике арбалетом.
@@ -110,6 +112,93 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
         return PathfinderMob.createMobAttributes()
                 .add(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH, 20.0D)
                 .add(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED, 0.25D);
+    }
+
+    /**
+     * Скорость доворота взгляда, градусов за тик. AI-цель тикает через тик, а
+     * ванильный {@code LookControl} живёт 2 тика и обнуляет наклон, поэтому
+     * голову ведёт сама сущность — каждый тик, но не быстрее этого шага.
+     */
+    private static final float GAZE_STEP = 8.0F;
+    /** Предел наклона головы, градусов (ванильный {@code getMaxHeadXRot()}). */
+    private static final float GAZE_PITCH_LIMIT = 40.0F;
+
+    private boolean gazeActive;
+    private boolean gazeReleasing;
+    private float gazeYaw;
+    private float gazePitch;
+    private float gazeTargetYaw;
+    private float gazeTargetPitch;
+
+    /**
+     * Направить взгляд в точку. Голова идёт к ней плавно, пока цель не сменится.
+     *
+     * <p>В отличие от {@code LookControl}, ведение не привязано к тику AI-цели:
+     * иначе между вызовами контрол успевает выровнять голову по телу, и она
+     * дёргается. Ведение полностью перекрывает {@code LookControl}, пока
+     * активно, поэтому отпускать его нужно через {@link #releaseGaze()}.
+     */
+    public void aimGaze(double x, double y, double z) {
+        Vec3 eye = this.getEyePosition();
+        double dx = x - eye.x;
+        double dy = y - eye.y;
+        double dz = z - eye.z;
+        if (!this.gazeActive) {
+            this.gazeYaw = this.getYHeadRot();
+            this.gazePitch = this.getXRot();
+            this.gazeActive = true;
+        }
+        this.gazeReleasing = false;
+        double horiz = Math.sqrt(dx * dx + dz * dz);
+        // Точка ровно над/под NPC: азимут не определён, оставляем прежний,
+        // иначе голова дёргается в случайную сторону.
+        if (horiz > 0.05D) {
+            this.gazeTargetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        }
+        this.gazeTargetPitch = Mth.clamp(
+                (float) Math.toDegrees(Math.atan2(-dy, horiz)),
+                -GAZE_PITCH_LIMIT, GAZE_PITCH_LIMIT);
+    }
+
+    /**
+     * Отпустить взгляд: голова плавно возвращается вперёд, к направлению тела,
+     * и только потом управление получает {@code LookControl}. Если отпустить
+     * сразу, он обнулит наклон за один тик — это и есть видимый рывок.
+     */
+    public void releaseGaze() {
+        if (!this.gazeActive) {
+            return;
+        }
+        this.gazeReleasing = true;
+    }
+
+    /** Взгляд ведёт сущность, а не ванильный {@code LookControl}. */
+    public boolean isGazeActive() {
+        return this.gazeActive;
+    }
+
+    @Override
+    public void aiStep() {
+        super.aiStep();
+        // После super: LookControl уже обнулил наклон и подвинул голову к телу,
+        // теперь записываем своё положение — оно и уйдёт клиенту в этом тике.
+        if (!this.gazeActive) {
+            return;
+        }
+        if (this.gazeReleasing) {
+            this.gazeTargetPitch = 0.0F;
+            this.gazeTargetYaw = this.yBodyRot;
+        }
+        this.gazeYaw = Mth.approachDegrees(this.gazeYaw, this.gazeTargetYaw, GAZE_STEP);
+        this.gazePitch += Mth.clamp(this.gazeTargetPitch - this.gazePitch, -GAZE_STEP, GAZE_STEP);
+        this.setYHeadRot(this.gazeYaw);
+        this.setXRot(this.gazePitch);
+        if (this.gazeReleasing
+                && Math.abs(Mth.wrapDegrees(this.gazeTargetYaw - this.gazeYaw)) < 0.5F
+                && Math.abs(this.gazeTargetPitch - this.gazePitch) < 0.5F) {
+            this.gazeActive = false;
+            this.gazeReleasing = false;
+        }
     }
 
     @Override

@@ -59,9 +59,21 @@ public final class FarmApproach {
      */
     public static List<BlockPos> findApproaches(ServerLevel level, CampRecord camp, BlockPos plot,
                                                 double bodyWidth, double bodyHeight) {
+        // Основной вариант — стоять рядом с грядкой на её уровне. Если так
+        // нельзя (грядки вкопаны в землю, как в шаблоне farm_lvl1), годится
+        // клетка на уровень выше: это дорожка над соседней землёй.
+        List<BlockPos> sameLevel = approachesAt(level, camp, plot, 0, bodyWidth, bodyHeight);
+        if (!sameLevel.isEmpty()) {
+            return sameLevel;
+        }
+        return approachesAt(level, camp, plot, 1, bodyWidth, bodyHeight);
+    }
+
+    private static List<BlockPos> approachesAt(ServerLevel level, CampRecord camp, BlockPos plot,
+                                               int dy, double bodyWidth, double bodyHeight) {
         List<BlockPos> cells = new ArrayList<>(4);
         for (Direction dir : Direction.Plane.HORIZONTAL) {
-            BlockPos candidate = plot.relative(dir);
+            BlockPos candidate = plot.relative(dir).offset(0, dy, 0);
             if (validate(level, camp, plot, candidate, bodyWidth, bodyHeight) == null) {
                 cells.add(candidate);
             }
@@ -76,6 +88,21 @@ public final class FarmApproach {
     @Nullable
     public static String validate(ServerLevel level, CampRecord camp, BlockPos plot,
                                   BlockPos pos, double bodyWidth, double bodyHeight) {
+        if (horizontalDistSqr(pos, plot) > TARGET_REACH_SQR) {
+            return "TOO_FAR distSqr=" + horizontalDistSqr(pos, plot);
+        }
+        return standCheck(level, camp, pos, bodyWidth, bodyHeight);
+    }
+
+    /**
+     * Причина, по которой NPC не может стоять в клетке (null — может).
+     *
+     * <p>Без привязки к конкретной грядке: этим же критерием пользуется
+     * рабочая станция, обслуживающая несколько грядок с одной клетки.
+     */
+    @Nullable
+    public static String standCheck(ServerLevel level, CampRecord camp, BlockPos pos,
+                                    double bodyWidth, double bodyHeight) {
         BlockPos center = camp.getCenter();
         double dx = pos.getX() - center.getX();
         double dz = pos.getZ() - center.getZ();
@@ -97,9 +124,6 @@ public final class FarmApproach {
         if (!below.blocksMotion() && !below.getFluidState().isSource()) {
             return "NO_SUPPORT block=" + below.getBlock() + "@" + pos.below()
                     + " blocksMotion=false";
-        }
-        if (horizontalDistSqr(pos, plot) > TARGET_REACH_SQR) {
-            return "TOO_FAR distSqr=" + horizontalDistSqr(pos, plot);
         }
         double half = bodyWidth / 2.0D;
         double bottom = pos.getY() + 1.0D;

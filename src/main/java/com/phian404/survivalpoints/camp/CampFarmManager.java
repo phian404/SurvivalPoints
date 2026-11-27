@@ -190,6 +190,79 @@ public final class CampFarmManager {
         }
     }
 
+    /**
+     * Грядки, на которые сейчас есть работа и которые не заняты другим
+     * исполнителем. Только чтение: резервации не выдаются, счётчики отказов и
+     * cooldown не меняются. Нужна планировщику рабочей станции, который сам
+     * решает порядок обхода, а диспетчер остаётся стражем эксклюзивности.
+     */
+    public List<BlockPos> availableTargets(ServerLevel level, CampRecord record,
+                                           @Nullable BaseSurvivorEntity npc,
+                                           long gameTime, String type) {
+        List<BlockPos> targets = new ArrayList<>();
+        for (FarmTask task : this.tasks.values()) {
+            if (!type.equals(task.task.getType())) {
+                continue;
+            }
+            if (task.reservedBy != null || gameTime < task.availableAt) {
+                continue;
+            }
+            if (!isStillValid(level, record, task)) {
+                continue;
+            }
+            if (npc != null && !isExecutable(level, task, npc)) {
+                continue;
+            }
+            targets.add(task.task.getTarget());
+        }
+        return targets;
+    }
+
+    /**
+     * Зарезервировать конкретную грядку, выбранную исполнителем.
+     *
+     * <p>Проверки те же, что и в {@link #takeForType}, но без выбора «первой
+     * подходящей»: порядок обхода задаёт рабочая станция, диспетчер лишь
+     * подтверждает, что грядка ещё свободна и выполнима.
+     */
+    @Nullable
+    public NpcTask takeAt(ServerLevel level, CampRecord record, @Nullable BaseSurvivorEntity npc,
+                          UUID npcId, long gameTime, String type, BlockPos plot) {
+        dropExpired(gameTime);
+        this.lastTakeTick = gameTime;
+        FarmTask task = this.tasks.get(plot.immutable());
+        if (task == null) {
+            this.lastTakeResult = "NO_TASK_AT_PLOT";
+            return null;
+        }
+        if (!type.equals(task.task.getType())) {
+            this.lastTakeResult = "TYPE_MISMATCH";
+            return null;
+        }
+        if (task.reservedBy != null && !task.reservedBy.equals(npcId)) {
+            this.lastTakeResult = "RESERVED_ELSEWHERE";
+            return null;
+        }
+        if (gameTime < task.availableAt) {
+            this.lastTakeResult = "COOLDOWN";
+            return null;
+        }
+        if (!isStillValid(level, record, task)) {
+            this.tasks.remove(plot.immutable());
+            this.lastTakeResult = "TASK_INVALID";
+            return null;
+        }
+        if (npc != null && !isExecutable(level, task, npc)) {
+            task.availableAt = gameTime + UNAVAILABLE_COOLDOWN;
+            this.lastTakeResult = "NOT_EXECUTABLE";
+            return null;
+        }
+        task.reservedBy = npcId;
+        task.reservedAt = gameTime;
+        this.lastTakeResult = "ASSIGNED_BY_PLAN:" + type + "@" + task.task.getTarget().toShortString();
+        return task.task;
+    }
+
     /** Причина, по которой {@link #takeForType} не выдал задачу. */
     public enum TakeBlock {
         /** Действительных задач нужного типа нет: серия закончена. */
@@ -410,9 +483,30 @@ public final class CampFarmManager {
         this.lastScanTick = Long.MIN_VALUE;
     }
 
+    /**
+     * Есть ли в лагере зрелая культура, даже если задача сбора сейчас в cooldown
+     * после неудачи. Пока такая грядка есть, посадка начинаться не должна.
+     */
+    public boolean hasMaturePlot(ServerLevel level, CampRecord record) {
+        for (CampPoi poi : record.getPois()) {
+            if (!CampStructurePlacer.FARM_PLOT_TYPE.equals(poi.getType())) {
+                continue;
+            }
+            BlockPos plot = poi.getPos();
+            if (!level.isLoaded(plot) || !FarmApproach.insideBorder(record, plot)) {
+                continue;
+            }
+            BlockState cropState = level.getBlockState(plot.above());
+            CropAdapter adapter = CropAdapter.find(cropState);
+            if (adapter != null && adapter.isMature(cropState)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Сканирование POI лагеря без принудительной загрузки чанков. */
-    private void scan(ServerLevel level, CampRecord record, long gameTime) {
-        Map<BlockPos, FarmTask> fresh = new LinkedHashMap<>();
+    private void scan(ServerLevel level, CampRecord record, long gameTime) {        Map<BlockPos, FarmTask> fresh = new LinkedHashMap<>();
         for (CampPoi poi : record.getPois()) {
             if (!CampStructurePlacer.FARM_PLOT_TYPE.equals(poi.getType())) {
                 continue;
