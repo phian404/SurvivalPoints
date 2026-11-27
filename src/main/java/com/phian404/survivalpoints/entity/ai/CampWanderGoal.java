@@ -1,6 +1,7 @@
 package com.phian404.survivalpoints.entity.ai;
 
 import com.phian404.survivalpoints.camp.CampGenerator;
+import com.phian404.survivalpoints.camp.CampFarmManager;
 import com.phian404.survivalpoints.camp.CampManager;
 import com.phian404.survivalpoints.camp.CampModuleSlot;
 import com.phian404.survivalpoints.camp.CampRecord;
@@ -119,8 +120,17 @@ public class CampWanderGoal extends Goal {
         }
 
         // После окончания работы фермер должен покинуть ферму сразу,
-        // а не ждать окончания обычной паузы между прогулками.
+        // а не ждать окончания обычной паузы между прогулками. Но если
+        // следующая грядка уже готова — остаёмся на ферме, иначе прогулка
+        // уводит NPC наружу и тут же прерывается новой задачей (ping-pong).
         boolean leavingFarm = CampWorkZoneAccess.isInsideFarmZone(this.npc, camp);
+        if (leavingFarm) {
+            CampFarmManager farmManager = CampManager.farmManager(camp);
+            if (farmManager.hasAvailableWork(level, camp, this.npc, level.getGameTime())) {
+                this.lastDecision = "WORK_AVAILABLE";
+                return false;
+            }
+        }
         if (this.pauseTicks > 0 && !leavingFarm) {
             this.pauseTicks--;
             this.lastDecision = "PAUSED";
@@ -167,6 +177,15 @@ public class CampWanderGoal extends Goal {
         }
         CampRecord camp = camp(level);
         if (camp == null) {
+            return false;
+        }
+        // Работа появилась посреди выхода с фермы: не доводим прогулку до
+        // края, чтобы фермер не ходил «наружу-обратно».
+        if (this.exitInProgress
+                && CampManager.farmManager(camp).hasAvailableWork(level, camp, this.npc,
+                        level.getGameTime())) {
+            this.npc.getNavigation().stop();
+            this.lastDecision = "WORK_AVAILABLE";
             return false;
         }
         Path path = this.npc.getNavigation().getPath();

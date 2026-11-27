@@ -174,6 +174,35 @@ public final class CampFarmManager {
     }
 
     /**
+     * Есть ли для NPC работа прямо сейчас, без её резервации.
+     *
+     * <p>Read-only аналог фильтра {@link #take}: те же проверки
+     * (резервация, cooldown, валидность, выполнимость, подход), но без
+     * записи {@code availableAt}, резервации и счётчиков. Нужен прогулке,
+     * чтобы не уводить фермера с фермы, когда следующая грядка уже готова.
+     */
+    public boolean hasAvailableWork(ServerLevel level, CampRecord record,
+                                    BaseSurvivorEntity npc, long gameTime) {
+        for (FarmTask task : this.tasks.values()) {
+            if (task.reservedBy != null || gameTime < task.availableAt) {
+                continue;
+            }
+            if (!isStillValid(level, record, task)) {
+                continue;
+            }
+            if (!isExecutable(level, task, npc)) {
+                continue;
+            }
+            if (FarmApproach.findApproach(level, record, task.task.getTarget(),
+                    npc.getBbWidth(), npc.getBbHeight()) == null) {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Отказ исполнителя от задачи: снимает резервацию и откладывает повторное
      * предложение на нарастающий cooldown (UNAVAILABLE_COOLDOWN * failures,
      * до MAX_FAIL_COOLDOWN), чтобы фермер не зацикливался на одной
