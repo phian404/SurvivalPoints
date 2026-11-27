@@ -47,6 +47,13 @@ public class FarmerWorkGoal extends Goal {
     /** Сколько тиков без прогресса считается застреванием. */
     private static final int STUCK_TIMEOUT = 100;
 
+    /**
+     * Сколько тиков после конца серии держим взгляд на последней грядке.
+     * LookControl возвращает голову к направлению тела через два тика без
+     * нового setLookAt, поэтому без удержания NPC «смотрит прямо» заметно.
+     */
+    private static final int LOOK_HOLD_TICKS = 10;
+
     /** Скорость движения к участку. */
     private static final double SPEED = 1.0D;
 
@@ -89,6 +96,10 @@ public class FarmerWorkGoal extends Goal {
     private boolean sessionActive;
     @Nullable
     private String sessionType;
+
+    /** Последняя обработанная грядка: на неё смотрим после конца серии. */
+    @Nullable
+    private BlockPos lastWorkedPlot;
 
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
@@ -196,11 +207,25 @@ public class FarmerWorkGoal extends Goal {
 
     /** Закончить серию однотипных задач и вернуть Goal обычному поведению NPC. */
     private void endSession() {
+        endSession(null);
+    }
+
+    /**
+     * Закончить серию, при необходимости удержав взгляд на последней грядке.
+     * Грядка передаётся как pauseLookTarget: цель остаётся активной ещё
+     * LOOK_HOLD_TICKS тиков, поэтому голова не успевает вернуться в нейтраль.
+     */
+    private void endSession(@Nullable BlockPos holdLook) {
         this.sessionActive = false;
         this.sessionType = null;
-        this.pauseLookTarget = null;
         this.approach = null;
         this.state = State.IDLE;
+        if (holdLook != null) {
+            this.pauseLookTarget = holdLook;
+            this.pauseTicks = Math.max(this.pauseTicks, LOOK_HOLD_TICKS);
+        } else {
+            this.pauseLookTarget = null;
+        }
     }
 
     @Override
@@ -213,15 +238,13 @@ public class FarmerWorkGoal extends Goal {
         }
         // Внутри сессии удерживаем MOVE/LOOK и между отдельными задачами.
         // Это не резервирует грядку: контроллер может быть пуст во время паузы.
+        // Путь проверяется в tick(): маршрут PathFinder законно проходит по краю
+        // круга, и обрыв цели из-за одного внешнего узла выглядел как «встал,
+        // смотрит прямо, потом снова пошёл».
         if (this.sessionActive) {
             NpcTaskController sessionController = CampManager.taskController(this.npc.getIdentityId());
             NpcTask activeTask = sessionController.current();
-            if (activeTask == null) {
-                return true;
-            }
-            Path activePath = this.npc.getNavigation().getPath();
-            return activeTask.getTarget() != null
-                    && (activePath == null || pathInside(camp(level), activePath));
+            return activeTask == null || activeTask.getTarget() != null;
         }
         if (this.pauseLookTarget != null) {
             return true;
@@ -263,11 +286,11 @@ public class FarmerWorkGoal extends Goal {
                     this.npc.getIdentityId(), level.getGameTime(), this.sessionType,
                     this.npc.blockPosition());
             if (next == null) {
-                endSession();
+                endSession(this.lastWorkedPlot);
                 return;
             }
             if (!startTask(level, camp, next)) {
-                endSession();
+                endSession(this.lastWorkedPlot);
                 return;
             }
         }
@@ -300,6 +323,33 @@ public class FarmerWorkGoal extends Goal {
             }
 
             Path path = this.npc.getNavigation().getPath();
+            // Маршрут PathFinder законно режет по краю круга лагеря: раньше один
+            // внешний узел обрывал цель целиком (NPC замирал и смотрел прямо).
+            // Теперь вместо обрыва один раз перестраиваем путь, а если и новый
+            // выходит за круг — отказываемся от грядки.
+            if (path != null && !path.isDone() && !pathInside(camp, path)) {
+                this.npc.getNavigation().stop();
+                if (!this.correctiveStep) {
+                    this.correctiveStep = true;
+                    Path rebuilt = this.approachPath(level, camp, task);
+                    boolean started = rebuilt != null
+                            && pathInside(camp, rebuilt)
+                            && this.npc.getNavigation().moveTo(rebuilt, SPEED);
+                    if (!started) {
+                        this.npc.getNavigation().stop();
+                        abandon(level, camp, task, RETRY_PAUSE);
+                        return;
+                    }
+                    if (this.pathTarget != null) {
+                        this.approach = this.pathTarget;
+                    }
+                } else {
+                    abandon(level, camp, task, RETRY_PAUSE);
+                    return;
+                }
+                this.state = State.MOVING;
+                return;
+            }
             if (path == null || path.isDone()) {
                 // Страховка: навигатор считает маршрут завершённым, но
                 // atApproach() ещё не true (например, остановился в зоне
@@ -373,6 +423,7 @@ public class FarmerWorkGoal extends Goal {
             controller.complete();
             this.pauseTicks = PAUSE_MIN + this.npc.getRandom().nextInt(PAUSE_MAX - PAUSE_MIN + 1);
             this.pauseLookTarget = plot;
+            this.lastWorkedPlot = plot;
             this.approach = null;
             this.correctiveStep = false;
             this.state = State.IDLE;
@@ -395,6 +446,7 @@ public class FarmerWorkGoal extends Goal {
         this.npc.getNavigation().stop();
         this.approach = null;
         this.pauseLookTarget = null;
+        this.lastWorkedPlot = null;
         this.sessionActive = false;
         this.sessionType = null;
         this.state = State.IDLE;
