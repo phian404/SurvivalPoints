@@ -26,7 +26,7 @@ public class CampRadioBlockEntity extends BlockEntity {
         // Удалённый лагерь мог оставить старый id в загруженном ретрансляторе.
         // Сбрасываем такую привязку и разрешаем обычный поиск лагеря заново.
         if (level instanceof net.minecraft.server.level.ServerLevel server) {
-            if (campId != null
+            if (campId != null && level.getGameTime() % 20L == 0L
                     && com.phian404.survivalpoints.camp.CampManager.getCamp(server, campId) == null) {
                 campId = null;
                 setChanged();
