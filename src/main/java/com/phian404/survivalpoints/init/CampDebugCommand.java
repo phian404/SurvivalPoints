@@ -321,7 +321,7 @@ public class CampDebugCommand {
         // висящая в воздухе дверь.
         CampStructurePlacer.clearGateLeaf(level, record.getGatePos());
 
-        data.removeCamp(record.getId());
+        CampManager.removeCamp(level, record.getId());
         ctx.getSource().sendSuccess(() -> Component.literal("§aЛагерь «" + record.getName() + "» удалён"), true);
         return 1;
     }
@@ -337,7 +337,7 @@ public class CampDebugCommand {
         int count = data.getCampCount();
         for (CampRecord record : new ArrayList<>(data.getCamps())) {
             CampStructurePlacer.clearGateLeaf(level, record.getGatePos());
-            data.removeCamp(record.getId());
+            CampManager.removeCamp(level, record.getId());
         }
         ctx.getSource().sendSuccess(() -> Component.literal("§aУдалено лагерей: " + count), true);
         return count;
