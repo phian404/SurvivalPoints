@@ -501,7 +501,7 @@ public class FarmerSessionGameTests {
             }
             for (BlockPos plot : plots) {
                 if (!helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT)) {
-                    return;
+                    throw new IllegalStateException("ждём посадки " + plot);
                 }
             }
             if (!handSeen[0]) {
@@ -511,7 +511,60 @@ public class FarmerSessionGameTests {
             if (seeds != 14) {
                 throw new IllegalStateException("после двух посадок семян " + seeds + ", а не 14");
             }
-            helper.succeed();
+        });
+    }
+
+    /**
+     * Последовательная посадка: перед каждой посадкой в руке лежит семя, а
+     * после расходования одного остаток стека остаётся в руке и идёт на
+     * следующую грядку, а не уезжает в инвентарь.
+     */
+    @GameTest(template = "empty3x3x3", timeoutTicks = 1400)
+    public static void seed_left_in_hand_between_plantings(GameTestHelper helper) {
+        platform(helper);
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper, 0, 1, 0);
+        BlockPos center = helper.absolutePos(new BlockPos(1, 1, 1));
+        List<BlockPos> plots = ring(helper, center);
+        CampRecord camp = buildCamp(helper, center, plots, Set.of(), false);
+        linkFarmer(farmer, camp);
+        farmer.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        farmer.getInventory().setStackInSlot(0, new ItemStack(Items.WHEAT_SEEDS, 16));
+
+        Set<BlockPos> planted = new HashSet<>();
+        List<String> failures = new ArrayList<>();
+        pollEveryTick(helper, 1300, "семя в руке при каждой посадке", helper::succeed, () -> {
+            FarmerStandWorkGoal goal = farmer.getWorkGoal();
+            if (goal == null) {
+                throw new IllegalStateException("FarmerStandWorkGoal не зарегистрирован у фермера");
+            }
+            boolean plantSession = goal.isSessionActive() && goal.getPlannedCount() > 0
+                    && CampFarmManager.TYPE_PLANT.equals(goal.getSessionType());
+            if (plantSession && failures.isEmpty()
+                    && !farmer.getMainHandItem().is(Items.WHEAT_SEEDS)) {
+                failures.add("пустая рука в сессии посадки: " + describe(goal, farmer));
+            }
+            for (BlockPos plot : plots) {
+                if (!helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT)) {
+                    throw new IllegalStateException("ждём посадки " + planted.size()
+                            + "/" + plots.size());
+                }
+                if (!planted.add(plot)) {
+                    continue;
+                }
+                ItemStack hand = farmer.getMainHandItem();
+                if (!hand.is(Items.WHEAT_SEEDS)) {
+                    failures.add("посадка " + plot + " без семян в руке: " + hand);
+                }
+            }
+            if (planted.size() == plots.size()) {
+                int seeds = countSeeds(farmer);
+                if (seeds != 8) {
+                    failures.add("после восьми посадок семян " + seeds + ", а не 8");
+                }
+                if (!failures.isEmpty()) {
+                    throw new IllegalStateException(String.join("; ", failures));
+                }
+            }
         });
     }
 

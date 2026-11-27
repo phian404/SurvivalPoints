@@ -29,7 +29,8 @@ public final class NpcItemUse {
     }
 
     /**
-     * Взять в главную руку первый подходящий предмет из внутреннего инвентаря.
+     * Взять в главную руку партию — весь подходящий стек из первого слота
+     * инвентаря, в котором он лежит.
      *
      * @return {@code true}, если предмет действительно взят
      */
@@ -39,7 +40,7 @@ public final class NpcItemUse {
             if (stack.isEmpty() || !filter.test(stack)) {
                 continue;
             }
-            ItemStack extracted = npc.extractItem(stack, 1);
+            ItemStack extracted = npc.extractItem(stack, stack.getCount());
             if (extracted.isEmpty()) {
                 continue;
             }

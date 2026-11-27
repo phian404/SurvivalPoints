@@ -708,10 +708,12 @@ public class FarmerStandWorkGoal extends Goal {
         if (adapter == null || crop == null || !adapter.plant(level, pos, crop)) {
             return false;
         }
+        // Жест — с семенем в руке: списываем его уже после замаха, иначе
+        // анимация играет пустой рукой.
+        NpcItemUse.act(this.npc, SoundEvents.CROP_PLANTED, 0.6F);
         ItemStack remaining = seed.copy();
         remaining.shrink(1);
         NpcItemUse.hold(this.npc, remaining);
-        NpcItemUse.act(this.npc, SoundEvents.CROP_PLANTED, 0.6F);
         return true;
     }
 
