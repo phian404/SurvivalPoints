@@ -190,6 +190,66 @@ public final class CampFarmManager {
         }
     }
 
+    /** Причина, по которой {@link #takeForType} не выдал задачу. */
+    public enum TakeBlock {
+        /** Действительных задач нужного типа нет: серия закончена. */
+        NONE,
+        /** Работа есть, но ждёт истечения cooldown или освобождения резервации. */
+        TEMPORARY,
+        /** Работа есть, но выполнить её сейчас нельзя: инвентарь, подход. */
+        BLOCKED
+    }
+
+    /**
+     * Read-only классификация отказа {@link #takeForType}.
+     *
+     * <p>Ничего не пишет: ни cooldown, ни резерваций, ни счётчиков. Проверка
+     * выполнимости идёт до cooldown намеренно: заполненный инвентарь должен
+     * давать {@link TakeBlock#BLOCKED}, а не «временный» cooldown, который
+     * {@code takeForType} выставил бы на этой же задаче. Отсутствие клетки
+     * подхода временно, пока действует cooldown: мир может измениться, и
+     * задача снова станет выполнимой; после истечения cooldown повторная
+     * неудача считается блокировкой.
+     */
+    public TakeBlock classifyForType(ServerLevel level, CampRecord record,
+                                     @Nullable BaseSurvivorEntity npc, long gameTime,
+                                     @Nullable String requiredType) {
+        boolean temporary = false;
+        boolean blocked = false;
+        for (FarmTask task : this.tasks.values()) {
+            if (requiredType != null && !requiredType.equals(task.task.getType())) {
+                continue;
+            }
+            if (!isStillValid(level, record, task)) {
+                continue;
+            }
+            if (task.reservedBy != null) {
+                temporary = true;
+                continue;
+            }
+            if (npc != null && !isExecutable(level, task, npc)) {
+                blocked = true;
+                continue;
+            }
+            if (gameTime < task.availableAt) {
+                temporary = true;
+                continue;
+            }
+            if (npc != null && FarmApproach.findApproach(level, record, task.task.getTarget(),
+                    npc.getBbWidth(), npc.getBbHeight()) == null) {
+                blocked = true;
+                continue;
+            }
+            // Задача доступна прямо сейчас: takeForType её бы взял, поэтому
+            // ожидание бессмысленно — рабочий Goal повторит взятие сразу.
+            temporary = true;
+        }
+        if (temporary) {
+            return TakeBlock.TEMPORARY;
+        }
+        return blocked ? TakeBlock.BLOCKED : TakeBlock.NONE;
+    }
+
     /**
      * Есть ли для NPC работа прямо сейчас, без её резервации.
      *

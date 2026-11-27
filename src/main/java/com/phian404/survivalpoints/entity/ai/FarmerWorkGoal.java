@@ -54,6 +54,15 @@ public class FarmerWorkGoal extends Goal {
      */
     private static final int LOOK_HOLD_TICKS = 10;
 
+    /**
+     * Предел неудачных попыток взять задачу того же типа, пока сессия ждёт
+     * её освобождения. Попытки идут не каждый тик (между ними короткая пауза
+     * с удержанием взгляда), поэтому лимит с запасом перекрывает существующий
+     * {@code UNAVAILABLE_COOLDOWN} (60 тиков): легальный cooldown успевает
+     * истечь, а бесконечного ожидания не бывает.
+     */
+    private static final int SESSION_IDLE_TIMEOUT = 80;
+
     /** Скорость движения к участку. */
     private static final double SPEED = 1.0D;
 
@@ -97,6 +106,12 @@ public class FarmerWorkGoal extends Goal {
     @Nullable
     private String sessionType;
 
+    /** Неудачные попытки взять задачу внутри активной сессии. */
+    private int sessionIdleTicks;
+
+    /** Сколько раз начиналась рабочая серия; для проверки «сессия не рвалась». */
+    private int sessionStarts;
+
     /** Последняя обработанная грядка: на неё смотрим после конца серии. */
     @Nullable
     private BlockPos lastWorkedPlot;
@@ -112,6 +127,16 @@ public class FarmerWorkGoal extends Goal {
     /** Текущее состояние исполнения. */
     public State getState() {
         return this.state;
+    }
+
+    /** Активна ли серия однотипных задач (сбор или посадка). */
+    public boolean isSessionActive() {
+        return this.sessionActive;
+    }
+
+    /** Сколько рабочих серий было начато; в одной сессии должно остаться 1. */
+    public int getSessionStarts() {
+        return this.sessionStarts;
     }
 
     @Override
@@ -149,6 +174,8 @@ public class FarmerWorkGoal extends Goal {
         }
         this.sessionType = task.getType();
         this.sessionActive = true;
+        this.sessionIdleTicks = 0;
+        this.sessionStarts++;
         if (!startTask(level, camp, task)) {
             endSession();
             return false;
@@ -286,9 +313,22 @@ public class FarmerWorkGoal extends Goal {
                     this.npc.getIdentityId(), level.getGameTime(), this.sessionType,
                     this.npc.blockPosition());
             if (next == null) {
+                this.sessionIdleTicks++;
+                // Работа того же типа есть, но ждёт cooldown или резервации:
+                // серию не рвём, взгляд держим на последней грядке и пробуем
+                // снова. Недоступное из-за инвентаря или подхода ожидания не
+                // заслуживает — там сессия завершается сразу.
+                if (sessionManager.classifyForType(level, camp, this.npc, level.getGameTime(),
+                        this.sessionType) == CampFarmManager.TakeBlock.TEMPORARY
+                        && this.sessionIdleTicks <= SESSION_IDLE_TIMEOUT) {
+                    this.pauseLookTarget = this.lastWorkedPlot;
+                    this.pauseTicks = 1;
+                    return;
+                }
                 endSession(this.lastWorkedPlot);
                 return;
             }
+            this.sessionIdleTicks = 0;
             if (!startTask(level, camp, next)) {
                 endSession(this.lastWorkedPlot);
                 return;
@@ -449,6 +489,7 @@ public class FarmerWorkGoal extends Goal {
         this.lastWorkedPlot = null;
         this.sessionActive = false;
         this.sessionType = null;
+        this.sessionIdleTicks = 0;
         this.state = State.IDLE;
         this.stuckTicks = 0;
         this.lastNpcPos = null;
@@ -520,6 +561,7 @@ public class FarmerWorkGoal extends Goal {
         this.pauseLookTarget = null;
         this.sessionActive = false;
         this.sessionType = null;
+        this.sessionIdleTicks = 0;
         this.state = State.IDLE;
         this.stuckTicks = 0;
         this.lastNpcPos = null;

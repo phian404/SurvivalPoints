@@ -104,10 +104,10 @@ public class FarmerSessionGameTests {
         List<BlockPos> plots = List.of(
                 helper.absolutePos(new BlockPos(2, 1, 2)),
                 helper.absolutePos(new BlockPos(4, 1, 4)));
-        registerCamp(helper, farmer, plots);
+        registerCamp(helper, farmer, plots, true);
 
         // Сессия обязана переживать паузу между задачами: обе зрелые грядки
-        // должны быть собраны за один заход, без ручного пинка извне.
+        // должны быть собраны за одну серию, без остановки и перезапуска цели.
         boolean[] harvested = new boolean[plots.size()];
         helper.succeedWhen(() -> {
             for (int i = 0; i < plots.size(); i++) {
@@ -124,6 +124,14 @@ public class FarmerSessionGameTests {
                     return;
                 }
             }
+            FarmerWorkGoal goal = farmer.getWorkGoal();
+            if (goal == null) {
+                helper.fail("FarmerWorkGoal не зарегистрирован у фермера");
+            }
+            if (goal.getSessionStarts() != 1) {
+                helper.fail("Обе грядки собраны за " + goal.getSessionStarts()
+                        + " серии(й): FarmerWorkGoal останавливался между задачами");
+            }
             helper.succeed();
         });
 
@@ -131,9 +139,75 @@ public class FarmerSessionGameTests {
                 helper.fail("Фермер не обработал обе грядки: сессия оборвалась между задачами"));
     }
 
+    @GameTest(template = "empty3x3x3", timeoutTicks = 800)
+    public static void two_plants_in_a_row(GameTestHelper helper) {
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper);
+        List<BlockPos> plots = List.of(
+                helper.absolutePos(new BlockPos(2, 1, 2)),
+                helper.absolutePos(new BlockPos(4, 1, 4)));
+        registerCamp(helper, farmer, plots, false);
+
+        // Обе пустые грядки должны быть засажены одной серией: посадка не
+        // наполняет инвентарь, поэтому здесь серия не имеет права рваться.
+        int[] planted = new int[1];
+        helper.succeedWhen(() -> {
+            planted[0] = 0;
+            for (BlockPos plot : plots) {
+                BlockState crop = helper.getLevel().getBlockState(plot.above());
+                if (crop.is(Blocks.WHEAT)) {
+                    planted[0]++;
+                }
+            }
+            if (planted[0] < plots.size()) {
+                return;
+            }
+            FarmerWorkGoal goal = farmer.getWorkGoal();
+            if (goal == null) {
+                helper.fail("FarmerWorkGoal не зарегистрирован у фермера");
+            }
+            if (goal.getSessionStarts() != 1) {
+                helper.fail("Обе грядки засажены за " + goal.getSessionStarts()
+                        + " серии(й): FarmerWorkGoal останавливался между задачами");
+            }
+            helper.succeed();
+        });
+
+        helper.runAfterDelay(700, () ->
+                helper.fail("Фермер не засадил обе грядки: посажено " + planted[0]));
+    }
+
+    @GameTest(template = "empty3x3x3", timeoutTicks = 400)
+    public static void full_inventory_ends_session(GameTestHelper helper) {
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper);
+        List<BlockPos> plots = List.of(helper.absolutePos(new BlockPos(3, 1, 3)));
+        registerCamp(helper, farmer, plots, true);
+
+        // Вместить урожай некуда: ждать бессмысленно, сессию держать нельзя.
+        for (int slot = 0; slot < farmer.getInventory().getSlots(); slot++) {
+            farmer.getInventory().setStackInSlot(slot, new ItemStack(Items.STONE, 64));
+        }
+
+        BlockPos plot = plots.get(0);
+        helper.runAfterDelay(60, () -> helper.succeedWhen(() -> {
+            FarmerWorkGoal goal = farmer.getWorkGoal();
+            if (goal == null) {
+                helper.fail("FarmerWorkGoal не зарегистрирован у фермера");
+            }
+            if (goal.isSessionActive()) {
+                helper.fail("Фермер удерживает сессию сбора при полном инвентаре");
+            }
+            BlockState crop = helper.getLevel().getBlockState(plot.above());
+            if (!crop.is(Blocks.WHEAT) || crop.getValue(CropBlock.AGE) < 7) {
+                helper.fail("Сбор прошёл, хотя инвентарь полон");
+            }
+            helper.succeed();
+        }));
+    }
+
     // ==================== инфраструктура ====================
 
-    private static BaseSurvivorNpcEntity spawnFarmer(GameTestHelper helper) {        BlockPos spawnPos = helper.absolutePos(new BlockPos(1, 1, 1));
+    private static BaseSurvivorNpcEntity spawnFarmer(GameTestHelper helper) {
+        BlockPos spawnPos = helper.absolutePos(new BlockPos(1, 1, 1));
         BaseSurvivorNpcEntity farmer = EntityType.byString("survivalpoints:base_survivor")
                 .map(type -> (BaseSurvivorNpcEntity) type.create(helper.getLevel()))
                 .orElseThrow(() -> new IllegalStateException("base_survivor не зарегистрирован"));
@@ -144,11 +218,16 @@ public class FarmerSessionGameTests {
 
     private static UUID registerCamp(GameTestHelper helper, BaseSurvivorNpcEntity farmer) {
         return registerCamp(helper, farmer,
-                List.of(helper.absolutePos(new BlockPos(3, 1, 3))));
+                List.of(helper.absolutePos(new BlockPos(3, 1, 3))), true);
     }
 
     private static UUID registerCamp(GameTestHelper helper, BaseSurvivorNpcEntity farmer,
                                      List<BlockPos> plots) {
+        return registerCamp(helper, farmer, plots, true);
+    }
+
+    private static UUID registerCamp(GameTestHelper helper, BaseSurvivorNpcEntity farmer,
+                                     List<BlockPos> plots, boolean mature) {
         ServerLevel level = helper.getLevel();
         BlockPos center = plots.get(0);
         List<CampPoi> pois = new ArrayList<>();
@@ -156,7 +235,10 @@ public class FarmerSessionGameTests {
             BlockPos plot = plots.get(i);
             level.setBlock(plot, Blocks.FARMLAND.defaultBlockState(), 3);
             level.setBlock(plot.above(),
-                    Blocks.WHEAT.defaultBlockState().setValue(CropBlock.AGE, 7), 3);
+                    mature
+                            ? Blocks.WHEAT.defaultBlockState().setValue(CropBlock.AGE, 7)
+                            : Blocks.AIR.defaultBlockState(),
+                    3);
             pois.add(new CampPoi(PLOT_SLOT_PREFIX + i, CampStructurePlacer.FARM_PLOT_TYPE, plot));
         }
 
