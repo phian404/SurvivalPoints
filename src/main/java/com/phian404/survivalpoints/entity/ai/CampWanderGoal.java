@@ -126,7 +126,7 @@ public class CampWanderGoal extends Goal {
         boolean leavingFarm = CampWorkZoneAccess.isInsideFarmZone(this.npc, camp);
         if (leavingFarm) {
             CampFarmManager farmManager = CampManager.farmManager(camp);
-            if (farmManager.hasAvailableWork(level, camp, this.npc, level.getGameTime())) {
+            if (farmManager.hasPendingWork(level, camp, this.npc, level.getGameTime())) {
                 this.lastDecision = "WORK_AVAILABLE";
                 return false;
             }
@@ -182,7 +182,7 @@ public class CampWanderGoal extends Goal {
         // Работа появилась посреди выхода с фермы: не доводим прогулку до
         // края, чтобы фермер не ходил «наружу-обратно».
         if (this.exitInProgress
-                && CampManager.farmManager(camp).hasAvailableWork(level, camp, this.npc,
+                && CampManager.farmManager(camp).hasPendingWork(level, camp, this.npc,
                         level.getGameTime())) {
             this.npc.getNavigation().stop();
             this.lastDecision = "WORK_AVAILABLE";
