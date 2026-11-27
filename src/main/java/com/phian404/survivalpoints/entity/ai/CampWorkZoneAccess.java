@@ -44,23 +44,23 @@ public final class CampWorkZoneAccess {
     /** Проверяет путь свободной прогулки: ферма закрыта даже для фермера. */
     public static boolean isWanderPathAllowed(BaseSurvivorEntity npc, CampRecord camp, Path path) {
         CampModuleSlot farm = camp.getModuleSlot(CampGenerator.FARM_SLOT);
-        if (!pathAllowedForSlot(npc, farm, false, path)) {
+        if (!pathAllowedForSlot(npc, farm, false, path, true)) {
             return false;
         }
 
         CampModuleSlot tower = camp.getModuleSlot(CampGenerator.WATCHTOWER_SLOT);
-        return pathAllowedForSlot(npc, tower, hasTowerAccess(npc, camp, tower), path);
+        return pathAllowedForSlot(npc, tower, hasTowerAccess(npc, camp, tower), path, true);
     }
 
     /** Проверяет рабочий путь фермера: ферма разрешена, вышка остаётся закрытой. */
     public static boolean isWorkPathAllowed(BaseSurvivorEntity npc, CampRecord camp, Path path) {
         CampModuleSlot farm = camp.getModuleSlot(CampGenerator.FARM_SLOT);
-        if (!pathAllowedForSlot(npc, farm, hasFarmAccess(npc, farm), path)) {
+        if (!pathAllowedForSlot(npc, farm, hasFarmAccess(npc, farm), path, false)) {
             return false;
         }
 
         CampModuleSlot tower = camp.getModuleSlot(CampGenerator.WATCHTOWER_SLOT);
-        return pathAllowedForSlot(npc, tower, hasTowerAccess(npc, camp, tower), path);
+        return pathAllowedForSlot(npc, tower, hasTowerAccess(npc, camp, tower), path, false);
     }
 
     private static boolean hasFarmAccess(BaseSurvivorEntity npc, @Nullable CampModuleSlot farm) {
@@ -89,7 +89,8 @@ public final class CampWorkZoneAccess {
     private static boolean pathAllowedForSlot(BaseSurvivorEntity npc,
                                               @Nullable CampModuleSlot slot,
                                               boolean authorized,
-                                              Path path) {
+                                              Path path,
+                                              boolean allowPartialExit) {
         if (slot == null || authorized) {
             return true;
         }
@@ -108,11 +109,10 @@ public final class CampWorkZoneAccess {
                 exited = true;
             }
         }
-        // Маршрут может быть разбит навигацией на короткие оставшиеся
-        // сегменты. Пока NPC ещё внутри зоны, такой сегмент закономерно может
-        // целиком состоять из внутренних узлов, хотя конечная цель лежит снаружи.
-        // Запрещаем только повторный вход после первого выхода; требовать, чтобы
-        // каждый текущий сегмент уже содержал узел снаружи, нельзя.
-        return true;
+        // Wander-маршрут проверяется по коротким оставшимся сегментам:
+        // текущий сегмент может ещё целиком проходить внутри зоны, хотя
+        // конечная цель уже находится снаружи. Для него достаточно запретить
+        // повторный вход после выхода. Рабочие маршруты сохраняют строгую проверку.
+        return allowPartialExit || !startedInside || exited;
     }
 }
