@@ -90,7 +90,7 @@ public class CampRadioBlock extends BaseEntityBlock {
                     }
                 }
                 if (record != null) {
-                    CampManager.data(server).removeCamp(record.getId());
+                    CampManager.removeCamp(server, record.getId());
                 }
             }
         }

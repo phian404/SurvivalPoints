@@ -14,6 +14,7 @@ import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
@@ -76,6 +77,31 @@ public class ModEntityEvents {
         if (event.getLevel() instanceof Level level) {
             GUARDIAN_CACHES.remove(level);
         }
+    }
+
+    /**
+     * Восстановить целостность привязки NPC при загрузке сущности.
+     *
+     * <p>Удалённый лагерь мог иметь жителей в выгруженных чанках. Их NBT ещё
+     * содержит старый campId, поэтому при следующем появлении в измерении
+     * удаляем только лагерные назначения, сохраняя личное состояние NPC.
+     */
+    @SubscribeEvent
+    public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel level)
+                || !(event.getEntity() instanceof BaseSurvivorEntity npc)) {
+            return;
+        }
+
+        UUID campId = npc.getCampId();
+        if (campId == null || CampManager.getCamp(level, campId) != null) {
+            return;
+        }
+
+        CampManager.removeTaskController(npc.getIdentityId());
+        npc.setCampId(null);
+        npc.setCampPostId(null);
+        npc.setWorkPoiPos(null);
     }
 
     @SubscribeEvent

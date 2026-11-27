@@ -1,7 +1,7 @@
 package com.phian404.survivalpoints.entity;
 
 import com.phian404.survivalpoints.entity.ai.CampWanderGoal;
-import com.phian404.survivalpoints.entity.ai.FarmerWorkGoal;
+import com.phian404.survivalpoints.entity.ai.FarmerStandWorkGoal;
 import com.phian404.survivalpoints.entity.role.RoleAssignmentService;
 import com.phian404.survivalpoints.entity.role.SurvivorRole;
 import net.minecraft.world.DifficultyInstance;
@@ -46,11 +46,22 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
         super.registerGoals();
         this.goalSelector.addGoal(0, new FloatGoal(this));
         // Работа фермера перебивает прогулку; для остальных Goal не активен.
-        this.goalSelector.addGoal(1, new FarmerWorkGoal(this));
+        FarmerStandWorkGoal workGoal = new FarmerStandWorkGoal(this);
+        this.workGoal = workGoal;
+        this.goalSelector.addGoal(1, workGoal);
         this.goalSelector.addGoal(2, new CampWanderGoal(this));
         this.goalSelector.addGoal(3, new RandomLookAroundGoal(this));
         this.goalSelector.addGoal(4, new LookAtPlayerGoal(this, Player.class, 8.0F));
     }
+
+    /** Ссылка на рабочую цель для отладки и тестов; {@code null} до registerGoals. */
+    @Nullable
+    public FarmerStandWorkGoal getWorkGoal() {
+        return this.workGoal;
+    }
+
+    @Nullable
+    private FarmerStandWorkGoal workGoal;
 
     /**
      * Назначение роли стража при клике арбалетом.
@@ -99,5 +110,13 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
         return PathfinderMob.createMobAttributes()
                 .add(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH, 20.0D)
                 .add(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED, 0.25D);
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        // Mob, в отличие от Monster и Player, сам не тикает замах:
+        // без этого swing() не проигрывает анимацию руки.
+        this.updateSwingTime();
     }
 }

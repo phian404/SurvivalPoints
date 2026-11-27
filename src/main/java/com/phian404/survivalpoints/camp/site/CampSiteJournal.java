@@ -20,22 +20,22 @@ import java.util.UUID;
  * ячейки содержит только обратимо упакованные координаты X/Z — измерение
  * задано самим файлом журнала.
  *
- * <p>Три состояния:
+ * <p>Журнал сохраняет только терминальные результаты:
  * <ul>
  *     <li>{@link SiteState#REJECTED} — окончательный отказ, ячейка больше не
  *     рассматривается;</li>
- *     <li>{@link SiteState#CREATED} — созданный лагерь (хранится его UUID);</li>
- *     <li>{@link SiteState#NOT_READY} — временная недоступность. После
- *     {@link CampTuning#SITE_NOT_READY_MAX_ATTEMPTS} неудач вводится пауза
- *     {@link CampTuning#SITE_NOT_READY_RETRY_DELAY}, затем проверка снова
- *     разрешена. Временная недоступность никогда не становится отказом.</li>
+ *     <li>{@link SiteState#CREATED} — созданный лагерь (хранится его UUID).</li>
  * </ul>
+ *
+ * <p>Временная недоступность не записывается в журнал: кандидат остаётся
+ * в очереди фронтира и может быть проверен на следующем проходе.
  */
 public final class CampSiteJournal extends SavedData {
 
     public enum SiteState {
         REJECTED,
         CREATED,
+        // Legacy value: retained so older journal entries remain readable.
         NOT_READY
     }
 
@@ -44,8 +44,6 @@ public final class CampSiteJournal extends SavedData {
     private static final String TAG_STATE = "State";
     private static final String TAG_REASON = "Reason";
     private static final String TAG_CAMP_ID = "CampId";
-    private static final String TAG_ATTEMPTS = "Attempts";
-    private static final String TAG_NEXT_ATTEMPT = "NextAttempt";
 
     private final Map<Long, Entry> cells = new HashMap<>();
 
@@ -75,8 +73,6 @@ public final class CampSiteJournal extends SavedData {
             if (entryTag.hasUUID(TAG_CAMP_ID)) {
                 entry.campId = entryTag.getUUID(TAG_CAMP_ID);
             }
-            entry.attempts = entryTag.getInt(TAG_ATTEMPTS);
-            entry.nextAttemptTick = entryTag.getLong(TAG_NEXT_ATTEMPT);
             journal.cells.put(key, entry);
         }
         return journal;
@@ -96,8 +92,6 @@ public final class CampSiteJournal extends SavedData {
             if (entry.campId != null) {
                 entryTag.putUUID(TAG_CAMP_ID, entry.campId);
             }
-            entryTag.putInt(TAG_ATTEMPTS, entry.attempts);
-            entryTag.putLong(TAG_NEXT_ATTEMPT, entry.nextAttemptTick);
             list.add(entryTag);
         }
         tag.put(TAG_CELLS, list);
@@ -118,8 +112,6 @@ public final class CampSiteJournal extends SavedData {
         entry.state = SiteState.REJECTED;
         entry.reason = reason;
         entry.campId = null;
-        entry.attempts = 0;
-        entry.nextAttemptTick = 0L;
         this.setDirty();
     }
 
@@ -134,58 +126,13 @@ public final class CampSiteJournal extends SavedData {
         entry.state = SiteState.CREATED;
         entry.reason = null;
         entry.campId = campId;
-        entry.attempts = 0;
-        entry.nextAttemptTick = 0L;
         this.setDirty();
-    }
-
-    /**
-     * Отметить временную недоступность.
-     *
-     * <p>Счётчик попыток растёт. При достижении
-     * {@link CampTuning#SITE_NOT_READY_MAX_ATTEMPTS} устанавливается пауза
-     * {@link CampTuning#SITE_NOT_READY_RETRY_DELAY} и счётчик сбрасывается —
-     * после паузы ячейка проверяется заново, а не отклоняется навсегда.
-     *
-     * @param cellKey    ключ ячейки
-     * @param currentTick текущий тик сервера
-     */
-    public void markNotReady(long cellKey, long currentTick) {
-        Entry entry = this.cells.computeIfAbsent(cellKey, key -> new Entry(SiteState.NOT_READY));
-        entry.state = SiteState.NOT_READY;
-        entry.reason = null;
-        entry.campId = null;
-        entry.attempts++;
-        if (entry.attempts >= CampTuning.SITE_NOT_READY_MAX_ATTEMPTS) {
-            entry.nextAttemptTick = currentTick + CampTuning.SITE_NOT_READY_RETRY_DELAY;
-            entry.attempts = 0;
-        } else {
-            entry.nextAttemptTick = currentTick;
-        }
-        this.setDirty();
-    }
-
-    /** Срок следующей разрешённой проверки ячейки. */
-    public long nextAttemptTick(long cellKey) {
-        Entry entry = this.cells.get(cellKey);
-        return entry != null ? entry.nextAttemptTick : Long.MIN_VALUE;
-    }
-
-    /** Можно ли проверять ячейку в данный тик. */
-    public boolean isDue(long cellKey, long currentTick) {
-        Entry entry = this.cells.get(cellKey);
-        if (entry == null || entry.state != SiteState.NOT_READY) {
-            return true;
-        }
-        return currentTick >= entry.nextAttemptTick;
     }
 
     private static final class Entry {
         private SiteState state;
         private String reason;
         private UUID campId;
-        private int attempts;
-        private long nextAttemptTick;
 
         private Entry(SiteState state) {
             this.state = state;

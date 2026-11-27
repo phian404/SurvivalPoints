@@ -40,6 +40,16 @@ public final class CampEvents {
     @SubscribeEvent
     public static void onBlockBreak(BlockEvent.BreakEvent event) {
         markSlotModified(event.getLevel(), event.getPos());
+        invalidateFarmPlot(event.getLevel(), event.getPos());
+    }
+
+    /** Рост культуры завершился: обновляем только соответствующую грядку. */
+    @SubscribeEvent
+    public static void onCropGrow(BlockEvent.CropGrowEvent.Post event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+        refreshFarmPlot(level, event.getPos().below());
     }
 
     /**
@@ -77,6 +87,37 @@ public final class CampEvents {
             return;
         }
         markSlotModified(accessor, event.getPos());
+        if (accessor instanceof ServerLevel level) {
+            refreshFarmPlot(level, event.getPos());
+            refreshFarmPlot(level, event.getPos().below());
+        }
+    }
+
+    /** Удалить устаревшую задачу до фактического разрушения блока. */
+    private static void invalidateFarmPlot(LevelAccessor accessor, BlockPos changedPos) {
+        if (!(accessor instanceof ServerLevel level)) {
+            return;
+        }
+        CampRecord record = CampManager.findCampAt(level, changedPos);
+        if (record == null) {
+            record = CampManager.findCampAt(level, changedPos.below());
+        }
+        if (record != null) {
+            CampManager.farmManager(record).invalidatePlotAt(changedPos);
+        }
+    }
+
+    /** Пересчитать POI грядки после изменения блока. */
+    private static void refreshFarmPlot(ServerLevel level, BlockPos plotOrCropPos) {
+        CampRecord record = CampManager.findCampAt(level, plotOrCropPos);
+        if (record == null) {
+            record = CampManager.findCampAt(level, plotOrCropPos.below());
+        }
+        if (record == null) {
+            return;
+        }
+        CampManager.farmManager(record).refreshPlot(
+                level, record, plotOrCropPos, level.getGameTime());
     }
 
     /**

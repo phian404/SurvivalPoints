@@ -23,13 +23,22 @@ public class CampRadioBlockEntity extends BlockEntity {
 
     public void tick(Level level, BlockPos pos, BlockState state) {
         if (level.isClientSide) return;
-        // Ленивая привязка к лагерю: не зависит от порядка onPlace/setBlockEntity.
-        // Ретранслятор рядом с чужим лагерем привязывается к ближайшему (как и задумано).
-        if (campId == null && level instanceof net.minecraft.server.level.ServerLevel server) {
-            CampRecord camp = com.phian404.survivalpoints.camp.CampManager.findCampAt(server, pos);
-            if (camp != null) {
-                campId = camp.getId();
+        // Удалённый лагерь мог оставить старый id в загруженном ретрансляторе.
+        // Сбрасываем такую привязку и разрешаем обычный поиск лагеря заново.
+        if (level instanceof net.minecraft.server.level.ServerLevel server) {
+            if (campId != null && level.getGameTime() % 20L == 0L
+                    && com.phian404.survivalpoints.camp.CampManager.getCamp(server, campId) == null) {
+                campId = null;
                 setChanged();
+            }
+            // Ленивая привязка не зависит от порядка onPlace/setBlockEntity.
+            // Ретранслятор рядом с чужим лагерем привязывается к ближайшему.
+            if (campId == null) {
+                CampRecord camp = com.phian404.survivalpoints.camp.CampManager.findCampAt(server, pos);
+                if (camp != null) {
+                    campId = camp.getId();
+                    setChanged();
+                }
             }
         }
         // Radio works during day, off at night

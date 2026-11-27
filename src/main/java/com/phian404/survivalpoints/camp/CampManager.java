@@ -1,16 +1,20 @@
 package com.phian404.survivalpoints.camp;
 
 import com.phian404.survivalpoints.camp.site.CampSiteRequest;
+import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.ai.task.NpcTaskController;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -240,6 +244,45 @@ public final class CampManager {
         return data(level).getCamp(id);
     }
 
+    /**
+     * Удалить лагерь вместе с его runtime-состоянием и отвязать выживших.
+     *
+     * <p>Загруженные NPC отвязываются сразу. NPC в выгруженных чанках будут
+     * очищены при следующем EntityJoinLevelEvent, когда их campId уже не найдётся
+     * в сохранённых данных измерения. Личные данные и профессия NPC сохраняются.
+     *
+     * @return удалённая запись лагеря или {@code null}, если лагерь не найден
+     */
+    @Nullable
+    public static CampRecord removeCamp(ServerLevel level, UUID campId) {
+        CampSavedData savedData = data(level);
+        CampRecord record = savedData.getCamp(campId);
+        if (record == null) {
+            return null;
+        }
+
+        // Сначала очищаем runtime-состояние всех известных жителей, включая
+        // тех, чьи сущности сейчас находятся в выгруженных чанках.
+        for (UUID identityId : new ArrayList<>(record.getResidents())) {
+            removeTaskController(identityId);
+        }
+        removeFarmManager(campId);
+
+        // Дополнительно обрабатываем загруженных NPC с этим campId, даже если
+        // их identityId по ошибке отсутствует в постоянном списке жителей.
+        for (Entity entity : level.getAllEntities()) {
+            if (entity instanceof BaseSurvivorEntity npc
+                    && campId.equals(npc.getCampId())) {
+                removeTaskController(npc.getIdentityId());
+                npc.setCampId(null);
+                npc.setCampPostId(null);
+                npc.setWorkPoiPos(null);
+            }
+        }
+
+        return savedData.removeCamp(campId);
+    }
+
     // ==================== Посты ====================
 
     /**
@@ -312,6 +355,12 @@ public final class CampManager {
 /** Диспетчер фермы лагеря (создаётся лениво, живёт только в runtime). */
 public static CampFarmManager farmManager(CampRecord record) {
     return FARM_MANAGERS.computeIfAbsent(record.getId(), id -> new CampFarmManager());
+}
+
+/** Диспетчер без создания нового runtime-состояния — только для диагностики. */
+@Nullable
+public static CampFarmManager peekFarmManager(CampRecord record) {
+    return FARM_MANAGERS.get(record.getId());
 }
 
 /** Убрать runtime-диспетчер удалённого лагеря. */
