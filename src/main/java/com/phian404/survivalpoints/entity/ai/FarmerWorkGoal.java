@@ -214,7 +214,14 @@ public class FarmerWorkGoal extends Goal {
         // Внутри сессии удерживаем MOVE/LOOK и между отдельными задачами.
         // Это не резервирует грядку: контроллер может быть пуст во время паузы.
         if (this.sessionActive) {
-            return true;
+            NpcTaskController sessionController = CampManager.taskController(this.npc.getIdentityId());
+            NpcTask activeTask = sessionController.current();
+            if (activeTask == null) {
+                return true;
+            }
+            Path activePath = this.npc.getNavigation().getPath();
+            return activeTask.getTarget() != null
+                    && (activePath == null || pathInside(camp(level), activePath));
         }
         if (this.pauseLookTarget != null) {
             return true;
@@ -253,7 +260,8 @@ public class FarmerWorkGoal extends Goal {
         if (this.sessionActive && controller.current() == null) {
             CampFarmManager sessionManager = CampManager.farmManager(camp);
             NpcTask next = sessionManager.takeForType(level, camp, this.npc,
-                    this.npc.getIdentityId(), level.getGameTime(), this.sessionType);
+                    this.npc.getIdentityId(), level.getGameTime(), this.sessionType,
+                    this.npc.blockPosition());
             if (next == null) {
                 endSession();
                 return;
