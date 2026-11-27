@@ -112,7 +112,7 @@ public final class CampFarmManager {
     @Nullable
     public NpcTask take(ServerLevel level, CampRecord record, @Nullable BaseSurvivorEntity npc,
                         UUID npcId, long gameTime) {
-        return takeForType(level, record, npc, npcId, gameTime, null);
+        return takeForType(level, record, npc, npcId, gameTime, null, null);
     }
 
     /**
@@ -121,7 +121,8 @@ public final class CampFarmManager {
      */
     @Nullable
     public NpcTask takeForType(ServerLevel level, CampRecord record, @Nullable BaseSurvivorEntity npc,
-                               UUID npcId, long gameTime, @Nullable String requiredType) {
+                               UUID npcId, long gameTime, @Nullable String requiredType,
+                               @Nullable BlockPos preferredApproach) {
         dropExpired(gameTime);
         this.lastTakeTick = gameTime;
         this.lastTakeResult = this.tasks.isEmpty() ? "POOL_EMPTY" : "NO_ELIGIBLE_TASK";
@@ -132,6 +133,9 @@ public final class CampFarmManager {
         candidates.sort(Comparator
                 .comparingInt((FarmTask task) ->
                         TYPE_HARVEST.equals(task.task.getType()) ? 0 : 1)
+                .thenComparingInt(task -> npc != null && preferredApproach != null
+                        && FarmApproach.validate(level, record, task.task.getTarget(), preferredApproach,
+                                npc.getBbWidth(), npc.getBbHeight()) == null ? 0 : 1)
                 .thenComparingDouble(task -> npc == null ? 0.0D
                         : npc.distanceToSqr(task.task.getTarget().getX() + 0.5D,
                                 task.task.getTarget().getY() + 0.5D,
