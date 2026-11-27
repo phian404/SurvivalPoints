@@ -126,8 +126,6 @@ public final class CampSiteJournal extends SavedData {
         entry.state = SiteState.CREATED;
         entry.reason = null;
         entry.campId = campId;
-        entry.attempts = 0;
-        entry.nextAttemptTick = 0L;
         this.setDirty();
     }
 
