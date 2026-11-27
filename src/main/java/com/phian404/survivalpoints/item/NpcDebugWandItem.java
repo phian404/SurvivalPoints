@@ -39,8 +39,8 @@ import java.util.UUID;
  *
  * <p>Информация разделена на три режима: идентификация (кто это и где
  * приписан), работа (занятость, задача, ферма, пути) и инвентарь
- * (экипировка и слоты). ПКМ в воздух переключает на следующий режим,
- * ПКМ по NPC показывает данные текущего режима. Выбранный режим хранится
+ * (экипировка и слоты). Shift+ПКМ в воздух переключает на следующий режим,
+ * обычный ПКМ по NPC показывает данные текущего режима. Выбранный режим хранится
  * в NBT самого предмета, поэтому держится до следующего переключения.
  */
 public class NpcDebugWandItem extends Item {
@@ -72,8 +72,13 @@ public class NpcDebugWandItem extends Item {
     @Override
     public InteractionResult interactLivingEntity(ItemStack stack, Player player,
                                                   LivingEntity target, InteractionHand hand) {
-        if (player.level().isClientSide || !(target instanceof BaseSurvivorEntity npc)) {
+        if (!(target instanceof BaseSurvivorEntity npc)) {
             return InteractionResult.PASS;
+        }
+        if (player.level().isClientSide) {
+            // Без этого клиент считал, что клик по NPC не обработан, откатывался
+            // к использованию предмета — и обычный ПКМ по NPC переключал режим.
+            return InteractionResult.SUCCESS;
         }
 
         Mode mode = modeOf(stack);
@@ -92,15 +97,18 @@ public class NpcDebugWandItem extends Item {
             case INVENTORY -> appendInventory(out, npc);
         }
 
-        out.append("\n §8ПКМ в воздух — следующий режим");
+        out.append("\n §8Shift+ПКМ в воздух — следующий режим");
         player.displayClientMessage(Component.literal(out.toString()), false);
         return InteractionResult.SUCCESS;
     }
 
-    /** ПКМ в воздух: переключить режим на следующий и показать какой включён. */
+    /** Shift+ПКМ в воздух: переключить режим на следующий и показать какой включён. */
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
+        if (!player.isShiftKeyDown()) {
+            return InteractionResultHolder.pass(stack);
+        }
         if (level.isClientSide) {
             return InteractionResultHolder.success(stack);
         }
@@ -109,7 +117,7 @@ public class NpcDebugWandItem extends Item {
         stack.getOrCreateTag().putInt(MODE_TAG, mode.ordinal());
         player.displayClientMessage(Component.literal("§e[NPC] §fрежим: ")
                 .append(Component.literal(mode.label))
-                .append(Component.literal("\n §8ПКМ в воздух — следующий режим")), false);
+                .append(Component.literal("\n §8Shift+ПКМ в воздух — следующий режим")), false);
         return InteractionResultHolder.success(stack);
     }
 
