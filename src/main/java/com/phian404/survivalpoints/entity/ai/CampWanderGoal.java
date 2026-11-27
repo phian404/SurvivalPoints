@@ -9,6 +9,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.pathfinder.Path;
 
 import javax.annotation.Nullable;
@@ -29,7 +30,7 @@ import java.util.UUID;
 public class CampWanderGoal extends Goal {
 
     /** Сколько попыток выбрать точку внутри круга. */
-    private static final int TARGET_ATTEMPTS = 10;
+    private static final int TARGET_ATTEMPTS = 16;
 
     /** Минимальная дистанция до цели, чтобы прогулка имела смысл. */
     private static final double MIN_TARGET_DISTANCE_SQR = 1.0D;
@@ -182,14 +183,19 @@ public class CampWanderGoal extends Goal {
     private BlockPos pickTarget(CampRecord camp) {
         BlockPos center = camp.getCenter();
         int radius = Math.max(1, camp.getRadius() - 2);
-        int floorY = this.npc.blockPosition().getY();
 
         for (int attempt = 0; attempt < TARGET_ATTEMPTS; attempt++) {
             float angle = this.npc.getRandom().nextFloat() * Mth.TWO_PI;
             float distance = Mth.sqrt(this.npc.getRandom().nextFloat()) * radius;
             int x = center.getX() + Mth.floor(Mth.cos(angle) * distance);
             int z = center.getZ() + Mth.floor(Mth.sin(angle) * distance);
-            BlockPos pos = new BlockPos(x, floorY, z);
+
+            // Высота определяется отдельно для каждой X/Z-точки.
+            // Это позволяет выбирать цели на склонах и ступенчатом рельефе,
+            // не привязывая прогулку к Y текущего положения NPC.
+            int surfaceY = this.npc.level().getHeight(
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            BlockPos pos = new BlockPos(x, surfaceY, z);
 
             if (!insideCircle(center, camp.getRadius(), pos)
                     || !CampWorkZoneAccess.isPositionAllowed(this.npc, camp, pos)) {
