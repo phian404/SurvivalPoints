@@ -59,9 +59,21 @@ public final class FarmApproach {
      */
     public static List<BlockPos> findApproaches(ServerLevel level, CampRecord camp, BlockPos plot,
                                                 double bodyWidth, double bodyHeight) {
+        // Основной вариант — стоять рядом с грядкой на её уровне. Если так
+        // нельзя (грядки вкопаны в землю, как в шаблоне farm_lvl1), годится
+        // клетка на уровень выше: это дорожка над соседней землёй.
+        List<BlockPos> sameLevel = approachesAt(level, camp, plot, 0, bodyWidth, bodyHeight);
+        if (!sameLevel.isEmpty()) {
+            return sameLevel;
+        }
+        return approachesAt(level, camp, plot, 1, bodyWidth, bodyHeight);
+    }
+
+    private static List<BlockPos> approachesAt(ServerLevel level, CampRecord camp, BlockPos plot,
+                                               int dy, double bodyWidth, double bodyHeight) {
         List<BlockPos> cells = new ArrayList<>(4);
         for (Direction dir : Direction.Plane.HORIZONTAL) {
-            BlockPos candidate = plot.relative(dir);
+            BlockPos candidate = plot.relative(dir).offset(0, dy, 0);
             if (validate(level, camp, plot, candidate, bodyWidth, bodyHeight) == null) {
                 cells.add(candidate);
             }

@@ -483,9 +483,30 @@ public final class CampFarmManager {
         this.lastScanTick = Long.MIN_VALUE;
     }
 
+    /**
+     * Есть ли в лагере зрелая культура, даже если задача сбора сейчас в cooldown
+     * после неудачи. Пока такая грядка есть, посадка начинаться не должна.
+     */
+    public boolean hasMaturePlot(ServerLevel level, CampRecord record) {
+        for (CampPoi poi : record.getPois()) {
+            if (!CampStructurePlacer.FARM_PLOT_TYPE.equals(poi.getType())) {
+                continue;
+            }
+            BlockPos plot = poi.getPos();
+            if (!level.isLoaded(plot) || !FarmApproach.insideBorder(record, plot)) {
+                continue;
+            }
+            BlockState cropState = level.getBlockState(plot.above());
+            CropAdapter adapter = CropAdapter.find(cropState);
+            if (adapter != null && adapter.isMature(cropState)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Сканирование POI лагеря без принудительной загрузки чанков. */
-    private void scan(ServerLevel level, CampRecord record, long gameTime) {
-        Map<BlockPos, FarmTask> fresh = new LinkedHashMap<>();
+    private void scan(ServerLevel level, CampRecord record, long gameTime) {        Map<BlockPos, FarmTask> fresh = new LinkedHashMap<>();
         for (CampPoi poi : record.getPois()) {
             if (!CampStructurePlacer.FARM_PLOT_TYPE.equals(poi.getType())) {
                 continue;

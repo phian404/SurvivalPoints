@@ -143,26 +143,47 @@ public final class FarmWorkStation {
     public static List<BlockPos> candidates(ServerLevel level, CampRecord camp,
                                             Collection<BlockPos> plots,
                                             double bodyWidth, double bodyHeight) {
-        Set<BlockPos> seen = new HashSet<>();
+        List<BlockPos> cells = stationsAt(level, camp, plots, 0, bodyWidth, bodyHeight);
+        if (cells.isEmpty()) {
+            // Грядки вкопаны в землю (шаблон farm_lvl1): рядом стоять негде,
+            // рабочая позиция — на дорожке уровнем выше.
+            cells = stationsAt(level, camp, plots, 1, bodyWidth, bodyHeight);
+        }
         List<BlockPos> dry = new ArrayList<>();
         List<BlockPos> wet = new ArrayList<>();
-        for (BlockPos plot : plots) {
-            for (Direction dir : Direction.Plane.HORIZONTAL) {
-                BlockPos cell = plot.relative(dir).immutable();
-                if (!seen.add(cell)) {
-                    continue;
-                }
-                if (FarmApproach.standCheck(level, camp, cell, bodyWidth, bodyHeight) != null) {
-                    continue;
-                }
-                if (level.getBlockState(cell).getFluidState().isSource()) {
-                    wet.add(cell);
-                } else {
-                    dry.add(cell);
-                }
+        for (BlockPos cell : cells) {
+            if (level.getBlockState(cell).getFluidState().isSource()) {
+                wet.add(cell);
+            } else {
+                dry.add(cell);
             }
         }
         return dry.isEmpty() ? wet : dry;
+    }
+
+    /** Кандидаты одного уровня: клетки до двух шагов от грядок. */
+    private static List<BlockPos> stationsAt(ServerLevel level, CampRecord camp,
+                                             Collection<BlockPos> plots, int dy,
+                                             double bodyWidth, double bodyHeight) {
+        Set<BlockPos> seen = new HashSet<>();
+        List<BlockPos> cells = new ArrayList<>();
+        for (BlockPos plot : plots) {
+            for (int dx = -2; dx <= 2; dx++) {
+                for (int dz = -2; dz <= 2; dz++) {
+                    if (dx == 0 && dz == 0) {
+                        continue;
+                    }
+                    BlockPos cell = plot.offset(dx, dy, dz).immutable();
+                    if (!seen.add(cell)) {
+                        continue;
+                    }
+                    if (FarmApproach.standCheck(level, camp, cell, bodyWidth, bodyHeight) == null) {
+                        cells.add(cell);
+                    }
+                }
+            }
+        }
+        return cells;
     }
 
     /** Центроид грядок по горизонтали: «центр фермы» для предпочтения. */

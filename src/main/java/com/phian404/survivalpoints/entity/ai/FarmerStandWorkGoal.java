@@ -17,6 +17,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import javax.annotation.Nullable;
@@ -51,6 +52,12 @@ public class FarmerStandWorkGoal extends Goal {
     private static final int SESSION_IDLE_TIMEOUT = 80;
     /** Сколько тиков идти к станции, прежде чем признать маршрут неудачным. */
     private static final int MOVE_TIMEOUT = 200;
+    /**
+     * Сколько тиков подряд разрешено не находить путь к станции. Отказ на один
+     * тик — обычное дело (NPC ещё падает на опору после установки), и рвать
+     * из-за него сессию значит открывать её заново каждые пару тиков.
+     */
+    private static final int PATH_FAILURES_MAX = 10;
     private static final int MAX_RELOCATIONS = 2;
     private static final int MAX_FACING_TICKS = 60;
     private static final int END_LOOK_TICKS = 10;
@@ -82,6 +89,7 @@ public class FarmerStandWorkGoal extends Goal {
     @Nullable
     private BlockPos currentPlot;
     private int moveTicks;
+    private int pathFailures;
     private int relocations;
     private int facingTicks;
 
@@ -140,7 +148,14 @@ public class FarmerStandWorkGoal extends Goal {
         }
         Plan plan = plan(level, camp, CampManager.farmManager(camp), null);
         if (plan == null) {
-            return false;
+            long now = level.getGameTime();
+            if (now % 40L == 0L) {
+                CampManager.farmManager(camp).refresh(level, camp, now);
+                plan = plan(level, camp, CampManager.farmManager(camp), null);
+            }
+            if (plan == null) {
+                return false;
+            }
         }
         begin(level, camp, plan);
         return true;
@@ -239,9 +254,13 @@ public class FarmerStandWorkGoal extends Goal {
             this.sessionIdleTicks = 0;
             return;
         }
-        if (this.npc.getNavigation().isDone() && !goTo(station)) {
-            endSession(true);
-            return;
+        if (this.npc.getNavigation().isDone()) {
+            if (goTo(station)) {
+                this.pathFailures = 0;
+            } else if (++this.pathFailures >= PATH_FAILURES_MAX) {
+                endSession(true);
+                return;
+            }
         }
         if (this.moveTicks > MOVE_TIMEOUT) {
             endSession(true);
@@ -302,7 +321,14 @@ public class FarmerStandWorkGoal extends Goal {
         }
         List<BlockPos> plant = manager.availableTargets(level, camp, this.npc, gameTime,
                 CampFarmManager.TYPE_PLANT);
-        return plant.isEmpty() ? null : planOf(level, camp, CampFarmManager.TYPE_PLANT, plant);
+        if (plant.isEmpty()) {
+            return null;
+        }
+        // Зрелая грядка ждёт cooldown после неудачи: сначала досбор, потом посадка.
+        if (manager.hasMaturePlot(level, camp)) {
+            return null;
+        }
+        return planOf(level, camp, CampFarmManager.TYPE_PLANT, plant);
     }
 
     @Nullable
@@ -312,7 +338,16 @@ public class FarmerStandWorkGoal extends Goal {
         if (station == null) {
             return null;
         }
-        return new Plan(type, targets, station);
+        List<BlockPos> workable = new java.util.ArrayList<>();
+        for (BlockPos plot : targets) {
+            if (FarmWorkStation.canWorkFrom(level, station, plot)) {
+                workable.add(plot);
+            }
+        }
+        if (workable.isEmpty()) {
+            return null;
+        }
+        return new Plan(type, List.copyOf(workable), station);
     }
 
     private void begin(ServerLevel level, CampRecord camp, Plan plan) {
@@ -323,6 +358,7 @@ public class FarmerStandWorkGoal extends Goal {
         this.sessionIdleTicks = 0;
         this.relocations = 0;
         this.moveTicks = 0;
+        this.pathFailures = 0;
         this.facingTicks = 0;
         this.currentTask = null;
         this.currentPlot = null;
@@ -389,6 +425,11 @@ public class FarmerStandWorkGoal extends Goal {
         }
         // Сбор закончен — сразу начинаем отдельную сессию посадки.
         if (CampFarmManager.TYPE_HARVEST.equals(this.sessionType)) {
+            // Пока в плане есть зрелая культура (например, ждёт cooldown после
+            // неудачи), сбор не закончен: посадка поверх неё начинаться не должна.
+            if (hasMaturePlanned(level)) {
+                return this.sessionIdleTicks < SESSION_IDLE_TIMEOUT;
+            }
             Plan nextPlan = plan(level, camp, manager, CampFarmManager.TYPE_PLANT);
             if (nextPlan != null) {
                 begin(level, camp, nextPlan);
@@ -398,9 +439,19 @@ public class FarmerStandWorkGoal extends Goal {
         return false;
     }
 
+    /** В плане осталась зрелая культура, снять которую пока нельзя (cooldown, резерв). */
+    private boolean hasMaturePlanned(ServerLevel level) {
+        for (BlockPos plot : this.planned) {
+            BlockState crop = level.getBlockState(plot.above());
+            if (crop.getBlock() instanceof CropBlock cropBlock && cropBlock.isMaxAge(crop)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Nullable
-    private BlockPos nearestPlannedInReach() {
-        ServerLevel level = serverLevel();
+    private BlockPos nearestPlannedInReach() {        ServerLevel level = serverLevel();
         BlockPos station = this.stand;
         if (level == null || station == null) {
             return null;

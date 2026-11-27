@@ -34,9 +34,10 @@ import java.util.UUID;
 /**
  * GameTest-сценарии фермера, работающего со станции.
  *
- * <p>Каждый тест строит мир программно: каменный пол, грядки, фермер, лагерь с
- * POI в {@link CampSavedData}. Никаких .snbt-структур — только код, чтобы
- * сценарии не расходились с изменениями генератора лагеря.
+ * <p>Сцены кольца, сбора и посадки строятся программно: каменный пол, грядки,
+ * фермер, лагерь с POI в {@link CampSavedData}. Тест реальной фермы берёт
+ * грядки и вход из шаблона {@code farm_lvl1}, чтобы проверять ту же геометрию,
+ * что игрок строит в мире.
  */
 @GameTestHolder("survivalpoints")
 @PrefixGameTestTemplate(false)
@@ -55,38 +56,41 @@ public class FarmerSessionGameTests {
     public static void ring_harvested_from_one_station(GameTestHelper helper) {
         platform(helper);
         BaseSurvivorNpcEntity farmer = spawnFarmer(helper, 0, 1, 0);
-        BlockPos center = helper.absolutePos(new BlockPos(2, 1, 2));
+        BlockPos center = helper.absolutePos(new BlockPos(1, 1, 1));
         List<BlockPos> plots = ring(helper, center);
         CampRecord camp = buildCamp(helper, center, plots, new HashSet<>(plots), true);
         linkFarmer(farmer, camp);
 
         BlockPos[] stand = new BlockPos[1];
-        helper.succeedWhen(() -> {
+        // Проверка каждый тик: пустое кольцо существует только в паузу после
+        // последнего сбора (3–6 тиков), опрос раз в десять тиков её проскакивает.
+        pollEveryTick(helper, 650, "сбор кольца с одной станции", helper::succeed, () -> {
             FarmerStandWorkGoal goal = farmer.getWorkGoal();
             if (goal == null) {
-                helper.fail("FarmerStandWorkGoal не зарегистрирован у фермера");
+                throw new IllegalStateException("FarmerStandWorkGoal не зарегистрирован у фермера");
             }
             if (goal.getState() == FarmerStandWorkGoal.State.WORKING) {
                 if (stand[0] == null) {
                     stand[0] = goal.getStand();
                 }
                 if (stand[0] != null && horizontalSqr(farmer.blockPosition(), stand[0]) > 4.0D) {
-                    helper.fail("Фермер ушёл со станции между грядками: "
+                    throw new IllegalStateException("фермер ушёл со станции между грядками: "
                             + farmer.blockPosition() + " вместо " + stand[0]);
                 }
             }
             for (BlockPos plot : plots) {
-                if (helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT)) {
-                    return;
+                BlockState crop = helper.getLevel().getBlockState(plot.above());
+                if (crop.is(Blocks.WHEAT)) {
+                    throw new IllegalStateException("ждём сбора " + plot + " crop=" + crop
+                            + " " + describe(goal, farmer));
                 }
             }
             if (goal.getSessionStarts() != 1) {
-                helper.fail("Сбор кольца занял " + goal.getSessionStarts() + " сессий");
+                throw new IllegalStateException("сбор кольца занял " + goal.getSessionStarts() + " сессий");
             }
             if (stand[0] == null) {
-                helper.fail("Фермер ни разу не встал на рабочую станцию");
+                throw new IllegalStateException("фермер ни разу не встал на рабочую станцию");
             }
-            helper.succeed();
         });
     }
 
@@ -95,28 +99,28 @@ public class FarmerSessionGameTests {
     public static void two_plants_in_one_session(GameTestHelper helper) {
         platform(helper);
         BaseSurvivorNpcEntity farmer = spawnFarmer(helper, 0, 1, 0);
-        BlockPos center = helper.absolutePos(new BlockPos(2, 1, 2));
+        BlockPos center = helper.absolutePos(new BlockPos(1, 1, 1));
         List<BlockPos> plots = List.of(
                 helper.absolutePos(new BlockPos(1, 1, 2)),
                 helper.absolutePos(new BlockPos(3, 1, 2)));
         CampRecord camp = buildCamp(helper, center, plots, Set.of(), false);
         linkFarmer(farmer, camp);
 
-        helper.succeedWhen(() -> {
+        pollUntil(helper, 650, "посадка двух грядок одной сессией", helper::succeed, () -> {
             for (BlockPos plot : plots) {
                 BlockState crop = helper.getLevel().getBlockState(plot.above());
                 if (!crop.is(Blocks.WHEAT)) {
-                    return;
+                    throw new IllegalStateException("ждём посадки " + plot);
                 }
             }
             FarmerStandWorkGoal goal = farmer.getWorkGoal();
             if (goal == null) {
-                helper.fail("FarmerStandWorkGoal не зарегистрирован у фермера");
+                throw new IllegalStateException("FarmerStandWorkGoal не зарегистрирован у фермера");
             }
             if (goal.getSessionStarts() != 1) {
-                helper.fail("Посадка двух грядок заняла " + goal.getSessionStarts() + " сессий");
+                throw new IllegalStateException("посадка двух грядок заняла "
+                        + goal.getSessionStarts() + " сессий");
             }
-            helper.succeed();
         });
     }
 
@@ -128,41 +132,57 @@ public class FarmerSessionGameTests {
     public static void harvest_then_plant_in_two_sessions(GameTestHelper helper) {
         platform(helper);
         BaseSurvivorNpcEntity farmer = spawnFarmer(helper, 0, 1, 0);
-        BlockPos center = helper.absolutePos(new BlockPos(2, 1, 2));
+        BlockPos center = helper.absolutePos(new BlockPos(1, 1, 1));
         List<BlockPos> all = ring(helper, center);
         List<BlockPos> mature = all.subList(0, 4);
-        List<BlockPos> empty = all.subList(4, 8);
         CampRecord camp = buildCamp(helper, center, all, new HashSet<>(mature), true);
         linkFarmer(farmer, camp);
 
         boolean[] plantSessionSeen = new boolean[1];
-        helper.succeedWhen(() -> {
+        boolean[] harvestStarted = new boolean[1];
+        boolean[] cleared = new boolean[mature.size()];
+        pollEveryTick(helper, 1100, "сбор и посадка двумя сессиями", helper::succeed, () -> {
             FarmerStandWorkGoal goal = farmer.getWorkGoal();
             if (goal == null) {
-                helper.fail("FarmerStandWorkGoal не зарегистрирован у фермера");
+                throw new IllegalStateException("FarmerStandWorkGoal не зарегистрирован у фермера");
             }
-            if (goal.isSessionActive()
-                    && CampFarmManager.TYPE_PLANT.equals(goal.getSessionType())) {
+            String type = goal.isSessionActive() ? goal.getSessionType() : null;
+            if (CampFarmManager.TYPE_HARVEST.equals(type)) {
+                harvestStarted[0] = true;
+            }
+            // Сбор доказывается по пустой грядке хотя бы на один тик: сразу
+            // после сбора на ней начинается посадка, и по конечному состоянию
+            // убранное поле не отличить от только что посаженного ростка.
+            for (int i = 0; i < mature.size(); i++) {
+                if (!helper.getLevel().getBlockState(mature.get(i).above()).is(Blocks.WHEAT)) {
+                    cleared[i] = true;
+                }
+            }
+            if (CampFarmManager.TYPE_PLANT.equals(type)) {
+                if (!harvestStarted[0]) {
+                    throw new IllegalStateException("посадка началась без сессии сбора");
+                }
+                for (int i = 0; i < cleared.length; i++) {
+                    if (!cleared[i]) {
+                        throw new IllegalStateException("посадка началась до сбора " + mature.get(i)
+                                + " " + describe(goal, farmer));
+                    }
+                }
                 plantSessionSeen[0] = true;
             }
-            for (BlockPos plot : mature) {
-                if (helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT)) {
-                    return;
-                }
-            }
-            for (BlockPos plot : empty) {
-                if (!helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT)) {
-                    return;
-                }
-            }
             if (!plantSessionSeen[0]) {
-                helper.fail("Посадка шла без отдельной сессии посадки");
+                throw new IllegalStateException("посадка шла без отдельной сессии посадки");
             }
-            if (goal.getSessionStarts() < 2) {
-                helper.fail("Сбор и посадка прошли в одной сессии: starts="
+            // Итог: заняты все восемь грядок — освободившиеся тоже засеяны.
+            for (BlockPos plot : all) {
+                if (!helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT)) {
+                    throw new IllegalStateException("ждём посадки " + plot + " " + describe(goal, farmer));
+                }
+            }
+            if (!goal.isSessionActive() && goal.getSessionStarts() != 2) {
+                throw new IllegalStateException("сбор и посадка заняли не две сессии: starts="
                         + goal.getSessionStarts());
             }
-            helper.succeed();
         });
     }
 
@@ -176,7 +196,7 @@ public class FarmerSessionGameTests {
     public static void full_inventory_ends_session(GameTestHelper helper) {
         platform(helper);
         BaseSurvivorNpcEntity farmer = spawnFarmer(helper, 0, 1, 0);
-        BlockPos center = helper.absolutePos(new BlockPos(2, 1, 2));
+        BlockPos center = helper.absolutePos(new BlockPos(1, 1, 1));
         List<BlockPos> plots = List.of(helper.absolutePos(new BlockPos(2, 1, 1)));
         CampRecord camp = buildCamp(helper, center, plots, new HashSet<>(plots), false);
         linkFarmer(farmer, camp);
@@ -197,7 +217,147 @@ public class FarmerSessionGameTests {
         });
     }
 
+    // ==================== реальная ферма ====================
+
+    /**
+     * Ферма из шаблона {@code farm_lvl1}: восемь грядок вокруг люка, забор с
+     * трёх сторон и вход с четвёртой. Грядки и вход берутся из блоков
+     * структуры, а не из координат, поэтому тот же сценарий годится для
+     * {@code farm_lvl2}. Проверяется главное: весь урожай снимается с одной
+     * рабочей позиции, без перебежек между грядками.
+     */
+    @GameTest(template = "farm_lvl1", timeoutTicks = 900)
+    public static void real_farm_harvested_from_one_station(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        List<BlockPos> plots = farmland(helper);
+        if (plots.size() != 8) {
+            throw new IllegalStateException("в шаблоне ожидали 8 грядок, нашли " + plots.size()
+                    + ": " + plots);
+        }
+        BlockPos center = plotsCenter(plots);
+        for (BlockPos plot : plots) {
+            level.setBlock(plot.above(2), Blocks.LIGHT.defaultBlockState(), 3);
+            BlockPos crop = plot.above();
+            level.getChunkAt(crop).setBlockState(crop,
+                    Blocks.WHEAT.defaultBlockState().setValue(CropBlock.AGE, 7), false);
+        }
+        List<CampPoi> pois = new ArrayList<>();
+        for (int i = 0; i < plots.size(); i++) {
+            pois.add(new CampPoi(PLOT_SLOT_PREFIX + i, CampStructurePlacer.FARM_PLOT_TYPE, plots.get(i)));
+        }
+        CampRecord camp = new CampRecord("gametest_farm_lvl1", center, 5, null);
+        camp.replacePois(PLOT_SLOT_PREFIX, pois);
+        CampSavedData.get(level).addCamp(camp);
+
+        // Вход — проём в заборе: дорожка снаружи ведёт к нему с севера шаблона.
+        // Грядки вкопаны в землю, поэтому дорожка и рабочая позиция — на
+        // уровень выше самой грядки.
+        BlockPos entrance = center.offset(0, 1, -4);
+        BaseSurvivorNpcEntity farmer = spawnFarmerAt(helper, entrance);
+        linkFarmer(farmer, camp);
+
+        BlockPos[] stand = new BlockPos[1];
+        int[] harvestStarts = {-1};
+        pollEveryTick(helper, 800, "сбор фермы из шаблона с одной станции", helper::succeed, () -> {
+            FarmerStandWorkGoal goal = farmer.getWorkGoal();
+            if (goal == null) {
+                throw new IllegalStateException("FarmerStandWorkGoal не зарегистрирован у фермера");
+            }
+            if (goal.getState() == FarmerStandWorkGoal.State.WORKING) {
+                if (stand[0] == null) {
+                    stand[0] = goal.getStand();
+                }
+                if (stand[0] != null && horizontalSqr(farmer.blockPosition(), stand[0]) > 4.0D) {
+                    throw new IllegalStateException("фермер ушёл со станции между грядками: "
+                            + farmer.blockPosition() + " вместо " + stand[0]);
+                }
+            }
+            String type = goal.isSessionActive() ? goal.getSessionType() : null;
+            if (CampFarmManager.TYPE_HARVEST.equals(type)) {
+                if (harvestStarts[0] < 0) {
+                    harvestStarts[0] = goal.getSessionStarts();
+                } else if (harvestStarts[0] != goal.getSessionStarts()) {
+                    throw new IllegalStateException("сбор фермы растянулся на несколько сессий: "
+                            + harvestStarts[0] + " и " + goal.getSessionStarts());
+                }
+            }
+            for (BlockPos plot : plots) {
+                if (helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT)) {
+                    throw new IllegalStateException("ждём сбора " + plot + " " + describe(goal, farmer));
+                }
+            }
+            if (stand[0] == null) {
+                throw new IllegalStateException("фермер ни разу не встал на рабочую станцию");
+            }
+            if (harvestStarts[0] != 1) {
+                throw new IllegalStateException("сбор фермы начался не первой сессией: "
+                        + harvestStarts[0] + " вход=" + entrance);
+            }
+        });
+    }
+
     // ==================== инфраструктура ====================
+
+    /** Шаг между проверками условия, тиков. */
+    private static final int POLL_TICKS = 10;
+
+    /**
+     * Опрашивает условие раз в {@link #POLL_TICKS} тиков, пока оно не выполнится,
+     * и падает с последней причиной, если бюджет тиков исчерпан. Опора на
+     * собственную проверку, а не на {@code succeedWhen}: состояние теста видно
+     * в сообщении об ошибке, и повтор не зависит от внутренней семантики
+     * retry в GameTest-фреймворке.
+     */
+    private static void pollUntil(GameTestHelper helper, int budgetTicks, String what,
+                                  Runnable onSuccess, Runnable assertion) {
+        pollOnce(helper, budgetTicks, budgetTicks, POLL_TICKS, what, onSuccess, assertion);
+    }
+
+    /**
+     * То же, но с проверкой каждый тик: короткое состояние (грядка пуста между
+     * сбором и посадкой) опросом раз в десять тиков можно проскочить.
+     */
+    private static void pollEveryTick(GameTestHelper helper, int budgetTicks, String what,
+                                      Runnable onSuccess, Runnable assertion) {
+        pollOnce(helper, budgetTicks, budgetTicks, 1, what, onSuccess, assertion);
+    }
+
+    private static void pollOnce(GameTestHelper helper, int totalTicks, int leftTicks, int step,
+                                 String what, Runnable onSuccess, Runnable assertion) {
+        String problem;
+        try {
+            assertion.run();
+            problem = null;
+        } catch (RuntimeException e) {
+            problem = String.valueOf(e.getMessage());
+        }
+        if (problem == null) {
+            onSuccess.run();
+            return;
+        }
+        if (leftTicks <= 0) {
+            helper.fail(what + ": не выполнено за " + totalTicks + " тиков, последнее: " + problem);
+            return;
+        }
+        int left = leftTicks - step;
+        helper.runAfterDelay(step,
+                () -> pollOnce(helper, totalTicks, left, step, what, onSuccess, assertion));
+    }
+
+    /** Состояние цели в сообщении об ошибке: без него таймаут ничего не объясняет. */
+    private static String describe(FarmerStandWorkGoal goal, BaseSurvivorNpcEntity farmer) {
+        if (goal == null) {
+            return "[goal=null]";
+        }
+        return "[state=" + goal.getState()
+                + " session=" + goal.isSessionActive()
+                + " type=" + goal.getSessionType()
+                + " starts=" + goal.getSessionStarts()
+                + " planned=" + goal.getPlannedCount()
+                + " stand=" + goal.getStand()
+                + " npc=" + farmer.blockPosition() + "]";
+    }
+
 
     /** Каменный пол тестовой площадки: станции нужна опора под ногами. */
     private static void platform(GameTestHelper helper) {
@@ -223,8 +383,44 @@ public class FarmerSessionGameTests {
         return plots;
     }
 
+    /** Все грядки (farmland) из поставленного шаблона — сценарий не знает координат. */
+    private static List<BlockPos> farmland(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos origin = helper.absolutePos(BlockPos.ZERO);
+        List<BlockPos> plots = new ArrayList<>();
+        for (int y = -1; y <= 3; y++) {
+            for (int x = -1; x <= 11; x++) {
+                for (int z = -1; z <= 11; z++) {
+                    BlockPos pos = origin.offset(x, y, z);
+                    if (level.getBlockState(pos).is(Blocks.FARMLAND)) {
+                        plots.add(pos);
+                    }
+                }
+            }
+        }
+        return plots;
+    }
+
+    /** Центр кольца грядок: у симметричной фермы совпадает с люком. */
+    private static BlockPos plotsCenter(List<BlockPos> plots) {
+        int x = 0;
+        int y = 0;
+        int z = 0;
+        for (BlockPos plot : plots) {
+            x += plot.getX();
+            y += plot.getY();
+            z += plot.getZ();
+        }
+        int n = plots.size();
+        return new BlockPos(Math.round(x / (float) n), Math.round(y / (float) n),
+                Math.round(z / (float) n));
+    }
+
     private static BaseSurvivorNpcEntity spawnFarmer(GameTestHelper helper, int x, int y, int z) {
-        BlockPos spawnPos = helper.absolutePos(new BlockPos(x, y, z));
+        return spawnFarmerAt(helper, helper.absolutePos(new BlockPos(x, y, z)));
+    }
+
+    private static BaseSurvivorNpcEntity spawnFarmerAt(GameTestHelper helper, BlockPos spawnPos) {
         BaseSurvivorNpcEntity farmer = EntityType.byString("survivalpoints:base_survivor")
                 .map(type -> (BaseSurvivorNpcEntity) type.create(helper.getLevel()))
                 .orElseThrow(() -> new IllegalStateException("base_survivor не зарегистрирован"));
@@ -237,7 +433,27 @@ public class FarmerSessionGameTests {
                                         List<BlockPos> plots, Set<BlockPos> maturePlots,
                                         boolean waterCenter) {
         ServerLevel level = helper.getLevel();
+        fillScene(level, plots, maturePlots, center, waterCenter);
+        // Арена применяет отложенные обновления структуры уже после setup и
+        // иногда убирает только что поставленные ростки. На первом тике сцену
+        // возвращаем и проверяем ещё раз — тогда тест не зависит от порядка.
+        helper.runAfterDelay(1, () -> {
+            fillScene(level, plots, maturePlots, center, waterCenter);
+            requireScene("после первого тика", level, plots, maturePlots);
+        });
+
         List<CampPoi> pois = new ArrayList<>();
+        for (int i = 0; i < plots.size(); i++) {
+            pois.add(new CampPoi(PLOT_SLOT_PREFIX + i, CampStructurePlacer.FARM_PLOT_TYPE, plots.get(i)));
+        }
+        CampRecord record = new CampRecord("gametest", center, 4, null);
+        record.replacePois(PLOT_SLOT_PREFIX, pois);
+        CampSavedData.get(level).addCamp(record);
+        return record;
+    }
+
+    private static void fillScene(ServerLevel level, List<BlockPos> plots, Set<BlockPos> maturePlots,
+                                  BlockPos center, boolean waterCenter) {
         for (BlockPos plot : plots) {
             // Тестовая арена не освещена (sky=0): без источника света пшеница
             // не переживает установку. Блок света прозрачен для лучей и коллизий.
@@ -246,8 +462,7 @@ public class FarmerSessionGameTests {
         if (waterCenter) {
             level.setBlock(center, Blocks.WATER.defaultBlockState(), 3);
         }
-        for (int i = 0; i < plots.size(); i++) {
-            BlockPos plot = plots.get(i);
+        for (BlockPos plot : plots) {
             // Флаг 2 (только клиенты) без соседних обновлений: свет успевает
             // разойтись до первой проверки роста, и сцена не зависит от порядка.
             level.setBlock(plot, Blocks.FARMLAND.defaultBlockState(), 2);
@@ -255,22 +470,10 @@ public class FarmerSessionGameTests {
             BlockState cropState = maturePlots.contains(plot)
                     ? Blocks.WHEAT.defaultBlockState().setValue(CropBlock.AGE, 7)
                     : Blocks.AIR.defaultBlockState();
-            // Прямая запись в чанк: на первом тике теста обычный setBlock иногда
-            // откатывается отложенными обновлениями поставленной структуры.
+            // Прямая запись в чанк: обычный setBlock иногда откатывается
+            // отложенными обновлениями поставленной структуры.
             level.getChunkAt(cropPos).setBlockState(cropPos, cropState, false);
-            if (maturePlots.contains(plot) && !level.getBlockState(cropPos).is(Blocks.WHEAT)) {
-                throw new IllegalStateException("кроп исчез сразу после установки #" + i
-                        + " " + plot + " level=" + level.getBlockState(cropPos)
-                        + " chunk=" + level.getChunkAt(cropPos).getBlockState(cropPos));
-            }
         }
-        requireScene("после установки", level, plots, maturePlots);
-
-        CampRecord record = new CampRecord("gametest", center, 4, null);
-        record.replacePois(PLOT_SLOT_PREFIX, pois);
-        CampSavedData.get(level).addCamp(record);
-        requireScene("после addCamp", level, plots, maturePlots);
-        return record;
     }
 
     /** Страховка от пустых тестов: сцена обязана действительно содержать то, что проверяем. */
