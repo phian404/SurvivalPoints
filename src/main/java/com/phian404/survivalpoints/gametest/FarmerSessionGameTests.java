@@ -6,6 +6,7 @@ import com.phian404.survivalpoints.camp.CampPoi;
 import com.phian404.survivalpoints.camp.CampRecord;
 import com.phian404.survivalpoints.camp.CampSavedData;
 import com.phian404.survivalpoints.camp.CampStructurePlacer;
+import com.phian404.survivalpoints.camp.FarmWorkStation;
 import com.phian404.survivalpoints.entity.BaseSurvivorNpcEntity;
 import com.phian404.survivalpoints.entity.ai.FarmerStandWorkGoal;
 import com.phian404.survivalpoints.entity.ai.task.NpcTask;
@@ -91,6 +92,42 @@ public class FarmerSessionGameTests {
             }
             if (stand[0] == null) {
                 throw new IllegalStateException("фермер ни разу не встал на рабочую станцию");
+            }
+        });
+    }
+
+    /**
+     * Сбор идёт только из клетки, с которой грядка проходит
+     * {@link FarmWorkStation#canWorkFrom}: иначе проверка покрытия ничего не
+     * значит — фермер может «достать» грядку из соседней или нижней клетки.
+     */
+    @GameTest(template = "empty3x3x3", timeoutTicks = 700)
+    public static void harvest_only_from_workable_position(GameTestHelper helper) {
+        platform(helper);
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper, 0, 1, 0);
+        BlockPos center = helper.absolutePos(new BlockPos(1, 1, 1));
+        List<BlockPos> plots = ring(helper, center);
+        CampRecord camp = buildCamp(helper, center, plots, new HashSet<>(plots), true);
+        linkFarmer(farmer, camp);
+
+        boolean[] seen = new boolean[plots.size()];
+        boolean[] workable = new boolean[plots.size()];
+        pollEveryTick(helper, 650, "сбор только с рабочей клетки", helper::succeed, () -> {
+            for (int i = 0; i < plots.size(); i++) {
+                BlockPos plot = plots.get(i);
+                boolean present = helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT);
+                // workable[i] — значение с прошлого тика, до того как культура исчезла.
+                if (seen[i] && !present && !workable[i]) {
+                    throw new IllegalStateException("культура " + plot + " убрана из клетки "
+                            + farmer.blockPosition() + ", с которой canWorkFrom = false");
+                }
+                seen[i] = present;
+                workable[i] = FarmWorkStation.canWorkFrom(
+                        helper.getLevel(), farmer.blockPosition(), plot);
+                if (present) {
+                    throw new IllegalStateException("ждём сбора " + plot
+                            + " " + describe(farmer.getWorkGoal(), farmer));
+                }
             }
         });
     }

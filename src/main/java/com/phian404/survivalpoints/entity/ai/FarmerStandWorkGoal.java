@@ -61,6 +61,8 @@ public class FarmerStandWorkGoal extends Goal {
      * из-за него сессию значит открывать её заново каждые пару тиков.
      */
     private static final int PATH_FAILURES_MAX = 10;
+    /** Сколько тиков NPC подруливает в клетку станции, прежде чем бросить грядку. */
+    private static final int POSITION_FIX_MAX = 60;
     private static final int MAX_RELOCATIONS = 2;
     private static final int MAX_FACING_TICKS = 60;
     private static final int END_LOOK_TICKS = 10;
@@ -95,6 +97,7 @@ public class FarmerStandWorkGoal extends Goal {
     private int pathFailures;
     private int relocations;
     private int facingTicks;
+    private int positionFixTicks;
 
     public FarmerStandWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
@@ -323,6 +326,24 @@ public class FarmerStandWorkGoal extends Goal {
             dropCurrent(level, camp);
             return;
         }
+        // Покрытие и видимость посчитаны из клетки станции. Если NPC стоит рядом,
+        // но не в ней, сначала пробуем встать в клетку: pathfinder доводит лишь
+        // до соседней, и работа из неё не прошла бы проверку.
+        if (!FarmWorkStation.canWorkFrom(level, this.npc.blockPosition(), plot)) {
+            if (++this.positionFixTicks > POSITION_FIX_MAX) {
+                this.positionFixTicks = 0;
+                dropCurrent(level, camp);
+                return;
+            }
+            BlockPos station = this.stand;
+            if (station != null) {
+                this.npc.getNavigation().stop();
+                this.npc.getMoveControl().setWantedPosition(
+                        station.getX() + 0.5D, station.getY(), station.getZ() + 0.5D, SPEED);
+            }
+            return;
+        }
+        this.positionFixTicks = 0;
         if (!isActionable(level, this.currentTask, plot)) {
             dropCurrent(level, camp);
             return;
@@ -732,6 +753,9 @@ public class FarmerStandWorkGoal extends Goal {
 
     private boolean arrived() {
         BlockPos station = this.stand;
+        // Допуск нужен pathfinder'у: в тесных сценах он останавливается на
+        // соседнюю клетку. Работу из такой позиции отсекает повторная проверка
+        // FarmWorkStation.canWorkFrom по фактической клетке NPC в tickWork.
         if (station == null) {
             return false;
         }
