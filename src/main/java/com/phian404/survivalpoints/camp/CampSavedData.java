@@ -86,12 +86,16 @@ public class CampSavedData extends SavedData {
         this.setDirty();
     }
 
-    /** Удалить лагерь из хранилища. */
+    /**
+     * Удалить только запись лагеря из хранилища.
+     *
+     * <p>Полный жизненный цикл удаления (NPC и runtime-состояние) координирует
+     * {@link CampManager#removeCamp(ServerLevel, UUID)}.
+     */
     @Nullable
-    public CampRecord removeCamp(UUID id) {
+    CampRecord removeCamp(UUID id) {
         CampRecord removed = this.camps.remove(id);
         if (removed != null) {
-            CampManager.removeFarmManager(id);
             this.setDirty();
         }
         return removed;
