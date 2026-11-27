@@ -141,10 +141,6 @@ public final class CampTuning {
     public static final int SITE_PLAYER_SCAN_RADIUS = 256;
     /** Минимальная дистанция от центра лагеря до игрока (в блоках). */
     public static final int SITE_MIN_DISTANCE_TO_PLAYER = 64;
-    /** Пауза перед повторной проверкой после трёх временных недоступностей (тиков). */
-    public static final int SITE_NOT_READY_RETRY_DELAY = 1200;
-    /** Сколько временных недоступностей допускается до паузы. */
-    public static final int SITE_NOT_READY_MAX_ATTEMPTS = 3;
     /** Имя файла журнала ячеек в мире. */
     public static final String SITE_JOURNAL_DATA_ID = "survivalpoints_camp_sites";
     /** Тег разрешённых биомов для автоматических лагерей. */
