@@ -253,6 +253,10 @@ public class FarmerWorkGoal extends Goal {
                 // Повтор — только после того, как новый путь начался и снова
                 // завершился. STUCK остаётся финальной страховкой.
                 if (!this.correctiveStep) {
+                    // Допускаем только один корректирующий маршрут на задачу.
+                    // Не сбрасываем флаг, пока он движется: иначе каждый
+                    // завершившийся раньше цели путь запускал бы новый цикл
+                    // разворотов и повторных подходов.
                     this.correctiveStep = true;
                     Path correctivePath = this.approachPath(level, camp, task);
                     boolean started = correctivePath != null
@@ -260,16 +264,18 @@ public class FarmerWorkGoal extends Goal {
                             && pathInside(camp, correctivePath);
                     if (!started) {
                         this.npc.getNavigation().stop();
+                        abandon(level, camp, task, RETRY_PAUSE);
+                        return;
                     }
-                    if (started && this.pathTarget != null) {
+                    if (this.pathTarget != null) {
                         this.approach = this.pathTarget;
                     }
-                    if (!started) {
-                        abandon(level, camp, task, RETRY_PAUSE);
-                    }
+                } else {
+                    // Навигация уже завершила и корректирующий путь, но NPC
+                    // всё ещё не прибыл. Не запускаем бесконечные перестроения.
+                    abandon(level, camp, task, RETRY_PAUSE);
+                    return;
                 }
-            } else {
-                this.correctiveStep = false;
             }
             this.state = State.MOVING;
             return;
@@ -549,6 +555,14 @@ public class FarmerWorkGoal extends Goal {
      */
     @Nullable
     private BlockPos approachPos(ServerLevel level, CampRecord camp, BlockPos plot) {
+        // Если NPC уже стоит в допустимой соседней клетке этой грядки,
+        // используем её повторно. Это позволяет обработать несколько соседних
+        // грядок с одной позиции без нового маршрута и лишнего разворота корпуса.
+        BlockPos current = this.npc.blockPosition();
+        if (FarmApproach.validate(level, camp, plot, current,
+                this.npc.getBbWidth(), this.npc.getBbHeight()) == null) {
+            return current;
+        }
         // Только четыре стороны: диагональная клетка имеет distSqr=2 до грядки
         // и отсекается порогом TARGET_REACH_SQR=1.0, поэтому её перебор
         // бесполезен. Порог взаимодействия не расширяем.
