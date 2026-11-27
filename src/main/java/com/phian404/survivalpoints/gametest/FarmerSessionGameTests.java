@@ -15,6 +15,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
@@ -90,6 +91,60 @@ public class FarmerSessionGameTests {
             }
             if (stand[0] == null) {
                 throw new IllegalStateException("фермер ни разу не встал на рабочую станцию");
+            }
+        });
+    }
+
+    /**
+     * Голова фермера не дёргается: наклон не меняется больше чем на 15° за тик,
+     * а на рабочей позиции — и азимут не прыгает. Ванильный LookControl
+     * обнуляет наклон за один тик, если цель взгляда перестаёт обновляться
+     * (ожидание cooldown, пауза после неудачи, конец сессии).
+     */
+    @GameTest(template = "empty3x3x3", timeoutTicks = 700)
+    public static void head_turns_are_smooth(GameTestHelper helper) {
+        platform(helper);
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper, 0, 1, 0);
+        BlockPos center = helper.absolutePos(new BlockPos(1, 1, 1));
+        List<BlockPos> plots = ring(helper, center);
+        CampRecord camp = buildCamp(helper, center, plots, new HashSet<>(plots), true);
+        linkFarmer(farmer, camp);
+
+        float[] prevPitch = {farmer.getXRot()};
+        float[] prevYaw = {farmer.getYHeadRot()};
+        String[] jump = new String[1];
+        int[] tick = {0};
+        helper.onEachTick(() -> {
+            tick[0]++;
+            float pitch = farmer.getXRot();
+            float yaw = farmer.getYHeadRot();
+            float dp = Math.abs(Mth.wrapDegrees(pitch - prevPitch[0]));
+            float dy = Math.abs(Mth.wrapDegrees(yaw - prevYaw[0]));
+            FarmerStandWorkGoal goal = farmer.getWorkGoal();
+            boolean working = goal != null && goal.getState() == FarmerStandWorkGoal.State.WORKING;
+            prevPitch[0] = pitch;
+            prevYaw[0] = yaw;
+            if (jump[0] != null) {
+                return;
+            }
+            if (dp > 15.0F) {
+                jump[0] = "рывок наклона на тике " + tick[0] + ": " + dp + "°";
+            } else if (working && dy > 12.0F) {
+                jump[0] = "рывок поворота на тике " + tick[0] + ": " + dy + "°";
+            }
+        });
+        pollEveryTick(helper, 650, "кольцо собрано без рывков головы", helper::succeed, () -> {
+            if (jump[0] != null) {
+                FarmerStandWorkGoal goal = farmer.getWorkGoal();
+                throw new IllegalStateException(jump[0] + " "
+                        + (goal == null ? "goal=null" : describe(goal, farmer)));
+            }
+            for (BlockPos plot : plots) {
+                if (helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT)) {
+                    FarmerStandWorkGoal goal = farmer.getWorkGoal();
+                    throw new IllegalStateException("ждём сбора " + plot + " "
+                            + (goal == null ? "goal=null" : describe(goal, farmer)));
+                }
             }
         });
     }

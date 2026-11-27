@@ -48,7 +48,10 @@ public class FarmerStandWorkGoal extends Goal {
     private static final int PAUSE_MIN = 3;
     private static final int PAUSE_MAX = 6;
     private static final int RETRY_PAUSE = 20;
-    /** Сколько тиков ждать недоступную по cooldown/резервации работу, прежде чем свернуть сессию. */
+    /**
+     * Сколько тиков ждать недоступную по cooldown/резервации работу, прежде
+     * чем свернуть сессию.
+     */
     private static final int SESSION_IDLE_TIMEOUT = 80;
     /** Сколько тиков идти к станции, прежде чем признать маршрут неудачным. */
     private static final int MOVE_TIMEOUT = 200;
@@ -221,6 +224,24 @@ public class FarmerStandWorkGoal extends Goal {
         this.facingTicks = 0;
         this.pauseLookTarget = null;
         this.pauseTicks = 0;
+        NpcLookHelper.releaseGaze(this.npc);
+    }
+
+    /**
+     * Взгляд на центр блока. Плавность обеспечивает сама сущность
+     * ({@code BaseSurvivorNpcEntity#aimGaze}): она ведёт голову каждый тик, так
+     * что здесь достаточно назвать цель.
+     */
+    private void lookAt(BlockPos target) {
+        NpcLookHelper.lookAt(this.npc,
+                target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
+    }
+
+    /** Взгляд на грядку (культуру сверху); без грядки взгляд остаётся прежним. */
+    private void lookAtPlot(@Nullable BlockPos plot) {
+        if (plot != null) {
+            lookAt(plot.above());
+        }
     }
 
     // ==================== фазы ====================
@@ -228,12 +249,33 @@ public class FarmerStandWorkGoal extends Goal {
     private void tickPause() {
         this.pauseTicks--;
         this.npc.getNavigation().stop();
-        if (this.pauseLookTarget != null) {
-            NpcLookHelper.lookAtBlock(this.npc, this.pauseLookTarget.above());
-            if (this.pauseTicks == 0) {
-                this.pauseLookTarget = null;
+        // Цель взгляда нужна каждый тик: пустой pauseLookTarget (например,
+        // после неудачной задачи) иначе оставляет голову без цели и она
+        // уходит к телу. Своей позиции в качестве цели нет — на неё смотреть
+        // значит задрать голову вниз.
+        BlockPos target = this.pauseLookTarget != null ? this.pauseLookTarget : this.lastWorkedPlot;
+        lookAtPlot(target);
+        if (this.pauseTicks == 0) {
+            this.pauseLookTarget = null;
+        }
+    }
+
+    /**
+     * Взгляд на доступную грядку станции, иначе — на последнюю обработанную.
+     * Точка «под ногами» не годится: при подходе к станции азимут на неё
+     * скачет, и голова крутится туда-сюда вместе с телом.
+     */
+    private void lookAtStationWork(ServerLevel level) {
+        BlockPos station = this.stand;
+        if (station != null) {
+            for (BlockPos plot : this.planned) {
+                if (FarmWorkStation.canWorkFrom(level, station, plot)) {
+                    lookAt(plot.above());
+                    return;
+                }
             }
         }
+        lookAtPlot(this.lastWorkedPlot);
     }
 
     private void tickMove(ServerLevel level, CampRecord camp) {
@@ -243,7 +285,7 @@ public class FarmerStandWorkGoal extends Goal {
             endSession(false);
             return;
         }
-        NpcLookHelper.lookAtBlock(this.npc, station.above());
+        lookAtStationWork(level);
 
         if (arrived()) {
             this.npc.getNavigation().stop();
@@ -269,6 +311,7 @@ public class FarmerStandWorkGoal extends Goal {
     private void tickWork(ServerLevel level, CampRecord camp) {
         if (this.currentTask == null) {
             if (!pickNext(level, camp)) {
+                lookAtStationWork(level);
                 if (!continueOrRelocate(level, camp)) {
                     endSession(true);
                 }
@@ -285,7 +328,7 @@ public class FarmerStandWorkGoal extends Goal {
             return;
         }
         BlockPos crop = plot.above();
-        NpcLookHelper.lookAtBlock(this.npc, crop);
+        lookAt(crop);
         if (!NpcLookHelper.isFacingBlock(this.npc, crop, LOOK_TOLERANCE)) {
             this.facingTicks++;
             if (this.facingTicks > MAX_FACING_TICKS) {
