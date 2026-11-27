@@ -12,8 +12,8 @@ import com.phian404.survivalpoints.entity.role.SurvivorProfession;
 import com.phian404.survivalpoints.entity.role.SurvivorRole;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
@@ -85,6 +85,8 @@ public class FarmerStandWorkGoal extends Goal {
     private String sessionType;
     private int sessionIdleTicks;
     private int sessionStarts;
+    /** Семя взято из инвентаря: в конце сессии его нужно вернуть обратно. */
+    private boolean seedFromInventory;
 
     @Nullable
     private BlockPos stand;
@@ -214,6 +216,7 @@ public class FarmerStandWorkGoal extends Goal {
             releaseActive(level);
         }
         this.npc.getNavigation().stop();
+        returnSeed();
         this.state = State.IDLE;
         this.sessionActive = false;
         this.sessionType = null;
@@ -420,6 +423,10 @@ public class FarmerStandWorkGoal extends Goal {
         this.state = State.MOVING;
         this.sessionActive = true;
         this.sessionType = plan.type();
+        if (CampFarmManager.TYPE_PLANT.equals(plan.type())) {
+            // Семя в руке с начала сессии: NPC идёт к грядкам уже с ним.
+            ensureSeedInHand();
+        }
         this.sessionStarts++;
         this.sessionIdleTicks = 0;
         this.relocations = 0;
@@ -618,6 +625,7 @@ public class FarmerStandWorkGoal extends Goal {
             releaseActive(level);
         }
         this.npc.getNavigation().stop();
+        returnSeed();
         this.sessionActive = false;
         this.sessionType = null;
         this.sessionIdleTicks = 0;
@@ -655,7 +663,7 @@ public class FarmerStandWorkGoal extends Goal {
             if (!state.isAir() || !level.getBlockState(plot).is(Blocks.FARMLAND)) {
                 return false;
             }
-            return preparePlantingItem(task) && plant(level, cropPos);
+            return ensureSeedInHand() && plant(level, cropPos);
         }
         return false;
     }
@@ -702,35 +710,41 @@ public class FarmerStandWorkGoal extends Goal {
         }
         ItemStack remaining = seed.copy();
         remaining.shrink(1);
-        this.npc.setItemSlot(EquipmentSlot.MAINHAND, remaining);
-        this.npc.swing(InteractionHand.MAIN_HAND);
+        NpcItemUse.hold(this.npc, remaining);
+        NpcItemUse.act(this.npc, SoundEvents.CROP_PLANTED, 0.6F);
         return true;
     }
 
     /**
      * Семя в руке: существующую экипировку не перезаписываем, из инвентаря
-     * переносим ровно один предмет и расходуем его только после посадки.
+     * берём ровно один предмет — он расходуется посадкой либо возвращается в
+     * конце сессии.
      */
-    private boolean preparePlantingItem(NpcTask task) {
-        if (!CampFarmManager.TYPE_PLANT.equals(task.getType())) {
-            return true;
-        }
+    private boolean ensureSeedInHand() {
         ItemStack held = this.npc.getMainHandItem();
         if (!held.isEmpty()) {
             return CropAdapter.find(held) != null;
         }
-        for (int slot = 0; slot < this.npc.getInventory().getSlots(); slot++) {
-            ItemStack stack = this.npc.getInventory().getStackInSlot(slot);
-            if (stack.isEmpty() || CropAdapter.find(stack) == null) {
-                continue;
-            }
-            ItemStack extracted = this.npc.extractItem(stack, 1);
-            if (!extracted.isEmpty()) {
-                this.npc.setItemSlot(EquipmentSlot.MAINHAND, extracted);
-                return true;
-            }
+        if (!NpcItemUse.takeFromInventory(this.npc, stack -> CropAdapter.find(stack) != null)) {
+            return false;
         }
-        return false;
+        this.seedFromInventory = true;
+        return true;
+    }
+
+    /**
+     * Вернуть в инвентарь семя, взятое из него же: иначе оно «зависает» в руке
+     * после сессии. Что не поместилось, остаётся в руке — предмет не теряется.
+     */
+    private void returnSeed() {
+        if (!this.seedFromInventory) {
+            return;
+        }
+        this.seedFromInventory = false;
+        ItemStack held = this.npc.getMainHandItem();
+        if (!held.isEmpty() && CropAdapter.find(held) != null) {
+            NpcItemUse.hold(this.npc, this.npc.addItem(held));
+        }
     }
 
     private boolean fitsInventory(List<ItemStack> drops) {

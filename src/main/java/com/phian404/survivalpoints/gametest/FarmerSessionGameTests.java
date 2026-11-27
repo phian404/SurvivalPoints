@@ -467,7 +467,67 @@ public class FarmerSessionGameTests {
         });
     }
 
+    /**
+     * Семя берётся из инвентаря в руку на старте сессии посадки и остаётся там,
+     * пока NPC идёт к грядкам: игрок видит предмет, а не пустую руку. Расход —
+     * ровно один предмет на посадку, остальные семена возвращаются в инвентарь.
+     */
+    @GameTest(template = "empty3x3x3", timeoutTicks = 900)
+    public static void seed_taken_from_inventory_for_planting(GameTestHelper helper) {
+        platform(helper);
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper, 0, 1, 0);
+        BlockPos center = helper.absolutePos(new BlockPos(1, 1, 1));
+        List<BlockPos> plots = List.of(
+                helper.absolutePos(new BlockPos(1, 1, 2)),
+                helper.absolutePos(new BlockPos(3, 1, 2)));
+        CampRecord camp = buildCamp(helper, center, plots, Set.of(), false);
+        linkFarmer(farmer, camp);
+        farmer.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        farmer.getInventory().setStackInSlot(0, new ItemStack(Items.WHEAT_SEEDS, 16));
+
+        boolean[] handSeen = new boolean[1];
+        pollEveryTick(helper, 800, "семя в руке во время сессии посадки", helper::succeed, () -> {
+            FarmerStandWorkGoal goal = farmer.getWorkGoal();
+            if (goal == null) {
+                throw new IllegalStateException("FarmerStandWorkGoal не зарегистрирован у фермера");
+            }
+            if (!handSeen[0] && goal.isSessionActive()
+                    && CampFarmManager.TYPE_PLANT.equals(goal.getSessionType())) {
+                if (!farmer.getMainHandItem().is(Items.WHEAT_SEEDS)) {
+                    throw new IllegalStateException("в сессии посадки рука без семян: "
+                            + farmer.getMainHandItem());
+                }
+                handSeen[0] = true;
+            }
+            for (BlockPos plot : plots) {
+                if (!helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT)) {
+                    return;
+                }
+            }
+            if (!handSeen[0]) {
+                throw new IllegalStateException("посадка прошла без семени в руке");
+            }
+            int seeds = countSeeds(farmer);
+            if (seeds != 14) {
+                throw new IllegalStateException("после двух посадок семян " + seeds + ", а не 14");
+            }
+            helper.succeed();
+        });
+    }
+
     // ==================== инфраструктура ====================
+
+    private static int countSeeds(BaseSurvivorNpcEntity farmer) {
+        int count = farmer.getMainHandItem().is(Items.WHEAT_SEEDS)
+                ? farmer.getMainHandItem().getCount() : 0;
+        for (int slot = 0; slot < farmer.getInventory().getSlots(); slot++) {
+            ItemStack stack = farmer.getInventory().getStackInSlot(slot);
+            if (stack.is(Items.WHEAT_SEEDS)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
 
     /** Шаг между проверками условия, тиков. */
     private static final int POLL_TICKS = 10;

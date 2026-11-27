@@ -119,7 +119,7 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
      * ванильный {@code LookControl} живёт 2 тика и обнуляет наклон, поэтому
      * голову ведёт сама сущность — каждый тик, но не быстрее этого шага.
      */
-    private static final float GAZE_STEP = 8.0F;
+    private static final float GAZE_STEP = 10.0F;
     /** Предел наклона головы, градусов (ванильный {@code getMaxHeadXRot()}). */
     private static final float GAZE_PITCH_LIMIT = 40.0F;
 
