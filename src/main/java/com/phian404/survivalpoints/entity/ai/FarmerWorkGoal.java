@@ -85,6 +85,11 @@ public class FarmerWorkGoal extends Goal {
     @Nullable
     private BlockPos pauseLookTarget;
 
+    /** Активная серия однотипных задач (сбор или посадка). */
+    private boolean sessionActive;
+    @Nullable
+    private String sessionType;
+
     public FarmerWorkGoal(BaseSurvivorEntity npc) {
         this.npc = npc;
         // Flag.LOOK: без него во время движения и работы параллельно выполняются
@@ -131,8 +136,28 @@ public class FarmerWorkGoal extends Goal {
         if (task == null || task.getTarget() == null) {
             return false;
         }
-        BlockPos approach = approachPos(level, camp, task.getTarget());
-        if (approach == null) {
+        this.sessionType = task.getType();
+        this.sessionActive = true;
+        if (!startTask(level, camp, task)) {
+            endSession();
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Начать одну задачу внутри текущей рабочей сессии.
+     * Тип сессии не меняется между грядками; отдельные резервации по-прежнему
+     * принадлежат CampFarmManager/NpcTaskController.
+     */
+    private boolean startTask(ServerLevel level, CampRecord camp, NpcTask task) {
+        if (task.getTarget() == null) {
+            return false;
+        }
+        CampFarmManager manager = CampManager.farmManager(camp);
+        NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
+        BlockPos selectedApproach = approachPos(level, camp, task.getTarget());
+        if (selectedApproach == null) {
             manager.markFailed(task.getId(), level.getGameTime());
             return false;
         }
@@ -142,56 +167,62 @@ public class FarmerWorkGoal extends Goal {
             manager.release(taskId);
             return false;
         }
-
         if (!preparePlantingItem(task)) {
             manager.markFailed(taskId, level.getGameTime());
             controller.cancel();
             return false;
         }
-        this.approach = approach;
+
+        this.approach = selectedApproach;
+        this.correctiveStep = false;
+        this.stuckTicks = 0;
+        this.lastNpcPos = null;
         this.state = State.MOVING;
-        if (atApproach(approach)) {
+        if (atApproach(selectedApproach)) {
             return true;
         }
-        // Путь строим сразу к набору всех пригодных клеток подхода: ванильная
-        // навигация выбирает ближайшую достижимую, а не первую по порядку
-        // сторон. Точность 0 — цель должна совпасть с клеткой, а не оказаться
-        // в манхэттенском радиусе 1 (иначе получается one-node partial path).
-        // PathFinder не сигнализирует недостижимость null-ом: он отдаёт
-        // частичный путь с canReach() == false — это проверяет approachPath.
+
         Path path = approachPath(level, camp, task);
-        if (path == null || !this.npc.getNavigation().moveTo(path, SPEED)) {
+        if (path == null || !this.npc.getNavigation().moveTo(path, SPEED)
+                || !pathInside(camp, path)) {
             abandon(level, camp, task, RETRY_PAUSE);
             return false;
         }
-        if (!pathInside(camp, path)) {
-            abandon(level, camp, task, RETRY_PAUSE);
-            return false;
-        }
-        // Прибытие сверяем по клетке, в которую действительно ведёт принятый
-        // путь: путь мог быть построен не к первой пригодной клетке, и тогда
-        // atApproach ждал бы клетку, до которой фермер не идёт.
         if (this.pathTarget != null) {
             this.approach = this.pathTarget;
         }
         return true;
     }
 
+    /** Закончить серию однотипных задач и вернуть Goal обычному поведению NPC. */
+    private void endSession() {
+        this.sessionActive = false;
+        this.sessionType = null;
+        this.pauseLookTarget = null;
+        this.approach = null;
+        this.state = State.IDLE;
+    }
+
     @Override
     public boolean canContinueToUse() {
-        // Пауза после успешной работы — держим цель живой, чтобы NPC стоял и
-        // смотрел на обработанную грядку (тик паузы обслуживает tick()).
+        if (this.npc.level().isClientSide || !(this.npc.level() instanceof ServerLevel level)
+                || this.npc.getRole() != SurvivorRole.CIVILIAN
+                || this.npc.getProfession() != SurvivorProfession.FARMER
+                || camp(level) == null) {
+            return false;
+        }
+        // Внутри сессии удерживаем MOVE/LOOK и между отдельными задачами.
+        // Это не резервирует грядку: контроллер может быть пуст во время паузы.
+        if (this.sessionActive) {
+            return true;
+        }
         if (this.pauseLookTarget != null) {
             return true;
         }
-        if (this.pauseTicks > 0 || this.approach == null || this.npc.level().isClientSide
-                || !(this.npc.level() instanceof ServerLevel level)) {
+        if (this.pauseTicks > 0 || this.approach == null) {
             return false;
         }
         CampRecord camp = camp(level);
-        if (camp == null) {
-            return false;
-        }
         NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
         NpcTask task = controller.current();
         Path path = this.npc.getNavigation().getPath();
@@ -205,16 +236,36 @@ public class FarmerWorkGoal extends Goal {
             this.pauseTicks--;
             this.npc.getNavigation().stop();
             NpcLookHelper.lookAtBlock(this.npc, this.pauseLookTarget.above());
-            if (this.pauseTicks <= 0) {
-                this.pauseLookTarget = null;
+            if (this.pauseTicks > 0) {
+                return;
             }
-            return;
+            this.pauseLookTarget = null;
         }
-        if (this.approach == null || !(this.npc.level() instanceof ServerLevel level)) {
+        if (!(this.npc.level() instanceof ServerLevel level)) {
             return;
         }
         CampRecord camp = camp(level);
+        if (camp == null) {
+            endSession();
+            return;
+        }
         NpcTaskController controller = CampManager.taskController(this.npc.getIdentityId());
+        if (this.sessionActive && controller.current() == null) {
+            CampFarmManager sessionManager = CampManager.farmManager(camp);
+            NpcTask next = sessionManager.takeForType(level, camp, this.npc,
+                    this.npc.getIdentityId(), level.getGameTime(), this.sessionType);
+            if (next == null) {
+                endSession();
+                return;
+            }
+            if (!startTask(level, camp, next)) {
+                endSession();
+                return;
+            }
+        }
+        if (this.approach == null) {
+            return;
+        }
         NpcTask task = controller.current();
         if (camp == null || task == null || task.getTarget() == null) {
             stop();
@@ -336,6 +387,8 @@ public class FarmerWorkGoal extends Goal {
         this.npc.getNavigation().stop();
         this.approach = null;
         this.pauseLookTarget = null;
+        this.sessionActive = false;
+        this.sessionType = null;
         this.state = State.IDLE;
         this.stuckTicks = 0;
         this.lastNpcPos = null;
@@ -405,6 +458,8 @@ public class FarmerWorkGoal extends Goal {
         this.npc.getNavigation().stop();
         this.approach = null;
         this.pauseLookTarget = null;
+        this.sessionActive = false;
+        this.sessionType = null;
         this.state = State.IDLE;
         this.stuckTicks = 0;
         this.lastNpcPos = null;
