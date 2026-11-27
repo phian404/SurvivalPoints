@@ -16,6 +16,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
@@ -38,8 +39,9 @@ import java.util.UUID;
  *
  * <p>Информация разделена на три режима: идентификация (кто это и где
  * приписан), работа (занятость, задача, ферма, пути) и инвентарь
- * (экипировка и слоты). Обычный ПКМ показывает текущий режим, Shift+ПКМ
- * переключает на следующий. Выбранный режим хранится в NBT самого предмета.
+ * (экипировка и слоты). ПКМ в воздух переключает на следующий режим,
+ * ПКМ по NPC показывает данные текущего режима. Выбранный режим хранится
+ * в NBT самого предмета, поэтому держится до следующего переключения.
  */
 public class NpcDebugWandItem extends Item {
 
@@ -75,11 +77,6 @@ public class NpcDebugWandItem extends Item {
         }
 
         Mode mode = modeOf(stack);
-        if (player.isShiftKeyDown()) {
-            mode = mode.next();
-            stack.getOrCreateTag().putInt(MODE_TAG, mode.ordinal());
-        }
-
         StringBuilder out = new StringBuilder("§e[NPC] §f")
                 .append(nameOr(npc.getCustomName() == null ? null : npc.getCustomName().getString(), "—"))
                 .append(" §8[").append(mode.label).append("]");
@@ -95,9 +92,25 @@ public class NpcDebugWandItem extends Item {
             case INVENTORY -> appendInventory(out, npc);
         }
 
-        out.append("\n §8Shift+ПКМ — следующий режим");
+        out.append("\n §8ПКМ в воздух — следующий режим");
         player.displayClientMessage(Component.literal(out.toString()), false);
         return InteractionResult.SUCCESS;
+    }
+
+    /** ПКМ в воздух: переключить режим на следующий и показать какой включён. */
+    @Override
+    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+        ItemStack stack = player.getItemInHand(hand);
+        if (level.isClientSide) {
+            return InteractionResultHolder.success(stack);
+        }
+
+        Mode mode = modeOf(stack).next();
+        stack.getOrCreateTag().putInt(MODE_TAG, mode.ordinal());
+        player.displayClientMessage(Component.literal("§e[NPC] §fрежим: ")
+                .append(Component.literal(mode.label))
+                .append(Component.literal("\n §8ПКМ в воздух — следующий режим")), false);
+        return InteractionResultHolder.success(stack);
     }
 
     /** Кто это и где приписан. */
