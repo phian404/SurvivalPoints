@@ -200,8 +200,23 @@ public final class CampFarmManager {
      */
     public boolean hasAvailableWork(ServerLevel level, CampRecord record,
                                     BaseSurvivorEntity npc, long gameTime) {
+        return hasWork(level, record, npc, gameTime, false);
+    }
+
+    /**
+     * Есть ли на ферме действительные задачи, включая временно отложенные
+     * cooldown. Прогулка использует это, чтобы не начинать выход из фермы
+     * между повторными попытками рабочего Goal.
+     */
+    public boolean hasPendingWork(ServerLevel level, CampRecord record,
+                                  BaseSurvivorEntity npc, long gameTime) {
+        return hasWork(level, record, npc, gameTime, true);
+    }
+
+    private boolean hasWork(ServerLevel level, CampRecord record, BaseSurvivorEntity npc,
+                            long gameTime, boolean includeCooldown) {
         for (FarmTask task : this.tasks.values()) {
-            if (task.reservedBy != null || gameTime < task.availableAt) {
+            if (task.reservedBy != null || (!includeCooldown && gameTime < task.availableAt)) {
                 continue;
             }
             if (!isStillValid(level, record, task)) {
