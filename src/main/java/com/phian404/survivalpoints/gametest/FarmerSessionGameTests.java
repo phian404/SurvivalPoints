@@ -1,5 +1,6 @@
 package com.phian404.survivalpoints.gametest;
 
+import com.phian404.survivalpoints.camp.CampFarmManager;
 import com.phian404.survivalpoints.camp.CampManager;
 import com.phian404.survivalpoints.camp.CampPoi;
 import com.phian404.survivalpoints.camp.CampRecord;
@@ -7,6 +8,7 @@ import com.phian404.survivalpoints.camp.CampSavedData;
 import com.phian404.survivalpoints.camp.CampStructurePlacer;
 import com.phian404.survivalpoints.entity.BaseSurvivorNpcEntity;
 import com.phian404.survivalpoints.entity.ai.FarmerWorkGoal;
+import com.phian404.survivalpoints.entity.ai.task.NpcTask;
 import com.phian404.survivalpoints.entity.role.SurvivorProfession;
 
 import net.minecraft.core.BlockPos;
@@ -204,6 +206,125 @@ public class FarmerSessionGameTests {
         }));
     }
 
+    // ==================== ожидание временно недоступной работы ====================
+
+    @GameTest(template = "empty3x3x3", timeoutTicks = 400, batch = "farmer_wait")
+    public static void cooldown_wait_keeps_goal_active(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        List<BlockPos> plots = List.of(helper.absolutePos(new BlockPos(3, 1, 3)));
+        CampRecord record = buildCamp(helper, plots, true);
+        CampFarmManager manager = CampManager.farmManager(record);
+
+        // Чужая выдача + отказ: снимает резервацию и ставит штатный cooldown.
+        NpcTask task = prepareTask(manager, level, record);
+        manager.markFailed(task.getId(), level.getGameTime());
+        if (manager.take(level, record, null, UUID.randomUUID(), level.getGameTime()) != null) {
+            helper.fail("markFailed не удержал cooldown: " + manager.diagnosticSummary(level.getGameTime()));
+        }
+
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper);
+        linkFarmer(farmer, record);
+
+        // Цель обязана быть активной в ожидании: иначе NPC замирает между
+        // остановленным FarmerWork и заблокированным Wander.
+        helper.runAfterDelay(5, () -> {
+            FarmerWorkGoal goal = farmer.getWorkGoal();
+            if (goal == null || !goal.isSessionActive()) {
+                helper.fail("FarmerWorkGoal не держит ожидание cooldown: "
+                        + manager.diagnosticSummary(level.getGameTime())
+                        + " class=" + manager.classifyForType(level, record, farmer,
+                                level.getGameTime(), null)
+                        + " state=" + (goal == null ? "null" : goal.getState()));
+            }
+            if (manager.take(level, record, farmer, UUID.randomUUID(), level.getGameTime()) != null) {
+                helper.fail("Задача выдана на cooldown — ожидание не состоялось");
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "empty3x3x3", timeoutTicks = 800, batch = "farmer_wait")
+    public static void task_issued_after_cooldown(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        List<BlockPos> plots = List.of(helper.absolutePos(new BlockPos(3, 1, 3)));
+        CampRecord record = buildCamp(helper, plots, true);
+        CampFarmManager manager = CampManager.farmManager(record);
+
+        NpcTask task = prepareTask(manager, level, record);
+        manager.markFailed(task.getId(), level.getGameTime());
+
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper);
+        linkFarmer(farmer, record);
+
+        BlockPos plot = plots.get(0);
+        helper.succeedWhen(() -> {
+            BlockState crop = level.getBlockState(plot.above());
+            if (!crop.is(Blocks.WHEAT) || crop.getValue(CropBlock.AGE) < 7) {
+                helper.succeed();
+            }
+        });
+        helper.runAfterDelay(700, () -> helper.fail("Задача не взята после истечения cooldown"));
+    }
+
+    @GameTest(template = "empty3x3x3", timeoutTicks = 800, batch = "farmer_wait")
+    public static void foreign_reservation_then_release(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        List<BlockPos> plots = List.of(helper.absolutePos(new BlockPos(3, 1, 3)));
+        CampRecord record = buildCamp(helper, plots, true);
+        CampFarmManager manager = CampManager.farmManager(record);
+
+        NpcTask task = prepareTask(manager, level, record); // остаётся за чужим NPC
+
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper);
+        linkFarmer(farmer, record);
+
+        helper.runAfterDelay(20, () -> {
+            FarmerWorkGoal goal = farmer.getWorkGoal();
+            if (goal == null || !goal.isSessionActive()) {
+                helper.fail("Чужая резервация не удерживает ожидание: NPC простаивает");
+            }
+            // Пока держит другой NPC, задача нам не выдаётся — ожидание честное.
+            if (manager.take(level, record, farmer, farmer.getIdentityId(), level.getGameTime()) != null) {
+                helper.fail("Резервированная чужим NPC задача выдана повторно");
+            }
+            manager.release(task.getId());
+            helper.succeedWhen(() -> {
+                BlockState crop = level.getBlockState(plots.get(0).above());
+                if (!crop.is(Blocks.WHEAT) || crop.getValue(CropBlock.AGE) < 7) {
+                    helper.succeed();
+                }
+            });
+        });
+        helper.runAfterDelay(700, () -> helper.fail("Задача не взята после освобождения резервации"));
+    }
+
+    @GameTest(template = "empty3x3x3", timeoutTicks = 500, batch = "farmer_wait")
+    public static void waiting_ends_when_crop_removed(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        List<BlockPos> plots = List.of(helper.absolutePos(new BlockPos(3, 1, 3)));
+        CampRecord record = buildCamp(helper, plots, true);
+        CampFarmManager manager = CampManager.farmManager(record);
+
+        NpcTask task = prepareTask(manager, level, record);
+        manager.markFailed(task.getId(), level.getGameTime());
+        level.setBlock(plots.get(0).above(), Blocks.AIR.defaultBlockState(), 3);
+
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper);
+        linkFarmer(farmer, record);
+
+        // Работа перестала существовать — ожидание должно закончиться, без зависания.
+        helper.runAfterDelay(40, () -> helper.succeedWhen(() -> {
+            FarmerWorkGoal goal = farmer.getWorkGoal();
+            if (goal == null) {
+                helper.fail("FarmerWorkGoal не зарегистрирован у фермера");
+            }
+            if (goal.isSessionActive()) {
+                helper.fail("Ожидание продолжается, хотя культуры больше нет");
+            }
+            helper.succeed();
+        }));
+    }
+
     // ==================== инфраструктура ====================
 
     private static BaseSurvivorNpcEntity spawnFarmer(GameTestHelper helper) {
@@ -216,6 +337,15 @@ public class FarmerSessionGameTests {
         return farmer;
     }
 
+    private static NpcTask prepareTask(CampFarmManager manager, ServerLevel level, CampRecord record) {
+        manager.refresh(level, record, level.getGameTime());
+        NpcTask task = manager.take(level, record, null, UUID.randomUUID(), level.getGameTime());
+        if (task == null) {
+            throw new IllegalStateException("Диспетчер не выдал задачу для подготовки состояния");
+        }
+        return task;
+    }
+
     private static UUID registerCamp(GameTestHelper helper, BaseSurvivorNpcEntity farmer) {
         return registerCamp(helper, farmer,
                 List.of(helper.absolutePos(new BlockPos(3, 1, 3))), true);
@@ -226,8 +356,7 @@ public class FarmerSessionGameTests {
         return registerCamp(helper, farmer, plots, true);
     }
 
-    private static UUID registerCamp(GameTestHelper helper, BaseSurvivorNpcEntity farmer,
-                                     List<BlockPos> plots, boolean mature) {
+    private static CampRecord buildCamp(GameTestHelper helper, List<BlockPos> plots, boolean mature) {
         ServerLevel level = helper.getLevel();
         BlockPos center = plots.get(0);
         List<CampPoi> pois = new ArrayList<>();
@@ -245,11 +374,20 @@ public class FarmerSessionGameTests {
         CampRecord record = new CampRecord("gametest", center, 3, null);
         record.replacePois(PLOT_SLOT_PREFIX, pois);
         CampSavedData.get(level).addCamp(record);
+        return record;
+    }
 
+    private static void linkFarmer(BaseSurvivorNpcEntity farmer, CampRecord record) {
         farmer.setCampId(record.getId());
         farmer.setProfession(SurvivorProfession.FARMER);
-        farmer.setWorkPoiPos(center);
+        farmer.setWorkPoiPos(record.getCenter());
         farmer.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WHEAT_SEEDS, 16));
+    }
+
+    private static UUID registerCamp(GameTestHelper helper, BaseSurvivorNpcEntity farmer,
+                                     List<BlockPos> plots, boolean mature) {
+        CampRecord record = buildCamp(helper, plots, mature);
+        linkFarmer(farmer, record);
         return record.getId();
     }
 }

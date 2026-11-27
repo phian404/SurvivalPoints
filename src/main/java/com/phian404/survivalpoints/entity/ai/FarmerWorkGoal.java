@@ -170,6 +170,18 @@ public class FarmerWorkGoal extends Goal {
         CampFarmManager manager = CampManager.farmManager(camp);
         NpcTask task = manager.take(level, camp, this.npc, this.npc.getIdentityId(), level.getGameTime());
         if (task == null || task.getTarget() == null) {
+            // Работа есть, но ждёт cooldown или чужую резервацию. Без активной
+            // цели NPC замирал: CampWanderGoal блокируется тем же pending-сканом.
+            // Держим цель в режиме ожидания — без фиктивной задачи и резервации.
+            if (task == null && manager.classifyForType(level, camp, this.npc,
+                    level.getGameTime(), null) == CampFarmManager.TakeBlock.TEMPORARY) {
+                this.sessionActive = true;
+                this.sessionType = null;
+                this.sessionIdleTicks = 1;
+                this.sessionStarts++;
+                this.state = State.IDLE;
+                return true;
+            }
             return false;
         }
         this.sessionType = task.getType();
@@ -333,6 +345,9 @@ public class FarmerWorkGoal extends Goal {
                 endSession(this.lastWorkedPlot);
                 return;
             }
+            // Ожидание могло начаться без типа (любая работа): фиксируем тип
+            // первой взятой задачи, чтобы серия дальше не смешивалась.
+            this.sessionType = next.getType();
         }
         if (this.approach == null) {
             return;
