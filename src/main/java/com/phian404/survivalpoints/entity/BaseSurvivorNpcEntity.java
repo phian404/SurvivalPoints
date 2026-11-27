@@ -1,7 +1,7 @@
 package com.phian404.survivalpoints.entity;
 
 import com.phian404.survivalpoints.entity.ai.CampWanderGoal;
-import com.phian404.survivalpoints.entity.ai.FarmerWorkGoal;
+import com.phian404.survivalpoints.entity.ai.FarmerStandWorkGoal;
 import com.phian404.survivalpoints.entity.role.RoleAssignmentService;
 import com.phian404.survivalpoints.entity.role.SurvivorRole;
 import net.minecraft.world.DifficultyInstance;
@@ -46,7 +46,7 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
         super.registerGoals();
         this.goalSelector.addGoal(0, new FloatGoal(this));
         // Работа фермера перебивает прогулку; для остальных Goal не активен.
-        FarmerWorkGoal workGoal = new FarmerWorkGoal(this);
+        FarmerStandWorkGoal workGoal = new FarmerStandWorkGoal(this);
         this.workGoal = workGoal;
         this.goalSelector.addGoal(1, workGoal);
         this.goalSelector.addGoal(2, new CampWanderGoal(this));
@@ -56,12 +56,12 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
 
     /** Ссылка на рабочую цель для отладки и тестов; {@code null} до registerGoals. */
     @Nullable
-    public FarmerWorkGoal getWorkGoal() {
+    public FarmerStandWorkGoal getWorkGoal() {
         return this.workGoal;
     }
 
     @Nullable
-    private FarmerWorkGoal workGoal;
+    private FarmerStandWorkGoal workGoal;
 
     /**
      * Назначение роли стража при клике арбалетом.

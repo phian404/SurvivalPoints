@@ -76,6 +76,21 @@ public final class FarmApproach {
     @Nullable
     public static String validate(ServerLevel level, CampRecord camp, BlockPos plot,
                                   BlockPos pos, double bodyWidth, double bodyHeight) {
+        if (horizontalDistSqr(pos, plot) > TARGET_REACH_SQR) {
+            return "TOO_FAR distSqr=" + horizontalDistSqr(pos, plot);
+        }
+        return standCheck(level, camp, pos, bodyWidth, bodyHeight);
+    }
+
+    /**
+     * Причина, по которой NPC не может стоять в клетке (null — может).
+     *
+     * <p>Без привязки к конкретной грядке: этим же критерием пользуется
+     * рабочая станция, обслуживающая несколько грядок с одной клетки.
+     */
+    @Nullable
+    public static String standCheck(ServerLevel level, CampRecord camp, BlockPos pos,
+                                    double bodyWidth, double bodyHeight) {
         BlockPos center = camp.getCenter();
         double dx = pos.getX() - center.getX();
         double dz = pos.getZ() - center.getZ();
@@ -97,9 +112,6 @@ public final class FarmApproach {
         if (!below.blocksMotion() && !below.getFluidState().isSource()) {
             return "NO_SUPPORT block=" + below.getBlock() + "@" + pos.below()
                     + " blocksMotion=false";
-        }
-        if (horizontalDistSqr(pos, plot) > TARGET_REACH_SQR) {
-            return "TOO_FAR distSqr=" + horizontalDistSqr(pos, plot);
         }
         double half = bodyWidth / 2.0D;
         double bottom = pos.getY() + 1.0D;
