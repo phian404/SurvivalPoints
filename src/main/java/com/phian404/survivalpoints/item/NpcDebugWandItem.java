@@ -35,8 +35,33 @@ import java.util.UUID;
  * Не расходуется, не наносит урон и не меняет данные сущности. Для других
  * предметов взаимодействие остаётся прежним — перехват идёт только когда
  * в руке именно этот предмет.
+ *
+ * <p>Информация разделена на три режима: идентификация (кто это и где
+ * приписан), работа (занятость, задача, ферма, пути) и инвентарь
+ * (экипировка и слоты). Обычный ПКМ показывает текущий режим, Shift+ПКМ
+ * переключает на следующий. Выбранный режим хранится в NBT самого предмета.
  */
 public class NpcDebugWandItem extends Item {
+
+    private static final String MODE_TAG = "DebugWandMode";
+
+    /** Категории диагностики: один режим — одна группа данных. */
+    private enum Mode {
+        IDENTITY("идентификация"),
+        WORK("работа"),
+        INVENTORY("инвентарь");
+
+        private final String label;
+
+        Mode(String label) {
+            this.label = label;
+        }
+
+        Mode next() {
+            Mode[] all = values();
+            return all[(ordinal() + 1) % all.length];
+        }
+    }
 
     public NpcDebugWandItem() {
         super(new Item.Properties());
@@ -49,33 +74,63 @@ public class NpcDebugWandItem extends Item {
             return InteractionResult.PASS;
         }
 
-        StringBuilder out = new StringBuilder("§e[NPC] §f");
-        out.append(nameOr(npc.getCustomName() == null ? null : npc.getCustomName().getString(), "—"));
-        out.append("\n §7Entity UUID: §f").append(npc.getUUID());
-        out.append("\n §7identityId: §f").append(npc.getIdentityId());
-        out.append("\n §7campId: §f").append(uuid(npc.getCampId()));
-        out.append("\n §7role: §f").append(npc.getRole().name());
-        out.append("\n §7profession: §f").append(npc.getProfession().name());
-        out.append("\n §7campPostId: §f").append(uuid(npc.getCampPostId()));
-        out.append("\n §7workPoiPos: §f").append(pos(npc.getWorkPoiPos()));
-
-        ItemStack mainHand = npc.getItemBySlot(EquipmentSlot.MAINHAND);
-        out.append("\n §7экипировка (рука): §f");
-        if (mainHand.isEmpty()) {
-            out.append("§7пусто");
-        } else {
-            out.append(mainHand.getHoverName().getString())
-                    .append(" §8×§f").append(mainHand.getCount());
+        Mode mode = modeOf(stack);
+        if (player.isShiftKeyDown()) {
+            mode = mode.next();
+            stack.getOrCreateTag().putInt(MODE_TAG, mode.ordinal());
         }
 
+        StringBuilder out = new StringBuilder("§e[NPC] §f")
+                .append(nameOr(npc.getCustomName() == null ? null : npc.getCustomName().getString(), "—"))
+                .append(" §8[").append(mode.label).append("]");
+
+        Level level = player.level();
         UUID campId = npc.getCampId();
-        CampRecord camp = campId == null || !(player.level() instanceof ServerLevel serverLevel)
+        CampRecord camp = campId == null || !(level instanceof ServerLevel serverLevel)
                 ? null : CampManager.getCamp(serverLevel, campId);
 
-        out.append("\n §7Занятость: §f").append(occupation(npc, camp, player.level()));
+        switch (mode) {
+            case IDENTITY -> appendIdentity(out, npc, camp);
+            case WORK -> appendWork(out, npc, camp, level);
+            case INVENTORY -> appendInventory(out, npc);
+        }
+
+        out.append("\n §8Shift+ПКМ — следующий режим");
+        player.displayClientMessage(Component.literal(out.toString()), false);
+        return InteractionResult.SUCCESS;
+    }
+
+    /** Кто это и где приписан. */
+    private static void appendIdentity(StringBuilder out, BaseSurvivorEntity npc,
+                                       @Nullable CampRecord camp) {
+        out.append("\n §7Entity UUID: §f").append(npc.getUUID());
+        out.append("\n §7identityId: §f").append(npc.getIdentityId());
+        out.append("\n §7role: §f").append(npc.getRole().name());
+        out.append("\n §7profession: §f").append(npc.getProfession().name());
+        out.append("\n §7campId: §f").append(uuid(npc.getCampId()));
+        out.append("\n §7campPostId: §f").append(uuid(npc.getCampPostId()));
+
+        if (camp != null) {
+            UUID identity = npc.getIdentityId();
+            boolean leader = identity.equals(camp.getLeaderIdentityId());
+            out.append("\n §7лагерь: §f").append(camp.getName())
+                    .append(" §7(").append(camp.getShortId()).append(")");
+            out.append("\n §7лидер: §f").append(leader ? "да" : "нет");
+            out.append("\n §7в residents: §f")
+                    .append(camp.getResidents().contains(identity) ? "да" : "нет");
+        } else {
+            out.append("\n §7лагерь: §fнет или не найден");
+        }
+    }
+
+    /** Чем занят: рабочее место, задача, состояние фермы и пути. */
+    private static void appendWork(StringBuilder out, BaseSurvivorEntity npc,
+                                   @Nullable CampRecord camp, Level level) {
+        out.append("\n §7workPoiPos: §f").append(pos(npc.getWorkPoiPos()));
+        out.append("\n §7Занятость: §f").append(occupation(npc, camp, level));
         out.append("\n §7Задача: §f").append(taskState(npc));
 
-        if (camp != null && player.level() instanceof ServerLevel serverLevel
+        if (camp != null && level instanceof ServerLevel serverLevel
                 && npc.getProfession() == SurvivorProfession.FARMER) {
             CampFarmManager farmManager = CampManager.peekFarmManager(camp);
             out.append("\n §7Ферма: §f")
@@ -91,17 +146,17 @@ public class NpcDebugWandItem extends Item {
         } else {
             out.append("\n §7Путь: §fнет");
         }
+    }
 
-        if (camp != null) {
-            UUID identity = npc.getIdentityId();
-            boolean leader = identity.equals(camp.getLeaderIdentityId());
-            out.append("\n §7лагерь: §f").append(camp.getName())
-                    .append(" §7(").append(camp.getShortId()).append(")");
-            out.append("\n §7лидер: §f").append(leader ? "да" : "нет");
-            out.append("\n §7в residents: §f")
-                    .append(camp.getResidents().contains(identity) ? "да" : "нет");
+    /** Экипировка в руке и содержимое инвентаря. */
+    private static void appendInventory(StringBuilder out, BaseSurvivorEntity npc) {
+        ItemStack mainHand = npc.getItemBySlot(EquipmentSlot.MAINHAND);
+        out.append("\n §7экипировка (рука): §f");
+        if (mainHand.isEmpty()) {
+            out.append("§7пусто");
         } else {
-            out.append("\n §7лагерь: §fнет или не найден");
+            out.append(mainHand.getHoverName().getString())
+                    .append(" §8×§f").append(mainHand.getCount());
         }
 
         out.append("\n §7Инвентарь:");
@@ -115,9 +170,14 @@ public class NpcDebugWandItem extends Item {
                         .append(" §8×§f").append(stored.getCount());
             }
         }
+    }
 
-        player.displayClientMessage(Component.literal(out.toString()), false);
-        return InteractionResult.SUCCESS;
+    private static Mode modeOf(ItemStack stack) {
+        if (stack.getTag() == null) {
+            return Mode.IDENTITY;
+        }
+        Mode[] all = Mode.values();
+        return all[Math.floorMod(stack.getTag().getInt(MODE_TAG), all.length)];
     }
 
     private static String nameOr(@Nullable String value, String fallback) {
