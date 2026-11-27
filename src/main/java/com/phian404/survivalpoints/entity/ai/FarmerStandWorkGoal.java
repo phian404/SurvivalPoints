@@ -331,8 +331,10 @@ public class FarmerStandWorkGoal extends Goal {
         // до соседней, и работа из неё не прошла бы проверку.
         if (!FarmWorkStation.canWorkFrom(level, this.npc.blockPosition(), plot)) {
             if (++this.positionFixTicks > POSITION_FIX_MAX) {
+                // Грядку нужно убрать из плана и наказать cooldown'ом, иначе
+                // pickNext возьмёт её снова по станции и цикл повторится.
                 this.positionFixTicks = 0;
-                dropCurrent(level, camp);
+                failCurrent(level, camp);
                 return;
             }
             BlockPos station = this.stand;
