@@ -46,11 +46,22 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
         super.registerGoals();
         this.goalSelector.addGoal(0, new FloatGoal(this));
         // Работа фермера перебивает прогулку; для остальных Goal не активен.
-        this.goalSelector.addGoal(1, new FarmerWorkGoal(this));
+        FarmerWorkGoal workGoal = new FarmerWorkGoal(this);
+        this.workGoal = workGoal;
+        this.goalSelector.addGoal(1, workGoal);
         this.goalSelector.addGoal(2, new CampWanderGoal(this));
         this.goalSelector.addGoal(3, new RandomLookAroundGoal(this));
         this.goalSelector.addGoal(4, new LookAtPlayerGoal(this, Player.class, 8.0F));
     }
+
+    /** Ссылка на рабочую цель для отладки и тестов; {@code null} до registerGoals. */
+    @Nullable
+    public FarmerWorkGoal getWorkGoal() {
+        return this.workGoal;
+    }
+
+    @Nullable
+    private FarmerWorkGoal workGoal;
 
     /**
      * Назначение роли стража при клике арбалетом.
