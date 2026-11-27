@@ -60,6 +60,11 @@ public class CampWanderGoal extends Goal {
     private int lastExitReachable;
     private int lastExitAccepted;
     private boolean lastExitUsedFallback;
+    private int lastRejectBounds;
+    private int lastRejectZone;
+    private int lastRejectDistance;
+    private int lastRejectClearance;
+    private int lastRejectSupport;
     private long lastAttemptTick = -1L;
 
     /** Краткая диагностика без изменения поведения Goal. */
@@ -76,6 +81,11 @@ public class CampWanderGoal extends Goal {
                 + " reachable=" + this.lastExitReachable
                 + " accepted=" + this.lastExitAccepted
                 + " fallback=" + this.lastExitUsedFallback
+                + " reject[bounds=" + this.lastRejectBounds
+                + ",zone=" + this.lastRejectZone
+                + ",near=" + this.lastRejectDistance
+                + ",space=" + this.lastRejectClearance
+                + ",support=" + this.lastRejectSupport + "]"
                 + " age=" + age + "t";
     }
 
@@ -96,6 +106,11 @@ public class CampWanderGoal extends Goal {
         this.lastExitReachable = 0;
         this.lastExitAccepted = 0;
         this.lastExitUsedFallback = false;
+        this.lastRejectBounds = 0;
+        this.lastRejectZone = 0;
+        this.lastRejectDistance = 0;
+        this.lastRejectClearance = 0;
+        this.lastRejectSupport = 0;
 
         CampRecord camp = camp(level);
         if (camp == null) {
@@ -197,16 +212,24 @@ public class CampWanderGoal extends Goal {
                     Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
             BlockPos pos = new BlockPos(x, surfaceY, z);
 
-            if (!insideCircle(center, camp.getRadius(), pos)
-                    || !CampWorkZoneAccess.isPositionAllowed(this.npc, camp, pos)) {
+            if (!insideCircle(center, camp.getRadius(), pos)) {
+                this.lastRejectBounds++;
+                continue;
+            }
+            if (!CampWorkZoneAccess.isPositionAllowed(this.npc, camp, pos)) {
+                this.lastRejectZone++;
                 continue;
             }
             if (pos.distSqr(this.npc.blockPosition()) < MIN_TARGET_DISTANCE_SQR) {
+                this.lastRejectDistance++;
                 continue;
             }
-            if (!this.npc.level().getBlockState(pos).isAir()
-                    || !this.npc.level().getBlockState(pos.above()).isAir()
-                    || !this.npc.level().getBlockState(pos.below()).blocksMotion()) {
+            if (!hasClearance(pos)) {
+                this.lastRejectClearance++;
+                continue;
+            }
+            if (!hasSupport(pos)) {
+                this.lastRejectSupport++;
                 continue;
             }
             return pos;
@@ -225,7 +248,6 @@ public class CampWanderGoal extends Goal {
             return pickTarget(camp);
         }
         CampModuleSlot.SlotBounds bounds = farm.getBounds();
-        int y = this.npc.blockPosition().getY();
         java.util.List<BlockPos> candidates = new java.util.ArrayList<>();
         for (int x = bounds.getMinX() - 1; x <= bounds.getMaxX() + 1; x++) {
             for (int z = bounds.getMinZ() - 1; z <= bounds.getMaxZ() + 1; z++) {
@@ -233,12 +255,26 @@ public class CampWanderGoal extends Goal {
                         && z != bounds.getMinZ() - 1 && z != bounds.getMaxZ() + 1) {
                     continue;
                 }
-                BlockPos pos = new BlockPos(x, y, z);
-                if (!insideCircle(camp.getCenter(), camp.getRadius(), pos)
-                        || !CampWorkZoneAccess.isPositionAllowed(this.npc, camp, pos)
-                        || !this.npc.level().getBlockState(pos).isAir()
-                        || !this.npc.level().getBlockState(pos.above()).isAir()
-                        || !this.npc.level().getBlockState(pos.below()).blocksMotion()) {
+                // Периметр может проходить по склону или ступени. Для каждой
+                // X/Z-клетки ищем реальную поверхность, а не используем Y NPC:
+                // иначе все точки на другом уровне ошибочно отбрасываются.
+                int surfaceY = this.npc.level().getHeight(
+                        Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                BlockPos pos = new BlockPos(x, surfaceY, z);
+                if (!insideCircle(camp.getCenter(), camp.getRadius(), pos)) {
+                    this.lastRejectBounds++;
+                    continue;
+                }
+                if (!CampWorkZoneAccess.isPositionAllowed(this.npc, camp, pos)) {
+                    this.lastRejectZone++;
+                    continue;
+                }
+                if (!hasClearance(pos)) {
+                    this.lastRejectClearance++;
+                    continue;
+                }
+                if (!hasSupport(pos)) {
+                    this.lastRejectSupport++;
                     continue;
                 }
                 candidates.add(pos);
@@ -262,6 +298,17 @@ public class CampWanderGoal extends Goal {
         // пробуем обычную цель прогулки: маршрут всё равно обязан выйти
         // из фермы и не может войти обратно.
         return pickTarget(camp);
+    }
+
+    /** Достаточно места для тела NPC и головы в целевой клетке. */
+    private boolean hasClearance(BlockPos pos) {
+        return this.npc.level().getBlockState(pos).isAir()
+                && this.npc.level().getBlockState(pos.above()).isAir();
+    }
+
+    /** Под целевой клеткой должна быть твёрдая опора. */
+    private boolean hasSupport(BlockPos pos) {
+        return this.npc.level().getBlockState(pos.below()).blocksMotion();
     }
 
     /** Все узлы маршрута внутри круга лагеря. */
