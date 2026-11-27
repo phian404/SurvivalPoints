@@ -85,10 +85,11 @@ public final class FarmWorkStation {
         }
         BlockPos anchor = centroid(plots);
 
-        // Первый проход — только геометрия, без лучей: он отсекает клетки,
-        // которые заведомо хуже лучшей по числу грядок в радиусе.
+        // Первый проход — только геометрия, без лучей: число грядок в радиусе
+        // служит верхней оценкой покрытия. Клетку можно пропустить, только если
+        // её оценка строго меньше уже найденного покрытия: иначе она ещё может
+        // выиграть по видимости или по расстоянию до центроида.
         Map<BlockPos, Integer> geometric = new HashMap<>(cells.size());
-        int bestGeometric = 0;
         for (BlockPos cell : cells) {
             int count = 0;
             for (BlockPos plot : plots) {
@@ -97,16 +98,17 @@ public final class FarmWorkStation {
                 }
             }
             geometric.put(cell, count);
-            bestGeometric = Math.max(bestGeometric, count);
         }
+        List<BlockPos> ordered = new ArrayList<>(cells);
+        ordered.sort((a, b) -> Integer.compare(geometric.get(b), geometric.get(a)));
 
         BlockPos best = null;
         int bestCoverage = 0;
         double bestAnchorDist = Double.MAX_VALUE;
         double bestNpcDist = Double.MAX_VALUE;
-        for (BlockPos cell : cells) {
-            if (geometric.get(cell) < bestGeometric - 1) {
-                continue;
+        for (BlockPos cell : ordered) {
+            if (best != null && geometric.get(cell) < bestCoverage) {
+                break;
             }
             int count = coverage(level, cell, plots);
             double anchorDist = FarmApproach.horizontalDistSqr(cell, anchor);
@@ -124,13 +126,42 @@ public final class FarmWorkStation {
         return best;
     }
 
-    /** Грядки плана в порядке обхода от станции: ближние первыми. */
-    public static List<BlockPos> orderedFrom(BlockPos stand, Collection<BlockPos> plots) {
+    /**
+     * Грядки плана в порядке обхода вокруг станции: начиная от текущего взгляда
+     * NPC и дальше в одну сторону.
+     *
+     * <p>Обход по кругу, а не «ближние первыми»: голова поворачивается монотонно,
+     * без рывков туда-обратно между противоположными грядками.
+     */
+    public static List<BlockPos> orderedFrom(BlockPos stand, Collection<BlockPos> plots,
+                                             float startYaw) {
         List<BlockPos> ordered = new ArrayList<>(plots);
-        ordered.sort((a, b) -> Double.compare(
-                FarmApproach.horizontalDistSqr(stand, a),
-                FarmApproach.horizontalDistSqr(stand, b)));
+        ordered.sort((a, b) -> {
+            double da = sweepDegrees(stand, startYaw, a);
+            double db = sweepDegrees(stand, startYaw, b);
+            int cmp = Double.compare(da, db);
+            if (cmp != 0) {
+                return cmp;
+            }
+            return Double.compare(FarmApproach.horizontalDistSqr(stand, a),
+                    FarmApproach.horizontalDistSqr(stand, b));
+        });
         return ordered;
+    }
+
+    /** Угол поворота от startYaw до грядки по часовой стрелке, 0..360. */
+    private static double sweepDegrees(BlockPos stand, float startYaw, BlockPos plot) {
+        double dx = plot.getX() - stand.getX();
+        double dz = plot.getZ() - stand.getZ();
+        float bearing = (float) (Math.atan2(dz, dx) * (180.0D / Math.PI)) - 90.0F;
+        double delta = bearing - startYaw;
+        while (delta < 0.0D) {
+            delta += 360.0D;
+        }
+        while (delta >= 360.0D) {
+            delta -= 360.0D;
+        }
+        return delta;
     }
 
     /**

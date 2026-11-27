@@ -243,8 +243,7 @@ public class FarmerStandWorkGoal extends Goal {
             endSession(false);
             return;
         }
-        BlockPos gazе = nearestPlannedInReach();
-        NpcLookHelper.lookAtBlock(this.npc, gazе != null ? gazе.above() : station);
+        NpcLookHelper.lookAtBlock(this.npc, station.above());
 
         if (arrived()) {
             this.npc.getNavigation().stop();
@@ -285,8 +284,9 @@ public class FarmerStandWorkGoal extends Goal {
             dropCurrent(level, camp);
             return;
         }
-        NpcLookHelper.lookAtBlock(this.npc, plot.above());
-        if (!NpcLookHelper.isFacingBlock(this.npc, plot.above(), LOOK_TOLERANCE)) {
+        BlockPos crop = plot.above();
+        NpcLookHelper.lookAtBlock(this.npc, crop);
+        if (!NpcLookHelper.isFacingBlock(this.npc, crop, LOOK_TOLERANCE)) {
             this.facingTicks++;
             if (this.facingTicks > MAX_FACING_TICKS) {
                 failCurrent(level, camp);
@@ -364,7 +364,8 @@ public class FarmerStandWorkGoal extends Goal {
         this.currentPlot = null;
         this.stand = plan.stand();
         this.planned.clear();
-        this.planned.addAll(FarmWorkStation.orderedFrom(plan.stand(), plan.targets()));
+        this.planned.addAll(FarmWorkStation.orderedFrom(plan.stand(), plan.targets(),
+                this.npc.getYRot()));
         goTo(plan.stand());
     }
 
@@ -383,6 +384,13 @@ public class FarmerStandWorkGoal extends Goal {
             NpcTask task = manager.takeAt(level, camp, this.npc, this.npc.getIdentityId(),
                     level.getGameTime(), this.sessionType, plot);
             if (task == null) {
+                continue;
+            }
+            // Задача живёт в контроллере NPC: при прерывании или остановке
+            // резервация снимется даже без участия этого goal.
+            if (!CampManager.taskController(this.npc.getIdentityId())
+                    .tryStart(task, () -> manager.release(task.getId()))) {
+                manager.release(task.getId());
                 continue;
             }
             this.currentTask = task;
@@ -413,11 +421,36 @@ public class FarmerStandWorkGoal extends Goal {
                     this.relocations++;
                     this.stand = next;
                     this.planned.clear();
-                    this.planned.addAll(FarmWorkStation.orderedFrom(next, remaining));
+                    this.planned.addAll(FarmWorkStation.orderedFrom(next, remaining,
+                            this.npc.getYRot()));
                     this.state = State.MOVING;
                     this.moveTicks = 0;
                     goTo(next);
                     return true;
+                }
+                // Лучшая станция — текущая, но часть грядок с неё недостижима:
+                // переносимся к станции, которая кроет именно их.
+                List<BlockPos> uncovered = new ArrayList<>();
+                for (BlockPos plot : remaining) {
+                    if (!FarmWorkStation.canWorkFrom(level, this.stand, plot)) {
+                        uncovered.add(plot);
+                    }
+                }
+                if (!uncovered.isEmpty()) {
+                    BlockPos detour = FarmWorkStation.best(level, camp, uncovered,
+                            this.npc.blockPosition(), this.npc.getBbWidth(),
+                            this.npc.getBbHeight());
+                    if (detour != null && !detour.equals(this.stand)) {
+                        this.relocations++;
+                        this.stand = detour;
+                        this.planned.clear();
+                        this.planned.addAll(FarmWorkStation.orderedFrom(detour, uncovered,
+                                this.npc.getYRot()));
+                        this.state = State.MOVING;
+                        this.moveTicks = 0;
+                        goTo(detour);
+                        return true;
+                    }
                 }
             }
             // Всё, что осталось, ждёт cooldown или чужой резервации.
@@ -425,9 +458,10 @@ public class FarmerStandWorkGoal extends Goal {
         }
         // Сбор закончен — сразу начинаем отдельную сессию посадки.
         if (CampFarmManager.TYPE_HARVEST.equals(this.sessionType)) {
-            // Пока в плане есть зрелая культура (например, ждёт cooldown после
-            // неудачи), сбор не закончен: посадка поверх неё начинаться не должна.
-            if (hasMaturePlanned(level)) {
+            // Пока в лагере есть зрелая культура (пусть даже её сбор ждёт
+            // cooldown после неудачи или она выпала из плана), посадка поверх
+            // неё начинаться не должна.
+            if (hasMaturePlanned(level) || manager.hasMaturePlot(level, camp)) {
                 return this.sessionIdleTicks < SESSION_IDLE_TIMEOUT;
             }
             Plan nextPlan = plan(level, camp, manager, CampFarmManager.TYPE_PLANT);
@@ -448,34 +482,6 @@ public class FarmerStandWorkGoal extends Goal {
             }
         }
         return false;
-    }
-
-    @Nullable
-    private BlockPos nearestPlannedInReach() {        ServerLevel level = serverLevel();
-        BlockPos station = this.stand;
-        if (level == null || station == null) {
-            return null;
-        }
-        BlockPos best = null;
-        double bestDist = Double.MAX_VALUE;
-        for (BlockPos plot : this.planned) {
-            if (!FarmWorkStation.canWorkFrom(level, station, plot)) {
-                continue;
-            }
-            double dist = distSqrToNpc(plot);
-            if (dist < bestDist) {
-                bestDist = dist;
-                best = plot;
-            }
-        }
-        return best;
-    }
-
-    private double distSqrToNpc(BlockPos plot) {
-        BlockPos pos = this.npc.blockPosition();
-        double dx = plot.getX() - pos.getX();
-        double dz = plot.getZ() - pos.getZ();
-        return dx * dx + dz * dz;
     }
 
     // ==================== действия ====================

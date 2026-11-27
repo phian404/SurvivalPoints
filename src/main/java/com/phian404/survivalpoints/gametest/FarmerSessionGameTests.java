@@ -186,6 +186,85 @@ public class FarmerSessionGameTests {
         });
     }
 
+    /**
+     * Зрелая грядка, сбор которой ждёт cooldown, не даёт начать посадку:
+     * фермер сначала дособирает лагерь и только потом сеет. Раньше сессия
+     * сбора закрывалась по idle-таймауту, посадка стартовала раньше досбора,
+     * и грядка в cooldown оставалась зрелой до следующего цикла.
+     */
+    @GameTest(template = "empty3x3x3", timeoutTicks = 900)
+    public static void mature_plot_in_cooldown_blocks_planting(GameTestHelper helper) {
+        platform(helper);
+        BaseSurvivorNpcEntity farmer = spawnFarmer(helper, 0, 1, 0);
+        BlockPos center = helper.absolutePos(new BlockPos(1, 1, 1));
+        List<BlockPos> plots = ring(helper, center);
+        // Грядки подальше от точки спавна: под самим фермером культуру не берём.
+        List<BlockPos> mature = plots.subList(4, 7);
+        BlockPos delayed = mature.get(0);
+        CampRecord camp = buildCamp(helper, center, plots, new HashSet<>(mature), true);
+
+        boolean[] delayedHarvested = new boolean[1];
+        boolean[] plantingStarted = new boolean[1];
+        String[] violation = new String[1];
+        helper.runAfterDelay(1, () -> {
+            // Две неудачи подряд: cooldown 120 тиков длиннее idle-таймаута
+            // сессии сбора (80), поэтому без проверки лагеря посадка начнётся
+            // раньше, чем эта грядка будет собрана.
+            ServerLevel level = helper.getLevel();
+            CampFarmManager manager = CampManager.farmManager(camp);
+            long now = level.getGameTime();
+            manager.refresh(level, camp, now);
+            NpcTask task = manager.takeAt(level, camp, null, UUID.randomUUID(), now,
+                    CampFarmManager.TYPE_HARVEST, delayed);
+            if (task == null) {
+                throw new IllegalStateException("задача сбора " + delayed + " не выдана: "
+                        + manager.diagnosticSummary(now));
+            }
+            manager.markFailed(task.getId(), now);
+            manager.markFailed(task.getId(), now);
+            linkFarmer(farmer, camp);
+
+            pollEveryTick(helper, 850, "посадка не опережает досбор", helper::succeed, () -> {
+                FarmerStandWorkGoal goal = farmer.getWorkGoal();
+                if (goal == null) {
+                    throw new IllegalStateException("FarmerStandWorkGoal не зарегистрирован у фермера");
+                }
+                boolean delayedMature = isMature(helper, delayed);
+                if (!delayedMature) {
+                    delayedHarvested[0] = true;
+                }
+                // Нарушение запоминается: посадка могла успеть пройти и до
+                // следующего опроса, а провал должен остаться заметным.
+                if (delayedMature && goal.isSessionActive()
+                        && CampFarmManager.TYPE_PLANT.equals(goal.getSessionType())) {
+                    violation[0] = "посадка началась при зрелой грядке " + delayed + " "
+                            + describe(goal, farmer);
+                }
+                if (violation[0] != null) {
+                    throw new IllegalStateException(violation[0]);
+                }
+                if (CampFarmManager.TYPE_PLANT.equals(goal.getSessionType())) {
+                    plantingStarted[0] = true;
+                }
+                String note = describe(goal, farmer)
+                        + " delayed=" + (delayedMature ? "зрелая" : "свободна")
+                        + " " + CampManager.farmManager(camp)
+                                .diagnosticSummary(helper.getLevel().getGameTime());
+                if (!plantingStarted[0]) {
+                    throw new IllegalStateException("посадка так и не началась " + note);
+                }
+                if (!delayedHarvested[0]) {
+                    throw new IllegalStateException("грядка в cooldown так и не собрана " + note);
+                }
+                for (BlockPos plot : plots) {
+                    if (!helper.getLevel().getBlockState(plot.above()).is(Blocks.WHEAT)) {
+                        throw new IllegalStateException("ждём посадки " + plot + " " + note);
+                    }
+                }
+            });
+        });
+    }
+
     // ==================== отказы ====================
 
     /**
@@ -495,6 +574,12 @@ public class FarmerSessionGameTests {
                         + " above=" + level.getBlockState(plot.above(2)));
             }
         }
+    }
+
+    /** Зрелая пшеница над грядкой. */
+    private static boolean isMature(GameTestHelper helper, BlockPos plot) {
+        BlockState crop = helper.getLevel().getBlockState(plot.above());
+        return crop.is(Blocks.WHEAT) && crop.getValue(CropBlock.AGE) >= 7;
     }
 
     private static void linkFarmer(BaseSurvivorNpcEntity farmer, CampRecord record) {
