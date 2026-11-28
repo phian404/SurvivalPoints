@@ -1,92 +1,94 @@
 # Документация SurvivalPoints — навигатор
 
-> Короткий индекс документации. Читай только нужный документ по типу задачи,
-> не открывай все файлы подряд. Канонические источники истины выделены **жирным**.
+> Короткий индекс. Открывай документы по типу задачи, а не весь каталог подряд.
+> Статус реализации проверяй по коду и ROADMAP; дизайн-документ сам по себе не доказывает, что функция уже реализована.
 
 ## Как выбрать документ
 
-| Задача | Читать |
+| Задача | Основной документ |
 |---|---|
-| Общий контекст проекта, состояние кода, правила работы | [`AI_CONTEXT.md`](../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md) |
-| Замысел мода, среда, список механик, принципы | [`Architecture/PROJECT_VISION.md`](Architecture/PROJECT_VISION.md) |
-| Художественная концепция и визуальное направление | [`Art/ART_VISION.md`](Art/ART_VISION.md) |
-| Визуальные и технические стандарты ассетов | [`Art/Vanilla-Friendly Guidelines.md`](Art/Vanilla-Friendly%20Guidelines.md) |
-| Процесс подготовки, проверки и утверждения ассетов | [`Art/ASSET_WORKFLOW.md`](Art/ASSET_WORKFLOW.md) |
-| Ограждения: спецификация, визуальный референс, план реализации | **`Fences/SurvivalPoints_Fences_v1.1.7-final.md`** и **`Fences/SurvivalPoints_Fences_Visual_Reference_v5.md`** |
-| Ограждения: архив legacy/выполненных планов | `_archive/` (fence-legacy-cleanup, LEGACY_FENCES_INVENTORY, 32×32, fences-v1.1.7-implementation, WAVE2_PLAN, modular-outpost, rules-optimization, chest-uv-fix) |
-| Кронштейн колючей проволоки | `Camp/barbed-wire-bracket-block-plan.md` |
-| Плоские стыки сетки ограждения | `Camp/fence-flat-mesh-joints-plan.md` |
-| Модульный аутпост (LEGACY) | `_archive/modular-outpost-plan.md` |
-| План волны 2 (LEGACY — старый YIIIY-периметр) | `_archive/WAVE2_PLAN.md` |
-| Правка UV сундука и брони (выполнено) | `_archive/chest-uv-fix-plan.md` |
-| Оптимизация правил и режимов Roo Code (завершён) | `_archive/rules-optimization-plan.md` |
-| Архитектура NPC: база, identity UUID, роли | **`Entities/plan.md`** |
-| Модель NPC: навыки 0–10, симуляция лагерей | **`Entities/NPC_CAMP_SIMULATION_DESIGN.md`** |
-| Система лагерей: модель, блоки, посты, ночь, штат | **`Camp/DESIGN_CAMP_SYSTEM.md`** |
-| Соц-эконом слой: глава, торговля, репутация, задания | **`Camp/DESIGN_CAMP_SOCIAL.md`** |
-| Радио-вышка (блок, BE, якорь) | `Camp/RADIO_TOWER_DETAIL.md` |
-| Порядок волн, приоритеты, риски, бюджеты | **`Roadmap/ROADMAP.md`** |
-| Дефекты движения стража: тряска в углу, «зависание» в ближнем бою | **`Combat/guardian-movement-defects-plan.md`** (актуальный разбор — §7–§9) |
-| Решение по `GuardianState` (боевой автомат vs лагерь, утверждено) | `Combat/GUARDIAN_STATE_DECISION.md` |
-| Имена NPC | `Entities/npc-names-plan.md` |
-| Вкладка креатива и яйца призыва | `Items/CREATIVE_TAB_PLAN.md` |
-| Чек-листы проверки по волнам | `Testing/TESTING.md` |
+| Контекст кода, технические ограничения, правила работы | [AI_CONTEXT.md](../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md) |
+| Общая концепция и принципы мода | [PROJECT_VISION.md](Architecture/PROJECT_VISION.md) |
+| Порядок волн и общий статус разработки | [ROADMAP.md](Roadmap/ROADMAP.md) |
+| Архитектура NPC, identity и роли | [plan.md](Entities/plan.md) |
+| Модель NPC, навыки и симуляция | [NPC_CAMP_SIMULATION_DESIGN.md](Entities/NPC_CAMP_SIMULATION_DESIGN.md) |
+| Имена NPC | [npc-names-plan.md](Entities/npc-names-plan.md) |
+| Базовая система лагерей | [DESIGN_CAMP_SYSTEM.md](Camp/DESIGN_CAMP_SYSTEM.md) |
+| Социальные и экономические механики лагеря | [DESIGN_CAMP_SOCIAL.md](Camp/DESIGN_CAMP_SOCIAL.md) |
+| Радио-вышка и якорь | [RADIO_TOWER_DETAIL.md](Camp/RADIO_TOWER_DETAIL.md) |
+| Население лагеря | [camp-population-plan.md](Camp/camp-population-plan.md) |
+| Выравнивание площадки лагеря | [camp-terrain-leveling-plan.md](Camp/camp-terrain-leveling-plan.md) |
+| Фермерская система и идеи строительства | [BUILDER_CONSTRUCTION_IDEA.md](Camp/BUILDER_CONSTRUCTION_IDEA.md) и исходники `camp/Farm*`, `entity/ai/FarmerStandWorkGoal.java` |
+| Бой и ИИ стража | [GUARDIAN_REWORK_PLAN.md](Combat/GUARDIAN_REWORK_PLAN.md), [GUARDIAN_STATE_DECISION.md](Combat/GUARDIAN_STATE_DECISION.md) |
+| Дефекты движения стража | [guardian-movement-defects-plan.md](Combat/guardian-movement-defects-plan.md) |
+| Ограждения: утверждённые требования | [SurvivalPoints_Fences_v1.1.7-final.md](Fences/SurvivalPoints_Fences_v1.1.7-final.md) и [Visual Reference v5](Fences/SurvivalPoints_Fences_Visual_Reference_v5.md) |
+| Варианты ржавых секций ограждения | [fence-rusted-variants-plan.md](Fences/fence-rusted-variants-plan.md) |
+| Исторические планы по торцам и направленным окончаниям | [fences-torцы-2px-plan.md](Fences/fences-torцы-2px-plan.md), [fences-tip0-directional-tongue-plan.md](Fences/fences-tip0-directional-tongue-plan.md) — сверять статус с утверждённой спецификацией |
+| Вкладка креатива и яйца призыва | [CREATIVE_TAB_PLAN.md](Items/CREATIVE_TAB_PLAN.md) |
+| Ручные проверки и Forge GameTests | [TESTING.md](Testing/TESTING.md) |
+| Художественная концепция | [ART_VISION.md](Art/ART_VISION.md) |
+| Стандарты моделей, текстур и UV | [Vanilla-Friendly Guidelines.md](Art/Vanilla-Friendly%20Guidelines.md) |
+| Подготовка и утверждение ассетов | [ASSET_WORKFLOW.md](Art/ASSET_WORKFLOW.md) |
 
 ## Структура
 
 ```
 .roo/plans/
-├── README.md                     — этот навигатор
-├── Architecture/                 — общая архитектура и замысел
+├── README.md
+├── Architecture/
 │   └── PROJECT_VISION.md
-├── Art/                          — художественное направление и производство ассетов
-│   ├── ART_VISION.md             — визуальная концепция (Vanilla+, силуэт, палитры)
-│   ├── Vanilla-Friendly Guidelines.md — стандарты моделей, текстур и UV
-│   └── ASSET_WORKFLOW.md         — цикл подготовки, проверки и утверждения
-├── Roadmap/                      — порядок разработки
-│   └── ROADMAP.md
-├── Entities/                     — NPC и сущности
-│   ├── plan.md                   — канон архитектуры NPC
-│   ├── NPC_CAMP_SIMULATION_DESIGN.md
-│   └── npc-names-plan.md
-├── Fences/                       — ограждения: спецификация и планы
-│   ├── SurvivalPoints_Fences_v1.1.7-final.md      — канон требований
-│   ├── SurvivalPoints_Fences_Visual_Reference_v5.md — канон визуала
-│   ├── fences-tip0-directional-tongue-plan.md
-│   ├── fences-torцы-2px-plan.md
-│   └── fence-rusted-variants-plan.md
-├── Camp/                         — система лагерей и радиоблок
-│   ├── DESIGN_CAMP_SYSTEM.md
-│   ├── DESIGN_CAMP_SOCIAL.md
-│   ├── RADIO_TOWER_DETAIL.md
+├── Art/
+│   ├── ART_VISION.md
+│   ├── ASSET_WORKFLOW.md
+│   └── Vanilla-Friendly Guidelines.md
+├── Camp/
+│   ├── BUILDER_CONSTRUCTION_IDEA.md
 │   ├── CAMP_IDEAS.md
-│   ├── barbed-wire-bracket-block-plan.md
-│   └── fence-flat-mesh-joints-plan.md
-├── Combat/                       — бой и боевые механики
+│   ├── DESIGN_CAMP_SOCIAL.md
+│   ├── DESIGN_CAMP_SYSTEM.md
+│   ├── RADIO_TOWER_DETAIL.md
+│   ├── camp-population-plan.md
+│   └── camp-terrain-leveling-plan.md
+├── Combat/
 │   ├── GUARDIAN_REWORK_PLAN.md
-│   ├── GUARDIAN_STATE_DECISION.md — решение развилки `GuardianState` (разблокирует R0.1)
-│   └── guardian-movement-defects-plan.md — дефекты движения стража (диагностика + правки)
-├── Items/                        — предметы и инвентарь
+│   ├── GUARDIAN_STATE_DECISION.md
+│   └── guardian-movement-defects-plan.md
+├── Entities/
+│   ├── NPC_CAMP_SIMULATION_DESIGN.md
+│   ├── npc-names-plan.md
+│   └── plan.md
+├── Fences/
+│   ├── SurvivalPoints_Fences_Visual_Reference_v5.md
+│   ├── SurvivalPoints_Fences_v1.1.7-final.md
+│   ├── fence-rusted-variants-plan.md
+│   ├── fences-tip0-directional-tongue-plan.md
+│   └── fences-torцы-2px-plan.md
+├── Items/
 │   └── CREATIVE_TAB_PLAN.md
-├── Testing/                      — тестирование
-│   └── TESTING.md
-└── _archive/                    — legacy и выполненные планы
+├── Roadmap/
+│   └── ROADMAP.md
+├── Testing/
+│   ├── TESTING.md
+│   └── log.md
+└── _archive/
+    ├── LEGACY_FENCES_INVENTORY.md
+    ├── LEGACY_fences-textures-32-rewrite-plan.md
+    ├── WAVE2_PLAN.md
+    ├── chest-uv-fix-plan.md
+    ├── fence-legacy-cleanup-plan.md
+    ├── fences-v1.1.7-implementation-plan.md
+    ├── guardian-movement-defects-plan.full.md
+    ├── modular-outpost-plan.md
+    └── rules-optimization-plan.md
 ```
 
-## Источники истины
+## Источники истины и границы
 
-- **Художественное направление и стандарты ассетов** — [`Art/ART_VISION.md`](Art/ART_VISION.md) и [`Art/Vanilla-Friendly Guidelines.md`](Art/Vanilla-Friendly%20Guidelines.md). Статус обоих документов — *committed, ожидает утверждения владельцем*; они не являются утверждённым финалом.
-- **Ограждения** — [`Fences/SurvivalPoints_Fences_v1.1.7-final.md`](Fences/SurvivalPoints_Fences_v1.1.7-final.md) и [`Fences/SurvivalPoints_Fences_Visual_Reference_v5.md`](Fences/SurvivalPoints_Fences_Visual_Reference_v5.md). Иерархия уточняющих планов описана в [`_archive/LEGACY_FENCES_INVENTORY.md`](_archive/LEGACY_FENCES_INVENTORY.md).
-- **Порядок волн и приоритеты** — [`Roadmap/ROADMAP.md`](Roadmap/ROADMAP.md) §2.
-- **Архитектура NPC** — [`Entities/plan.md`](Entities/plan.md).
-- **Модель NPC и симуляция** — [`Entities/NPC_CAMP_SIMULATION_DESIGN.md`](Entities/NPC_CAMP_SIMULATION_DESIGN.md).
-- **Система лагерей** — [`Camp/DESIGN_CAMP_SYSTEM.md`](Camp/DESIGN_CAMP_SYSTEM.md).
-- **Соц-эконом слой** — [`Camp/DESIGN_CAMP_SOCIAL.md`](Camp/DESIGN_CAMP_SOCIAL.md).
-
-## Важно
-
-- [`Camp/CAMP_IDEAS.md`](Camp/CAMP_IDEAS.md) — **банк идей**, а не утверждённые задачи. Не реализовывать без согласования.
-- Канон Art-документов — только `.roo/plans/Art/`. Устаревшие копии закрыты через `.rooignore`: `assets-source/AiModelling/inbox/approved-art-docs/` (три файла) и `assets-source/AiModelling/VANILLA_FRIENDLY_GUIDELINES.md`.
-- `assets-source/` целиком исключён из Git через [`.gitignore`](../../.gitignore). Исходники ассетов локальны и не публикуются; в репозиторий попадают только runtime-ассеты в `src/main/resources`.
-- При расхождении документов приоритет у источника истины; при сомнении — спросить владельца.
-- Правила работы и стиля — в `.roo/rules/` и `.roo/rules-code/` (загружаются автоматически).
+- **Текущий состав и поведение кода** — исходники в `src/main/java`; AI-контекст — [AI_CONTEXT.md](../../src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md).
+- **Порядок работ** — [ROADMAP.md](Roadmap/ROADMAP.md); он не заменяет согласование следующей задачи.
+- **NPC** — [Entities/plan.md](Entities/plan.md) для архитектурных контрактов; реализацию сверять с исходниками.
+- **Ограждения** — две утверждённые спецификации в `Fences/`; вспомогательные планы не переопределяют их.
+- **Идеи** — [CAMP_IDEAS.md](Camp/CAMP_IDEAS.md) и концептуальные документы не являются разрешением на реализацию.
+- **Архив** — `_archive/` хранит исторические планы; не считать их активным ТЗ.
+- **Тестирование** — [TESTING.md](Testing/TESTING.md) содержит ручные сценарии и имеющиеся автоматические тесты; запуск теста и ручная приёмка — разные результаты.
+- При противоречии между кодом и документом описать расхождение. Не менять утверждённое решение без владельца.
