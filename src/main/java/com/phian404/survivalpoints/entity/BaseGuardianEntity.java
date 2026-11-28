@@ -10,6 +10,7 @@ import com.phian404.survivalpoints.entity.ai.GuardianMeleeAttackGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianRangedAttackGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianRetreatGoal;
 import com.phian404.survivalpoints.entity.ai.GuardianTargetGoal;
+import com.phian404.survivalpoints.entity.ai.GuardPostGoal;
 import com.phian404.survivalpoints.entity.ai.CampRestrictedRandomStrollGoal;
 import com.phian404.survivalpoints.init.GuardianFeatureFlags;
 import com.phian404.survivalpoints.init.GuardianHangDetector;
@@ -547,11 +548,12 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         // вытеснении). Флаг MOVE у боевых голов один (К2), поэтому одновременно
         // перемещением управляет ровно один гол — первый подходящий.
         //
-        // Паника → ближний бой → дальний бой → еда → прогулка → взгляд.
+        // Паника → ближний бой → дальний бой → еда → пост → прогулка → взгляд.
         this.goalSelector.addGoal(0, new GuardianRetreatGoal(this));       // паника
         this.goalSelector.addGoal(1, new GuardianMeleeAttackGoal(this));   // меч
         this.goalSelector.addGoal(2, new GuardianRangedAttackGoal(this));  // арбалет
         this.goalSelector.addGoal(3, new GuardianEatBreadGoal(this));      // еда
+        this.goalSelector.addGoal(4, new GuardPostGoal(this));             // пост
         this.goalSelector.addGoal(4, new CampRestrictedRandomStrollGoal(this, 1.0D));     // покой
 
         // Взгляд на игрока — только в покое. Ванильный LookAtPlayerGoal при
@@ -1916,6 +1918,60 @@ public class BaseGuardianEntity extends BaseSurvivorEntity {
         // Без hasImpulse пакет с поворотом не уходит клиенту (сервер шлёт его
         // только при движении или раз в 20 тиков).
         this.hasImpulse = true;
+    }
+
+    /**
+     * Плавно разворачивает тело и голову к заданному курсу без цели.
+     *
+     * <p>Нужен на посту: страж осматривается по курсу, и доворот должен быть
+     * таким же плавным, как в бою. Наклон головы сводится к нулю — на посту
+     * разглядывать пол или небо нечего.
+     */
+    public void turnTowardsYaw(float desiredYaw) {
+        float previousBodyYaw = this.bodyYaw;
+        float previousHeadYaw = this.headYaw;
+
+        // --- Курс тела ---
+        float diff = Mth.wrapDegrees(desiredYaw - this.bodyYaw);
+        if (Math.abs(diff) <= GuardianTuning.FACE_SNAP_ANGLE) {
+            this.bodyYaw = desiredYaw;
+        } else {
+            float step = Mth.clamp(diff * GuardianTuning.FACE_SMOOTHING,
+                    -GuardianTuning.FACE_TURN_SPEED_DEG, GuardianTuning.FACE_TURN_SPEED_DEG);
+            this.bodyYaw = Mth.wrapDegrees(this.bodyYaw + step);
+        }
+
+        // --- Курс головы ---
+        float headDiff = Mth.wrapDegrees(desiredYaw - this.headYaw);
+        if (Math.abs(headDiff) <= GuardianTuning.FACE_SNAP_ANGLE) {
+            this.headYaw = desiredYaw;
+        } else {
+            float headStep = Mth.clamp(headDiff * GuardianTuning.FACE_SMOOTHING,
+                    -GuardianTuning.FACE_HEAD_SPEED_DEG, GuardianTuning.FACE_HEAD_SPEED_DEG);
+            this.headYaw = Mth.wrapDegrees(this.headYaw + headStep);
+        }
+        float headOffset = Mth.clamp(Mth.wrapDegrees(this.headYaw - this.bodyYaw),
+                -GuardianTuning.MAX_HEAD_YAW_OFFSET, GuardianTuning.MAX_HEAD_YAW_OFFSET);
+        this.headYaw = Mth.wrapDegrees(this.bodyYaw + headOffset);
+
+        // --- Наклон головы ---
+        this.headPitch = Mth.lerp(GuardianTuning.FACE_PITCH_SPEED, this.headPitch, 0.0F);
+
+        if (this.bodyFacesTarget) {
+            this.setYRot(this.bodyYaw);
+            this.yBodyRot = this.bodyYaw;
+        }
+        this.setYHeadRot(this.headYaw);
+        this.setXRot(this.headPitch);
+        this.entityData.set(DATA_HEAD_PITCH, this.headPitch);
+        this.entityData.set(DATA_HEAD_YAW, this.headYaw);
+
+        // Пакет поворота шлём только когда угол реально сдвинулся: на посту
+        // осмотр медленный, и держать hasImpulse включённым каждый тик незачем.
+        if (Math.abs(Mth.wrapDegrees(this.bodyYaw - previousBodyYaw)) > 0.05F
+                || Math.abs(Mth.wrapDegrees(this.headYaw - previousHeadYaw)) > 0.05F) {
+            this.hasImpulse = true;
+        }
     }
 
     // ==================== Еда ====================

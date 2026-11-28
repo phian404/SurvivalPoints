@@ -645,12 +645,24 @@ public class FarmerSessionGameTests {
 
     /** Каменный пол тестовой площадки: станции нужна опора под ногами. */
     private static void platform(GameTestHelper helper) {
+        startOfDay(helper);
         for (int x = 0; x <= 4; x++) {
             for (int z = 0; z <= 4; z++) {
                 helper.getLevel().setBlock(helper.absolutePos(new BlockPos(x, 0, z)),
                         Blocks.STONE.defaultBlockState(), 3);
             }
         }
+    }
+
+    /**
+     * Время сцены — рабочий день.
+     *
+     * <p>Фермер работает только днём, а GameTest-сервер гоняет весь набор в одном
+     * мире: сценарии расписания перематывают сутки, поэтому каждый сценарий
+     * выставляет своё время явно.
+     */
+    private static void startOfDay(GameTestHelper helper) {
+        helper.getLevel().setDayTime(1000L);
     }
 
     /** Восемь грядок вокруг центральной клетки. */
@@ -669,6 +681,7 @@ public class FarmerSessionGameTests {
 
     /** Все грядки (farmland) из поставленного шаблона — сценарий не знает координат. */
     private static List<BlockPos> farmland(GameTestHelper helper) {
+        startOfDay(helper);
         ServerLevel level = helper.getLevel();
         BlockPos origin = helper.absolutePos(BlockPos.ZERO);
         List<BlockPos> plots = new ArrayList<>();

@@ -44,6 +44,7 @@ public final class GuardianFeatureFlags {
         RALLY("RALLY", "сбор союзников (зов о помощи)"),
         LOOK_PLAYER("LOOK_PLAYER", "взгляд на игрока"),
         PANIC("PANIC", "режим паники"),
+        POST("POST", "стоянка на посту лагеря"),
         RANGED("RANGED", "стрельба из арбалета");
 
         private final String id;

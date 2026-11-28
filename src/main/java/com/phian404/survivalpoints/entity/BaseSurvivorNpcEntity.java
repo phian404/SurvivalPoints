@@ -1,5 +1,6 @@
 package com.phian404.survivalpoints.entity;
 
+import com.phian404.survivalpoints.entity.ai.CampRestGoal;
 import com.phian404.survivalpoints.entity.ai.CampWanderGoal;
 import com.phian404.survivalpoints.entity.ai.FarmerStandWorkGoal;
 import com.phian404.survivalpoints.entity.role.RoleAssignmentService;
@@ -51,6 +52,8 @@ public class BaseSurvivorNpcEntity extends BaseSurvivorEntity {
         FarmerStandWorkGoal workGoal = new FarmerStandWorkGoal(this);
         this.workGoal = workGoal;
         this.goalSelector.addGoal(1, workGoal);
+        // Вечером и ночью житель идёт к своему месту отдыха и спит там.
+        this.goalSelector.addGoal(2, new CampRestGoal(this));
         this.goalSelector.addGoal(2, new CampWanderGoal(this));
         this.goalSelector.addGoal(3, new RandomLookAroundGoal(this));
         this.goalSelector.addGoal(4, new LookAtPlayerGoal(this, Player.class, 8.0F));

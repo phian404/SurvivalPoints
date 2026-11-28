@@ -3,6 +3,7 @@ package com.phian404.survivalpoints.entity.ai;
 import com.phian404.survivalpoints.camp.CampFarmManager;
 import com.phian404.survivalpoints.camp.CampManager;
 import com.phian404.survivalpoints.camp.CampRecord;
+import com.phian404.survivalpoints.camp.CampSchedule;
 import com.phian404.survivalpoints.camp.FarmWorkStation;
 import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.ai.crop.CropAdapter;
@@ -146,6 +147,10 @@ public class FarmerStandWorkGoal extends Goal {
         if (level == null || !isFarmer()) {
             return false;
         }
+        // Работа — только днём: вечером и ночью житель отдыхает.
+        if (!CampSchedule.of(level).isWorkTime()) {
+            return false;
+        }
         CampRecord camp = camp(level);
         if (camp == null) {
             return false;
@@ -172,6 +177,11 @@ public class FarmerStandWorkGoal extends Goal {
     @Override
     public boolean canContinueToUse() {
         if (serverLevel() == null || !isFarmer()) {
+            return false;
+        }
+        // Вечер и ночь заканчивают сессию штатно: stop() вернёт инструмент в
+        // инвентарь, ничего не теряя.
+        if (!CampSchedule.of(serverLevel()).isWorkTime()) {
             return false;
         }
         if (this.pauseLookTarget != null) {

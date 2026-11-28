@@ -4,6 +4,7 @@ import com.phian404.survivalpoints.camp.CampManager;
 import com.phian404.survivalpoints.camp.CampFarmManager;
 import com.phian404.survivalpoints.camp.CampPoi;
 import com.phian404.survivalpoints.camp.CampRecord;
+import com.phian404.survivalpoints.camp.CampSchedule;
 import com.phian404.survivalpoints.camp.CampStructurePlacer;
 import com.phian404.survivalpoints.entity.BaseSurvivorEntity;
 import com.phian404.survivalpoints.entity.BaseSurvivorNpcEntity;
@@ -90,6 +91,7 @@ public class NpcDebugWandItem extends Item {
         UUID campId = npc.getCampId();
         CampRecord camp = campId == null || !(level instanceof ServerLevel serverLevel)
                 ? null : CampManager.getCamp(serverLevel, campId);
+        out.append(" §8· ").append(scheduleLabel(CampSchedule.of(level)));
 
         switch (mode) {
             case IDENTITY -> appendIdentity(out, npc, camp);
@@ -203,6 +205,14 @@ public class NpcDebugWandItem extends Item {
 
     private static String nameOr(@Nullable String value, String fallback) {
         return value == null || value.isEmpty() ? fallback : value;
+    }
+
+    private static String scheduleLabel(CampSchedule schedule) {
+        return switch (schedule) {
+            case DAY -> "§7день";
+            case EVENING -> "§7вечер";
+            case NIGHT -> "§7ночь";
+        };
     }
 
     private static String uuid(@Nullable UUID value) {
