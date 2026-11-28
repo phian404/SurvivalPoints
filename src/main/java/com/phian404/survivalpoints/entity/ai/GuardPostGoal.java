@@ -10,6 +10,8 @@ import com.phian404.survivalpoints.init.GuardianTuning;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
@@ -128,7 +130,7 @@ public class GuardPostGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        if (this.abandoned || this.guardian.getTarget() != null) {
+        if (this.abandoned) {
             return false;
         }
         if (!(this.guardian.level() instanceof ServerLevel level)) {
@@ -154,7 +156,7 @@ public class GuardPostGoal extends Goal {
             return;
         }
         double distSqr = this.guardian.position().distanceToSqr(this.postVec);
-        if (this.guardian.onGround() && distSqr <= NUDGE_RANGE_SQR) {
+        if (this.guardian.onGround() && distSqr <= NUDGE_RANGE_SQR && this.nudgeUsable()) {
             this.nudgeTicks++;
             if (this.nudgeTicks <= NUDGE_MAX) {
                 this.guardian.getNavigation().stop();
@@ -208,9 +210,44 @@ public class GuardPostGoal extends Goal {
         return this.outwardYaw;
     }
 
+    /**
+     * Можно ли доводить стража в клетку поста напрямую.
+     *
+     * <p>Доводка идёт мимо pathfinder и не умеет обходить препятствия и
+     * подниматься. Если пост на другом уровне или между стражем и постом
+     * стена, она только толкает его в преграду — тогда путь ведёт навигация.
+     */
+    private boolean nudgeUsable() {
+        if (this.guardian.blockPosition().getY() != this.post.getPos().getY()) {
+            return false;
+        }
+        if (!(this.guardian.level() instanceof ServerLevel level)) {
+            return false;
+        }
+        Vec3 from = new Vec3(this.guardian.getX(), this.guardian.getY() + 0.5D, this.guardian.getZ());
+        Vec3 to = this.postVec.add(0.0D, 0.5D, 0.0D);
+        return level.clip(new ClipContext(from, to, ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE, this.guardian)).getType() == HitResult.Type.MISS;
+    }
+
+    /**
+     * Уход с поста: снимаем удержание корпуса и маршрут.
+     *
+     * <p>Иначе флаг «смотреть наружу» оставался у сущности, и боевым голам
+     * приходилось перебивать его самим — со стороны страж выглядел так, будто
+     * не хочет покидать пост.
+     */
+    @Override
+    public void stop() {
+        this.guardian.clearStrafeInput();
+        this.guardian.getNavigation().stop();
+        this.arrived = false;
+        this.nudgeTicks = 0;
+    }
+
     private void walkToPost() {
         this.guardian.followPath(this.postVec.x, this.postVec.y, this.postVec.z,
-                GuardianTuning.NAV_SPEED);
+                GuardianTuning.NAV_BLOCKS_PER_TICK);
     }
 
     private void standOnPost() {

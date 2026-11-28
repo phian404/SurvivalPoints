@@ -2,6 +2,7 @@ package com.phian404.survivalpoints.camp;
 
 import com.phian404.survivalpoints.camp.block.fence.SectionBlock;
 import com.phian404.survivalpoints.camp.blockentity.CampRadioBlockEntity;
+import com.phian404.survivalpoints.entity.BaseGuardianEntity;
 import com.phian404.survivalpoints.init.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -1975,11 +1976,14 @@ public class CampGenerator {
      * @param plan   план (для позиции ворот и пола двора)
      */
     public static void createPostsFromPois(CampRecord record, CampSitePlanner.Plan plan) {
-        // Пост у ворот: на шаг наружу от проёма. Клетки проёма заняты
-        // створками и глухой панелью, поэтому точка стража — перед воротами,
-        // с той стороны, куда смотрит вход.
-        BlockPos gatePost = plan.getGatePos().relative(plan.getGateFacing());
-        record.addPost(new CampPost(CampPost.Type.GATE, gatePost, 0.0F));
+        // Пост у ворот: на шаг внутрь двора от проёма. Створки ворот закрыты
+        // (DoorBlock с open=false), поэтому клетка снаружи недостижима для
+        // навигации: страж не мог встать на пост и оставался у стены. Внутри
+        // двора пол выровнен, и пост всегда достижим; смотрит страж наружу.
+        Direction gateFacing = plan.getGateFacing();
+        BlockPos gatePost = plan.getGatePos().relative(gateFacing.getOpposite());
+        record.addPost(new CampPost(CampPost.Type.GATE, gatePost,
+                BaseGuardianEntity.yawToTarget(gateFacing.getStepX(), gateFacing.getStepZ())));
 
         for (CampPoi poi : record.getPois()) {
             if (!poi.getType().startsWith(CampStructurePlacer.POI_PREFIX)) {

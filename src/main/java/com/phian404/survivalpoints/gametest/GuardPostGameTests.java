@@ -8,9 +8,13 @@ import com.phian404.survivalpoints.entity.ai.GuardPostGoal;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.gametest.GameTestHolder;
@@ -35,6 +39,9 @@ public class GuardPostGameTests {
 
     /** Окно наблюдения за осмотром (тики): половина периода качания. */
     private static final int SAMPLE_TICKS = 70;
+
+    /** Предельный шаг стража за тик при подходе к посту (блоки). */
+    private static final double MAX_STEP_PER_TICK = 0.6D;
 
     @GameTest(template = "empty3x3x3", timeoutTicks = 600)
     public static void guard_reaches_post_and_faces_out(GameTestHelper helper) {
@@ -89,6 +96,96 @@ public class GuardPostGameTests {
                 () -> requireInCell(guard, postPos, "на подходе"));
     }
 
+    /**
+     * Страж идёт на пост шагом, а не рывками.
+     *
+     * <p>Раньше пост передавал в {@code followPath} скорость {@code 1.0} —
+     * это около блока за тик: страж перелетал клетку поста, не мог встать и
+     * со стороны двигался рывками. Замеряем фактический шаг за тик.
+     */
+    @GameTest(template = "empty3x3x3", timeoutTicks = 400)
+    public static void guard_walks_to_post_without_jerks(GameTestHelper helper) {
+        platform(helper);
+        ServerLevel level = helper.getLevel();
+
+        BlockPos center = helper.absolutePos(new BlockPos(2, 1, 2));
+        BlockPos postPos = helper.absolutePos(new BlockPos(4, 1, 2));
+        BaseGuardianEntity guard = spawnGuardian(helper, new BlockPos(0, 1, 2));
+
+        CampRecord camp = new CampRecord("gametest_guard_step", center, 8, null);
+        CampPost post = new CampPost(CampPost.Type.WALL, postPos, 45.0F);
+        camp.addPost(post);
+        camp.assignGuardian(guard.getIdentityId(), post);
+        CampSavedData.get(level).addCamp(camp);
+        guard.setCampId(camp.getId());
+        guard.setCampPostId(post.getId());
+
+        double[] last = {guard.getX(), guard.getZ()};
+        double[] maxStep = {0.0D};
+        pollUntil(helper, 300, "страж дошёл до поста ровным шагом", () -> {
+            if (maxStep[0] > MAX_STEP_PER_TICK) {
+                throw new IllegalStateException("рывок: " + maxStep[0] + " блока за тик, "
+                        + describe(postGoal(guard), guard));
+            }
+            helper.succeed();
+        }, () -> {
+            double step = Math.hypot(guard.getX() - last[0], guard.getZ() - last[1]);
+            if (step > maxStep[0]) {
+                maxStep[0] = step;
+            }
+            last[0] = guard.getX();
+            last[1] = guard.getZ();
+            requireInCell(guard, postPos, "на подходе");
+        });
+    }
+
+    /**
+     * Враг снимает стража с поста.
+     *
+     * <p>Пока страж стоит на посту, он держит корпус «наружу» и не двигается.
+     * Цель должна вытеснить гол поста, иначе страж так и стоит, глядя в стену,
+     * пока его бьют.
+     */
+    @GameTest(template = "empty3x3x3", timeoutTicks = 700)
+    public static void combat_takes_guard_off_post(GameTestHelper helper) {
+        platform(helper);
+        ServerLevel level = helper.getLevel();
+
+        BlockPos center = helper.absolutePos(new BlockPos(2, 1, 2));
+        BlockPos postPos = helper.absolutePos(new BlockPos(4, 1, 2));
+        BaseGuardianEntity guard = spawnGuardian(helper, new BlockPos(0, 1, 2));
+
+        CampRecord camp = new CampRecord("gametest_guard_combat", center, 8, null);
+        CampPost post = new CampPost(CampPost.Type.WALL, postPos, 45.0F);
+        camp.addPost(post);
+        camp.assignGuardian(guard.getIdentityId(), post);
+        CampSavedData.get(level).addCamp(camp);
+        guard.setCampId(camp.getId());
+        guard.setCampPostId(post.getId());
+
+        pollUntil(helper, 300, "страж встал на пост", () -> {
+            Mob zombie = (Mob) EntityType.ZOMBIE.create(level);
+            if (zombie == null) {
+                throw new IllegalStateException("зомби не создан");
+            }
+            BlockPos zombiePos = helper.absolutePos(new BlockPos(4, 1, 4));
+            zombie.moveTo(zombiePos.getX() + 0.5D, zombiePos.getY(), zombiePos.getZ() + 0.5D);
+            level.addFreshEntity(zombie);
+
+            pollUntil(helper, 200, "страж сошёл с поста на врага", helper::succeed, () -> {
+                if (guard.getTarget() != zombie) {
+                    throw new IllegalStateException("страж не взял цель: "
+                            + describe(postGoal(guard), guard));
+                }
+                GuardPostGoal goal = postGoal(guard);
+                if (goal != null && goal.isAtPost()) {
+                    throw new IllegalStateException("страж остался на посту при враге: "
+                            + describe(goal, guard));
+                }
+            });
+        }, () -> requireInCell(guard, postPos, "на посту"));
+    }
+
     /** Страж стоит ровно в клетке поста. */
     private static void requireInCell(BaseGuardianEntity guard, BlockPos postPos, String stage) {
         if (!guard.blockPosition().equals(postPos)) {
@@ -96,6 +193,90 @@ public class GuardPostGameTests {
                     + guard.blockPosition() + " вместо " + postPos
                     + " " + describe(postGoal(guard), guard));
         }
+    }
+
+    /**
+     * Страж поднимается на пост по ступени в один блок.
+     *
+     * <p>Настил вышки выше двора, поэтому пост на вышке достижим только если
+     * pathfinder стража берёт подъём на блок. Тест ставит одну ступень и ждёт,
+     * что страж стоит в клетке над ней.
+     */
+    @GameTest(template = "empty3x3x3", timeoutTicks = 600)
+    public static void guard_climbs_one_block_step_to_post(GameTestHelper helper) {
+        platform(helper);
+        ServerLevel level = helper.getLevel();
+        level.setBlock(helper.absolutePos(new BlockPos(1, 1, 2)),
+                Blocks.STONE.defaultBlockState(), 3);
+
+        BlockPos center = helper.absolutePos(new BlockPos(2, 1, 2));
+        BlockPos postPos = helper.absolutePos(new BlockPos(1, 2, 2));
+        BaseGuardianEntity guard = spawnGuardian(helper, new BlockPos(0, 1, 2));
+
+        CampRecord camp = new CampRecord("gametest_guard_step", center, 8, null);
+        CampPost post = new CampPost(CampPost.Type.WALL, postPos, 270.0F);
+        camp.addPost(post);
+        camp.assignGuardian(guard.getIdentityId(), post);
+        CampSavedData.get(level).addCamp(camp);
+        guard.setCampId(camp.getId());
+        guard.setCampPostId(post.getId());
+
+        pollUntil(helper, 300, "страж поднялся на ступень к посту", helper::succeed,
+                () -> requireInCell(guard, postPos, "на ступени"));
+    }
+
+    /**
+     * Страж проходит от входа в вышку до клетки, отмеченной структурным блоком.
+     *
+     * <p>Шаблон {@code survivalpoints:watchtower} ставится в мир как есть, маркер
+     * снимается, а пост назначается ровно в его координаты. Тест проверяет не
+     * геометрию, а реальный pathfinder моба: подъём по stairs и настилу.
+     */
+    @GameTest(template = "empty3x3x3", timeoutTicks = 1200)
+    public static void guard_reaches_watchtower_post(GameTestHelper helper) {
+        platform(helper);
+        ServerLevel level = helper.getLevel();
+        BlockPos origin = helper.absolutePos(new BlockPos(0, 1, 0));
+        StructureTemplate template = level.getStructureManager()
+                .get(new ResourceLocation("survivalpoints", "watchtower"))
+                .orElseThrow(() -> new IllegalStateException("шаблон вышки не читается"));
+        template.placeInWorld(level, origin, origin,
+                new StructurePlaceSettings().setIgnoreEntities(true), level.random, 3);
+
+        BlockPos postPos = origin.offset(2, 4, 3);
+        level.setBlock(postPos, Blocks.AIR.defaultBlockState(), 3);
+
+        BaseGuardianEntity guard = spawnGuardian(helper, new BlockPos(2, 1, 0));
+
+        CampRecord camp = new CampRecord("gametest_guard_tower", origin.offset(2, 0, 2), 8, null);
+        CampPost post = new CampPost(CampPost.Type.WALL, postPos, 0.0F);
+        camp.addPost(post);
+        camp.assignGuardian(guard.getIdentityId(), post);
+        CampSavedData.get(level).addCamp(camp);
+        guard.setCampId(camp.getId());
+        guard.setCampPostId(post.getId());
+
+        pollUntil(helper, 600, "страж поднялся в клетку поста на вышке", helper::succeed,
+                () -> requireInCell(guard, postPos, "на вышке"));
+    }
+
+    /**
+     * Шаблон вышки читается игрой и не повреждён правкой настила.
+     */
+    @GameTest(template = "empty3x3x3", timeoutTicks = 100)
+    public static void watchtower_template_is_readable(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        var template = level.getStructureManager()
+                .get(new ResourceLocation("survivalpoints", "watchtower")).orElse(null);
+        if (template == null) {
+            throw new IllegalStateException("шаблон survivalpoints:watchtower не читается");
+        }
+        var size = template.getSize();
+        if (size.getX() != 5 || size.getY() != 8 || size.getZ() != 5) {
+            throw new IllegalStateException("неожиданный размер шаблона вышки: "
+                    + size.getX() + "x" + size.getY() + "x" + size.getZ());
+        }
+        helper.succeed();
     }
 
     @Nullable

@@ -389,8 +389,17 @@ public final class GuardianTuning {
     /** Скорость атаки в ближнем бою. */
     public static final double MELEE_SPEED = 0.65D;
 
-    /** Скорость, с которой строится и проходится маршрут навигации. */
+    /** Множитель скорости для {@code MoveControl.setWantedPosition} (доводка в клетку). */
     public static final double NAV_SPEED = 1.0D;
+
+    /**
+     * Скорость маршрута навигации в блоках за тик ({@code followPath}).
+     *
+     * <p>Не путать с {@link #NAV_SPEED}: {@code followPath} делит значение на
+     * атрибут скорости моба, то есть это блоки за тик, а не множитель. Значение
+     * {@code 1.0} давало около 1.5 блока за тик — страж перелетал клетку поста.
+     */
+    public static final double NAV_BLOCKS_PER_TICK = 0.30D;
 
     /** Через сколько тиков маршрут пересчитывается, даже если цель не двигалась. */
     public static final int NAV_RETARGET_INTERVAL = 10;
