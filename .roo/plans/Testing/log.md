@@ -1,4 +1,6 @@
+# Historical test log
 
+> Сырой диагностический материал отдельных прогонов. Это не актуальная инструкция и не источник ожидаемого поведения. Для текущих процедур и доступных GameTests используй [TESTING.md](TESTING.md).
 
 Неудачный вариант, так как снеслось 2 посева из 8:
 [04:18:44] [Server thread/INFO] [co.ph.su.ca.FarmDiagnostics/]: [SP][TERRAIN] before prepareTerrain scanBox -2106, 60, -537..-2080, 75, -511 size 27x16x27 volume=11664 (center=-2093, 65, -524 radius=10 margin=3 floorY=65)

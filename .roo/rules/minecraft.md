@@ -1,44 +1,37 @@
-# Minecraft Forge 1.20.1 Rules
+# SurvivalPoints — правила разработки
 
-## Context
+## Источники проекта
 
-- Project: SurvivalPoints (Forge 1.20.1, Java 17).
-- Key File: `SurvivalPointsMod.java` (Main class / Registration).
-- Project vision: `.roo/plans/Architecture/PROJECT_VISION.md`.
-- Current project context: `src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md`.
-- Project roadmap: `.roo/plans/Roadmap/ROADMAP.md` (canonical wave order and priorities).
-- NPC architecture (canonical, implemented): `.roo/plans/Entities/plan.md`.
-- NPC and camp simulation target model: `.roo/plans/Entities/NPC_CAMP_SIMULATION_DESIGN.md`.
-- Task plans: `.roo/plans/` (topic subfolders: `Architecture/`, `Art/`, `Camp/`, `Combat/`, `Entities/`, `Fences/`, `Items/`, `Roadmap/`, `Testing/`).
-- Documentation entry point: `.roo/plans/README.md` (pick the single document matching the task type; do not read all files in a row).
-- Fences design (canonical): `.roo/plans/Fences/SurvivalPoints_Fences_v1.1.7-final.md` and `.roo/plans/Fences/SurvivalPoints_Fences_Visual_Reference_v5.md`. Supporting and historical plans are listed in `.roo/plans/README.md` and `.roo/plans/Fences/LEGACY_FENCES_INVENTORY.md`. Do not treat a historical plan as current design.
-- Art documents (`.roo/plans/Art/`) are committed but **pending owner approval**; they are not approved final standards. Art/src layout: `.roo/plans/Art/` holds the text standards; `assets-source/AiModelling/` holds editable sources. Planned subfolders and skills described in `ASSET_WORKFLOW.md` may not exist yet — check the filesystem before relying on them.
-- Source assets (not loaded by the game): `assets-source/ReadyToUseSkins/` (14 regular NPC skins in `BasicNPCs/`, 4 leader skins in `Leaders/`, leader lore in `SurvivalPoints_Leaders.md`). Runtime copies live in `src/main/resources/assets/survivalpoints/textures/entity/skin/`.
-- Source NPC skin file names are **not** the runtime names (`Farm_female_0.png` → `npc_farmer_0.png`, `Farmer_male_0.png` → `npc_farmer_2.png`, etc.). The fixed index mapping is in `.roo/plans/Art/ASSET_WORKFLOW.md` §5.1. Never rename source skins or reorder `SurvivorSkin.VARIANTS`.
-- `assets-source/` is excluded from Git by `.gitignore`; only runtime assets under `src/main/resources` are published.
+- Текущее состояние кода, ограничения и рабочие правила: src/main/java/com/phian404/survivalpoints/AI_CONTEXT.md.
+- Навигатор тематической документации: .roo/plans/README.md.
+- Порядок работ и приоритеты: .roo/plans/Roadmap/ROADMAP.md.
+- Концепция: .roo/plans/Architecture/PROJECT_VISION.md.
+- Архитектура NPC: .roo/plans/Entities/plan.md.
+- Технические спецификации систем: соответствующие документы в .roo/plans/.
+- Художественные стандарты и требования ограждений: .roo/plans/Art/ и .roo/plans/Fences/.
 
-Before planning or implementing a task, check the relevant project documentation and existing plans. Do not assume a planned feature is already implemented; verify the source code.
+Не читай весь каталог подряд. Выбери документ по задаче через навигатор, затем проверь фактическую реализацию в исходниках. План или спецификация сами по себе не доказывают, что функция уже реализована.
 
-## Search Policy
+## Обязательные ограничения
 
-1. **Semantic search first:** for broad discovery of project context, architecture, existing implementations, and related documentation, start with semantic search using relevant keywords and concepts.
-2. Use focused queries with key terms, alternative names, and related concepts instead of broad, generic queries.
-3. **Fallback:** if semantic search returns no useful results or incomplete information, continue with exact text/regex search, symbol search, filename search, and direct file inspection.
-4. If the user provides an exact filename, symbol, class, method, or string, use direct search when it is more efficient than semantic search.
-5. Treat semantic results as navigation hints, not verified facts. Confirm important findings against the actual source files before making implementation decisions.
-6. Read only relevant files and sections. Expand the search or reading scope only when necessary.
-7. Avoid repeating equivalent searches or rereading information already available in the current context.
+1. Целевая среда — Minecraft 1.20.1, Forge 47.x, Java 17, official Mojang mappings. Не использовать API Minecraft 1.21+, Fabric или NeoForge.
+2. Не менять игровые механики, баланс, тайминги или визуальное поведение, если задача явно этого не требует.
+3. Сначала изучить существующий код и повторно использовать текущие классы и контракты. Не создавать параллельную систему без доказанной необходимости.
+4. Не добавлять зависимости, инфраструктуру или крупный рефакторинг «на будущее» без согласования.
+5. Идеи, архивные планы и будущие разделы концепций не являются разрешением на реализацию.
+6. Если код и утверждённое решение расходятся, зафиксировать расхождение и запросить решение владельца; не менять контракт молча.
 
-## Response Style
+## Поиск и проверка
 
-1. Be concise. No apologies.
+- Для широкого исследования используй семантический поиск по ключевым понятиям и альтернативным названиям.
+- Для известного файла, класса, метода или точной строки используй прямой поиск.
+- Результаты поиска — подсказки для навигации; важные выводы подтверждай исходниками.
+- Перед использованием незнакомого Minecraft API проверяй API именно версии 1.20.1 через доступный minecraft-modding MCP или локальные источники Minecraft.
+- Forge API проверяй по Forge 47.x sources в Gradle cache. minecraft-modding MCP не является источником сигнатур Forge.
+- Не угадывай сигнатуры. Если проверить их невозможно, явно обозначь ограничение.
 
-## API Version Lock
+## Проверка и отчёт
 
-1. Use only APIs compatible with Minecraft Forge 1.20.1. Never use methods or classes introduced in Minecraft 1.21+.
+Выбирай проверки по затронутой области. Команды и границы покрытия описаны в .roo/plans/Testing/TESTING.md. Не называй проверку успешной, если она не запускалась и результат не просмотрен.
 
-## Verification Policy
-
-1. **Vanilla Minecraft API:** before implementing or recommending an unfamiliar vanilla API, verify it using the `minecraft-modding` MCP server (`inspect-minecraft` or `analyze-symbol`) when available.
-2. **Forge API:** the `minecraft-modding` MCP server does not index Forge classes. Verify Forge signatures against the Forge sources in the Gradle cache instead.
-3. Never guess API signatures. If neither source can be checked, state the limitation explicitly instead of pretending verification succeeded.
+Перед push проверь diff на незапрошенные изменения, временные файлы и несвязанные форматирования. В отчёте перечисли изменённые файлы, причину, выполненные проверки и оставшиеся ручные шаги.

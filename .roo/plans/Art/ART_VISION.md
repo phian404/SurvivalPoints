@@ -1,6 +1,6 @@
 # SurvivalPoints — Art Vision
 
-> **Status:** Committed — pending owner approval (v1.0 content is in the repository but not yet approved as final).
+> **Status:** Current approved art-direction baseline. Asset-specific specifications may add constraints but must not silently contradict this shared direction.
 > **Target:** Minecraft Java Edition 1.20.1 / Forge 47.x / Java 17.  
 > **Purpose:** define the shared artistic identity of every SurvivalPoints asset.
 

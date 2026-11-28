@@ -1,6 +1,6 @@
 # Vanilla-Friendly Guidelines — SurvivalPoints
 
-> **Status:** Committed — pending owner approval (v1.0 content is in the repository but not yet approved as final).
+> **Status:** Working technical standard. The shared art direction is defined in ART_VISION.md; asset-specific approved specifications take precedence. Exceptions and deviations require owner approval.
 > **Target:** Minecraft Java Edition 1.20.1 / Forge 47.x / Java 17.  
 > **Purpose:** convert the shared Art Vision into practical rules for creating, validating, and delivering models and textures.
 

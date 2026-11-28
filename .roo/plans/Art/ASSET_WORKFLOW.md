@@ -1,6 +1,6 @@
 # SurvivalPoints — Asset Workflow
 
-> **Status:** Committed — pending owner approval (v1.0 content is in the repository but not yet approved as final).
+> **Status:** Working production procedure. Approved art direction is defined in ART_VISION.md; individual pilots and integrations still require their own acceptance.
 > **Purpose:** define how the owner, Roo Code, and the asset tools move from a natural-language request to an accepted in-game asset pack.
 
 ## 1. Core principle
